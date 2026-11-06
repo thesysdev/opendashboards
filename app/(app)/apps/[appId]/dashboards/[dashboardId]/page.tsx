@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 
@@ -6,6 +7,14 @@ import { getCurrentUserApp } from "@/lib/apps";
 import { appPath } from "@/lib/apps/paths";
 
 type Params = Promise<{ appId: string; dashboardId: string }>;
+
+/** The tab shows the dashboard's title. */
+export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
+  const { appId, dashboardId } = await params;
+  const app = await getCurrentUserApp(appId);
+  const dashboard = app?.dashboards.find((candidate) => candidate.id === dashboardId);
+  return dashboard ? { title: dashboard.title } : {};
+}
 
 /**
  * One dashboard of an app. Only dashboards of the user's own app resolve. A

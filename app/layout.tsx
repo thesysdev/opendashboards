@@ -11,7 +11,9 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: { default: "Prism", template: "%s · Prism" },
-  description: "Live dashboards from your data, built by chatting.",
+  description:
+    "Connect PostHog or Postgres and describe what you want to see. Prism builds live dashboards from your data, and you refine them by chatting.",
+  applicationName: "Prism",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

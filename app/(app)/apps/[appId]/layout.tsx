@@ -9,7 +9,15 @@ import { BuildChat } from "@/components/apps/build-chat";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getCurrentUserApp, type AppDetail } from "@/lib/apps";
 
-export const metadata: Metadata = { title: "App" };
+/**
+ * The tab shows the app's name, or a dashboard's title. A template only
+ * reaches one level down, so this passes the root's on to the dashboards.
+ */
+export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
+  const { appId } = await params;
+  const app = await getCurrentUserApp(appId);
+  return { title: { default: app?.name ?? "App", template: "%s · Prism" } };
+}
 
 type Params = Promise<{ appId: string }>;
 
