@@ -1,4 +1,4 @@
-import { and, count, eq } from "drizzle-orm";
+import { and, asc, count, eq, gt, sql } from "drizzle-orm";
 
 import type { Database } from "@/lib/db";
 import { apps, dashboards } from "@/lib/db/schema";
@@ -47,6 +47,36 @@ export function createDashboardService({ db }: { db: Database }) {
         .values({ appId, userId, artifactId, title, position })
         .returning({ id: dashboards.id });
       return created;
+    },
+
+    /**
+     * Removes the app's record of a dashboard and closes the gap in the
+     * sidebar order. Returns false if it isn't this user's dashboard in that app.
+     */
+    async remove(userId: string, appId: string, artifactId: string): Promise<boolean> {
+      return db.transaction(async (tx) => {
+        const [removed] = await tx
+          .delete(dashboards)
+          .where(
+            and(eq(dashboards.artifactId, artifactId), eq(dashboards.appId, appId), eq(dashboards.userId, userId)),
+          )
+          .returning({ position: dashboards.position });
+        if (!removed) return false;
+        await tx
+          .update(dashboards)
+          .set({ position: sql`${dashboards.position} - 1` })
+          .where(and(eq(dashboards.appId, appId), gt(dashboards.position, removed.position)));
+        return true;
+      });
+    },
+
+    /** The app's dashboards, in sidebar order, if the app is this user's. */
+    async list(userId: string, appId: string): Promise<{ id: string; artifactId: string; title: string }[]> {
+      return db
+        .select({ id: dashboards.id, artifactId: dashboards.artifactId, title: dashboards.title })
+        .from(dashboards)
+        .where(and(eq(dashboards.appId, appId), eq(dashboards.userId, userId)))
+        .orderBy(asc(dashboards.position));
     },
 
     /** The app a dashboard belongs to, if it's this user's. */

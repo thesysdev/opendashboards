@@ -9,6 +9,8 @@ import type { AppTreeNode } from "@/lib/apps";
 import { appPath, dashboardPath, parseAppPath } from "@/lib/apps/paths";
 import { cn } from "@/lib/utils";
 
+import { DashboardMenu } from "./dashboard-menu";
+
 /**
  * The sidebar's app tree. The open app is expanded; others expand with their
  * chevron. The highlight reads the URL, so the tree prerenders without it and
@@ -92,13 +94,13 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                 {app.dashboards.map((dashboard) => {
                   const active = dashboard.id === activeDashboardId;
                   return (
-                    <li key={dashboard.id}>
+                    <li key={dashboard.id} className="group/dashboard relative">
                       <Link
                         href={dashboardPath(app.id, dashboard.id)}
                         aria-current={active ? "page" : undefined}
                         title={dashboard.title}
                         className={cn(
-                          "flex h-7 items-center gap-2 rounded-lg pr-2 pl-4 text-[0.8125rem] text-foreground/65 transition-colors",
+                          "flex h-7 items-center gap-2 rounded-lg pr-7 pl-4 text-[0.8125rem] text-foreground/65 transition-colors",
                           "hover:bg-black/[0.04] hover:text-foreground",
                           "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
                           active && "bg-black/[0.06] font-medium text-foreground",
@@ -107,6 +109,11 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                         <LayoutDashboardIcon className="size-3.5 shrink-0 opacity-60" aria-hidden />
                         <span className="truncate">{dashboard.title}</span>
                       </Link>
+                      <DashboardMenu
+                        appId={app.id}
+                        dashboard={dashboard}
+                        className="absolute top-1 right-1 opacity-0 group-hover/dashboard:opacity-100 focus-visible:opacity-100"
+                      />
                     </li>
                   );
                 })}

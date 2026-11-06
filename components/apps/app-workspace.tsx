@@ -1,9 +1,10 @@
 "use client";
 
+import { OpenUICloudProvider } from "@openuidev/react-ui/cloud";
 import { ChevronLeftIcon, PanelRightCloseIcon, PanelRightOpenIcon, SparklesIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createContext, use, useState } from "react";
+import { createContext, use, useCallback, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { appPath, dashboardPath, parseAppPath } from "@/lib/apps/paths";
@@ -12,6 +13,33 @@ import { cn } from "@/lib/utils";
 type Dashboard = { id: string; title: string };
 
 const BuildPanelContext = createContext<{ open: boolean; setOpen: (open: boolean) => void } | null>(null);
+
+type DashboardResponses = {
+  responses: Readonly<Record<string, string>>;
+  publish: (artifactId: string, response: string) => void;
+};
+
+const DashboardResponsesContext = createContext<DashboardResponses | null>(null);
+
+function useDashboardResponses() {
+  const context = use(DashboardResponsesContext);
+  if (!context) throw new Error("Dashboard responses are only available inside AppWorkspace");
+  return context;
+}
+
+/**
+ * The latest create/edit response OpenUI Cloud gave for a dashboard in this
+ * session. Passed to its renderer as `response`, it carries the new version,
+ * so an open dashboard follows an edit as it's built.
+ */
+export function useDashboardResponse(artifactId: string): string | undefined {
+  return useDashboardResponses().responses[artifactId];
+}
+
+/** For the Build chat: hands a create/edit response to the dashboard it's for. */
+export function usePublishDashboardResponse() {
+  return useDashboardResponses().publish;
+}
 
 /** The Build panel's open state, for content inside the workspace. */
 export function useBuildPanel() {
@@ -47,8 +75,19 @@ export function AppWorkspace({
   children: React.ReactNode;
 }) {
   const [open, setOpen] = useState(dashboards.length === 0);
+  const [responses, setResponses] = useState<Record<string, string>>({});
+  const publish = useCallback(
+    (artifactId: string, response: string) =>
+      setResponses((current) => (current[artifactId] === response ? current : { ...current, [artifactId]: response })),
+    [],
+  );
+  const dashboardResponses = useMemo(() => ({ responses, publish }), [responses, publish]);
 
   return (
+    // One Cloud connection for the workspace: the chat and the dashboard
+    // share its token and artifact cache.
+    <OpenUICloudProvider token="/api/frontend-token">
+    <DashboardResponsesContext value={dashboardResponses}>
     <BuildPanelContext value={{ open, setOpen }}>
       <div className="flex h-full flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b px-2">
@@ -111,6 +150,8 @@ export function AppWorkspace({
         </div>
       </div>
     </BuildPanelContext>
+    </DashboardResponsesContext>
+    </OpenUICloudProvider>
   );
 }
 

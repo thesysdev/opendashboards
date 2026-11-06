@@ -10,6 +10,7 @@ import {
 import { parseMessage } from "@openuidev/lang-core";
 
 import { getDb } from "@/lib/db";
+import { logError } from "@/lib/log";
 import { ToolError, toolsFor, type ToolContext } from "@/lib/tools";
 
 import spec from "./generated/kit.spec.json";
@@ -45,6 +46,88 @@ export function getDashboards(): Dashboard<ToolContext> {
 export function getDashboardService(): DashboardService {
   service ??= createDashboardService({ db: getDb() });
   return service;
+}
+
+const CLOUD_URL = "https://api.thesys.dev";
+
+/**
+ * Deletes a dashboard in OpenUI Cloud, as its owner. The server SDK has no
+ * delete, so this calls Cloud's API with the user's own frontend token, the
+ * same request react-ui's `useArtifactDelete` makes from the browser.
+ * One that's already gone counts as deleted.
+ */
+async function deleteInCloud(userId: string, artifactId: string): Promise<void> {
+  const { token } = await getOpenUI().createFrontendToken({ userId });
+  const response = await fetch(`${CLOUD_URL}/v1/artifacts/${encodeURIComponent(artifactId)}`, {
+    method: "DELETE",
+    headers: { "x-thesys-frontend-token": token },
+    cache: "no-store",
+  });
+  if (!response.ok && response.status !== 404) {
+    throw new Error(`OpenUI Cloud refused to delete the dashboard (HTTP ${response.status})`);
+  }
+}
+
+/**
+ * A dashboard's stored program (OpenUI Lang: its layout, components and the
+ * query behind each one), read from OpenUI Cloud as its owner. As with
+ * delete, the server SDK has no read, so this calls Cloud's API with the
+ * user's own frontend token.
+ */
+export async function readDashboard(
+  userId: string,
+  appId: string,
+  artifactId: string,
+): Promise<{ ok: true; title: string; program: string } | { ok: false; reason: "not_found" | "cloud_failed" }> {
+  const dashboard = (await getDashboardService().list(userId, appId)).find((row) => row.artifactId === artifactId);
+  if (!dashboard) return { ok: false, reason: "not_found" };
+  try {
+    const { token } = await getOpenUI().createFrontendToken({ userId });
+    const response = await fetch(`${CLOUD_URL}/v1/artifacts/${encodeURIComponent(artifactId)}`, {
+      headers: { "x-thesys-frontend-token": token },
+      cache: "no-store",
+    });
+    if (response.status === 404) return { ok: false, reason: "not_found" };
+    if (!response.ok) throw new Error(`OpenUI Cloud refused to read the dashboard (HTTP ${response.status})`);
+    const body = (await response.json()) as { content?: unknown };
+    const program = typeof body.content === "string" ? body.content : JSON.stringify(body.content ?? "");
+    return { ok: true, title: dashboard.title, program };
+  } catch (error) {
+    logError("dashboards.read", error);
+    return { ok: false, reason: "cloud_failed" };
+  }
+}
+
+export type DeleteResult = { ok: true } | { ok: false; reason: "not_found" | "cloud_failed" };
+
+/**
+ * Deletes one of an app's dashboards: in OpenUI Cloud first, then Prism's
+ * record of it. If Cloud fails, the record stays, so the sidebar never hides
+ * a dashboard that still exists.
+ */
+export async function deleteDashboard(userId: string, appId: string, artifactId: string): Promise<DeleteResult> {
+  const dashboard = await getDashboardService().findByArtifact(userId, artifactId);
+  if (!dashboard || dashboard.appId !== appId) return { ok: false, reason: "not_found" };
+  try {
+    await deleteInCloud(userId, artifactId);
+  } catch (error) {
+    logError("dashboards.delete", error);
+    return { ok: false, reason: "cloud_failed" };
+  }
+  await getDashboardService().remove(userId, appId, artifactId);
+  return { ok: true };
+}
+
+/**
+ * Deletes every dashboard of an app in OpenUI Cloud, before the app itself
+ * goes. Returns false if any couldn't be deleted.
+ */
+export async function deleteAppDashboardsInCloud(userId: string, appId: string): Promise<boolean> {
+  const all = await getDashboardService().list(userId, appId);
+  const results = await Promise.allSettled(all.map(({ artifactId }) => deleteInCloud(userId, artifactId)));
+  const failed = results.filter((result) => result.status === "rejected");
+  for (const failure of failed) logError("dashboards.deleteApp", (failure as PromiseRejectedResult).reason);
+  return failed.length === 0;
 }
 
 /** Every source's dashboard tools, in the shape the interpreter runs. */

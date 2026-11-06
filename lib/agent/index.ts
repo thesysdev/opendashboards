@@ -4,8 +4,16 @@ import OpenAI from "openai";
 import type { RunnableToolFunctionWithContext } from "openai/lib/RunnableFunction";
 import { z } from "zod";
 
-import { artifactOf, getDashboardService, getDashboards, MODEL } from "@/lib/dashboards";
+import {
+  artifactOf,
+  deleteDashboard,
+  getDashboardService,
+  getDashboards,
+  MODEL,
+  readDashboard,
+} from "@/lib/dashboards";
 import { logError } from "@/lib/log";
+import spec from "@/lib/dashboards/generated/kit.spec.json";
 import { ToolError, toolsFor, type ToolContext } from "@/lib/tools";
 
 /**
@@ -24,7 +32,7 @@ export const MAX_ROUNDS = 24;
 export const SYSTEM_PROMPT = `You are Prism's dashboard builder. The user is building an app: a set of live dashboards over their own data.
 
 - Explore before you build: find the user's connections with list_connections, look at what data exists, and run queries to check that the numbers you plan to show are real and sensible.
-- Build with create_dashboard and change an existing one with edit_dashboard. Describe in the prompt what to show and exactly which tool calls and queries load each part, with the connection id. Dashboards load their data live every time they open.
+- Build with create_dashboard. To explain or change an existing dashboard, read it first with read_dashboard (find it with list_dashboards), then use edit_dashboard; delete one with delete_dashboard only when the user asks. Describe in the prompt what to show and exactly which tool calls and queries load each part, with the connection id. Dashboards load their data live every time they open.
 - Reply in short Markdown. Say what you built and what it shows. Don't paste query results or code unless asked.`;
 
 let gateway: OpenAI | undefined;
@@ -50,7 +58,7 @@ export function agentTools(): AgentTool[] {
       tool.run(args, turn, { signal: turn.signal, caller: "agent" }),
     ),
   );
-  return [...dataTools, createDashboard, editDashboard];
+  return [...dataTools, listDashboards, readDashboardTool, createDashboard, editDashboard, deleteDashboardTool];
 }
 
 function define(
@@ -80,6 +88,61 @@ function define(
   };
 }
 
+const listDashboards = define(
+  "list_dashboards",
+  "The dashboards already in this app: id and title. Pass an id to edit_dashboard to change one.",
+  z.toJSONSchema(z.object({})),
+  async (_input, turn) =>
+    (await getDashboardService().list(turn.userId, turn.appId)).map(({ artifactId, title }) => ({
+      dashboard: artifactId,
+      title,
+    })),
+);
+
+/** Enough for any dashboard so far (10–15K characters), without flooding the context. */
+const MAX_PROGRAM_CHARS = 60_000;
+
+const kitComponents = (spec as unknown as { components: Record<string, { signature: string; description: string }> })
+  .components;
+
+/** The dashboard kit's own description of each component a program uses. */
+function componentsUsed(program: string): Record<string, string> {
+  const used: Record<string, string> = {};
+  for (const [, name] of program.matchAll(/\b([A-Z][A-Za-z0-9]*)\(/g)) {
+    const component = kitComponents[name];
+    if (component && !used[name]) used[name] = component.description;
+  }
+  return used;
+}
+
+const readArgs = z.object({
+  dashboard: z.string().min(1).max(200).describe("The dashboard's id, from list_dashboards or create_dashboard."),
+});
+
+const readDashboardTool = define(
+  "read_dashboard",
+  "Reads a dashboard in this app: its program in OpenUI Lang, with every section, component, title and the exact query behind each one, plus what each component draws. Read a dashboard before explaining or changing it.",
+  z.toJSONSchema(readArgs),
+  async (input, turn) => {
+    const args = parseArgs(readArgs, input);
+    const result = await readDashboard(turn.userId, turn.appId, args.dashboard);
+    if (!result.ok) {
+      throw result.reason === "not_found"
+        ? new ToolError("dashboard_not_found", `No dashboard ${args.dashboard} in this app.`)
+        : new ToolError("cloud_failed", "OpenUI Cloud couldn't read the dashboard. Try again.");
+    }
+    const truncated = result.program.length > MAX_PROGRAM_CHARS;
+    return {
+      dashboard: args.dashboard,
+      title: result.title,
+      program: truncated ? result.program.slice(0, MAX_PROGRAM_CHARS) : result.program,
+      ...(truncated ? { truncated: true } : {}),
+      // What each kit component it uses draws, e.g. that GeoMap is a map with a ranked list.
+      components: componentsUsed(result.program),
+    };
+  },
+);
+
 const createArgs = z.object({
   title: z.string().trim().min(1).max(120).describe("The dashboard's title."),
   prompt: z
@@ -102,13 +165,20 @@ const createDashboard = define(
 );
 
 const editArgs = z.object({
-  dashboard: z.string().min(1).max(200).describe("The dashboard's id, from create_dashboard."),
+  dashboard: z.string().min(1).max(200).describe("The dashboard's id, from list_dashboards or create_dashboard."),
   prompt: z.string().trim().min(1).max(20_000).describe("What to change."),
+  title: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .optional()
+    .describe("A new title, when the change renames the dashboard. Leave it out to keep the current one."),
 });
 
 const editDashboard = define(
   "edit_dashboard",
-  "Changes a dashboard in this app, in place.",
+  "Changes a dashboard in this app, in place. Pass a title too when it should be renamed.",
   z.toJSONSchema(editArgs),
   async (input, turn) => {
     const args = parseArgs(editArgs, input);
@@ -119,27 +189,50 @@ const editDashboard = define(
     const response = await getDashboards().edit({ id: args.dashboard, prompt: args.prompt }, turn, {
       signal: turn.signal,
     });
-    return remember(response, undefined, turn);
+    return remember(response, args.title, turn);
   },
 );
 
-/** Records the dashboard against the app, and tells the model its id. */
+const deleteArgs = z.object({
+  dashboard: z.string().min(1).max(200).describe("The dashboard's id, from list_dashboards or create_dashboard."),
+});
+
+const deleteDashboardTool = define(
+  "delete_dashboard",
+  "Deletes a dashboard from this app, permanently. Use it only when the user asks to delete that dashboard.",
+  z.toJSONSchema(deleteArgs),
+  async (input, turn) => {
+    const args = parseArgs(deleteArgs, input);
+    const result = await deleteDashboard(turn.userId, turn.appId, args.dashboard);
+    if (!result.ok) {
+      throw result.reason === "not_found"
+        ? new ToolError("dashboard_not_found", `No dashboard ${args.dashboard} in this app.`)
+        : new ToolError("cloud_failed", "OpenUI Cloud couldn't delete the dashboard. Try again.");
+    }
+    return { deleted: args.dashboard };
+  },
+);
+
+/**
+ * Records the dashboard against the app (or its new title), then returns OpenUI Cloud's
+ * response unchanged as the tool result: it names the dashboard (its
+ * `artifact_id`) for the model, and the Build chat hands it to the open
+ * dashboard's renderer, which follows the new version as it's built.
+ */
 async function remember(response: string, title: string | undefined, turn: TurnContext) {
   const artifact = artifactOf(response);
   if (!artifact) {
     logError("agent.dashboard", new Error("OpenUI Cloud's response names no artifact"));
     throw new ToolError("no_artifact", "OpenUI Cloud didn't return a dashboard.");
   }
-  const name = title ?? artifact.title;
-  if (title || artifact.title) {
-    const recorded = await getDashboardService().record(turn.userId, turn.appId, {
-      artifactId: artifact.id,
-      title: name ?? "Dashboard",
-    });
+  // Only a title the agent gave: Cloud's response keeps the name the
+  // dashboard was created with, so falling back to it would undo a rename.
+  if (title) {
+    const recorded = await getDashboardService().record(turn.userId, turn.appId, { artifactId: artifact.id, title });
     if (!recorded) throw new ToolError("not_found", "This app no longer exists.");
   }
   turn.dashboards.push(artifact.id);
-  return { dashboard: artifact.id, title: name, result: response };
+  return response;
 }
 
 function parseArgs<T>(schema: z.ZodType<T>, input: unknown): T {

@@ -43,9 +43,15 @@ const toolMessage = z
 
 const message = z.discriminatedUnion("role", [userMessage, assistantMessage, toolMessage]);
 
+/** The AG-UI `context` entry naming the dashboard the user is looking at; its value is the dashboard's id. */
+export const VIEWING_DASHBOARD = "The dashboard the user is looking at";
+
+const contextEntry = z.object({ description: z.string().max(200), value: z.string().max(500) }).strip();
+
 export const chatBodySchema = z
   .object({
     threadId: threadIdSchema,
+    context: z.array(contextEntry).max(10).optional(),
     messages: z
       .array(message)
       .min(1)
@@ -55,7 +61,11 @@ export const chatBodySchema = z
   })
   .loose();
 
-export type ChatBody = { threadId: string; messages: ChatCompletionMessageParam[] };
+export type ChatBody = {
+  threadId: string;
+  messages: ChatCompletionMessageParam[];
+  context?: { description: string; value: string }[];
+};
 
 /** Every tool call is answered, in order, before the next non-tool message. */
 function toolResultsAnswerCalls(messages: z.infer<typeof message>[]): boolean {

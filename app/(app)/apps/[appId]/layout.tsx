@@ -41,7 +41,7 @@ async function AppView({ params, children }: { params: Params; children: React.R
       builder={
         <BuildChat
           appId={app.id}
-          dashboards={app.dashboards.map(({ id }) => ({ id }))}
+          dashboards={app.dashboards.map(({ id, artifactId }) => ({ id, artifactId }))}
           hasPendingPrompt={Boolean(app.pendingPrompt)}
         />
       }

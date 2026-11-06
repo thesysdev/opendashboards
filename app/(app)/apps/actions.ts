@@ -2,11 +2,13 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+import { z } from "zod";
 
 import { requireUser } from "@/lib/auth/user";
 import { getAppService } from "@/lib/apps";
 import { getConnectionService } from "@/lib/connections";
-import type { AppResult } from "@/lib/apps/errors";
+import { fail, type AppResult } from "@/lib/apps/errors";
+import { deleteAppDashboardsInCloud, deleteDashboard, getDashboardService } from "@/lib/dashboards";
 
 /*
  * Public POST endpoints like every Server Action: each authenticates itself,
@@ -37,6 +39,13 @@ export async function renameAppAction(input: unknown): Promise<AppResult> {
 /** Deletes the app and goes back to the list. Returns only on failure. */
 export async function deleteAppAction(input: unknown): Promise<AppResult<never>> {
   const user = await requireUser();
+  // Its dashboards live in OpenUI Cloud; delete them first so none are left behind.
+  const appId = (input as { id?: unknown } | null)?.id;
+  if (typeof appId === "string" && z.uuid().safeParse(appId).success) {
+    if (!(await deleteAppDashboardsInCloud(user.id, appId))) {
+      return fail({ code: "internal", message: "OpenUI Cloud couldn't delete the app's dashboards. Try again." });
+    }
+  }
   const result = await getAppService().remove(user.id, input);
   if (!result.ok) return result;
   revalidateShell();
@@ -58,4 +67,26 @@ export async function takePendingPromptAction(appId: string): Promise<string | n
   if (!connections.length) return pending.prompt;
   const names = connections.map((connection) => `${connection.name} (${connection.id})`).join(", ");
   return `${pending.prompt}\n\nUse these data sources: ${names}`;
+}
+
+const deleteDashboardSchema = z.object({ appId: z.uuid(), dashboardId: z.uuid() }).strict();
+
+/** Deletes one dashboard of an app, in OpenUI Cloud and in the sidebar. */
+export async function deleteDashboardAction(input: unknown): Promise<AppResult> {
+  const user = await requireUser();
+  const parsed = deleteDashboardSchema.safeParse(input);
+  if (!parsed.success) return fail({ code: "not_found", message: "This dashboard doesn't exist or was deleted." });
+  const { appId, dashboardId } = parsed.data;
+
+  const dashboard = (await getDashboardService().list(user.id, appId)).find((row) => row.id === dashboardId);
+  if (!dashboard) return fail({ code: "not_found", message: "This dashboard doesn't exist or was deleted." });
+
+  const result = await deleteDashboard(user.id, appId, dashboard.artifactId);
+  if (!result.ok) {
+    return result.reason === "not_found"
+      ? fail({ code: "not_found", message: "This dashboard doesn't exist or was deleted." })
+      : fail({ code: "internal", message: "OpenUI Cloud couldn't delete the dashboard. Try again." });
+  }
+  revalidateShell();
+  return { ok: true, data: undefined };
 }
