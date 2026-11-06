@@ -270,9 +270,52 @@
 }
 .pdk-card-head {
   display: flex;
+  flex-wrap: wrap;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 12px;
+  gap: 8px 12px;
+}
+/* A card's own switches: a compact segmented control at the right of its
+   header, or under the title when the card is too narrow for both. */
+.pdk-card { container-type: inline-size; }
+.pdk-card-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin-left: auto;
+}
+.pdk-card-controls .pdk-chips {
+  gap: 0;
+  padding: 2px;
+  border-radius: 8px;
+  background: var(--pdk-neutral-soft);
+}
+.pdk-card-controls .pdk-chip {
+  height: 24px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  font-size: 12px;
+  color: var(--pdk-ink-secondary);
+}
+.pdk-card-controls .pdk-chip:hover { color: var(--pdk-ink); }
+.pdk-card-controls .pdk-chip[aria-pressed="true"] {
+  background: var(--pdk-surface);
+  color: var(--pdk-ink);
+  box-shadow: 0 1px 2px rgba(16, 24, 40, 0.08), 0 0 0 1px rgba(16, 24, 40, 0.04);
+}
+.pdk-card-controls .pdk-select select {
+  height: 28px;
+  padding: 0 28px 0 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+}
+.pdk-card-controls .pdk-select::after { right: 11px; }
+@container (max-width: 520px) {
+  .pdk-card-head { flex-direction: column; }
+  .pdk-card-controls { margin-left: 0; }
 }
 .pdk-card-title {
   margin: 0;
@@ -470,6 +513,51 @@
 }
 
 /* ---------- KPI ---------- */
+
+/* The strip: Kpis sets its column counts from how many tiles it has, and
+   picks one by its own width, so rows stay balanced (5 → 3 + 2, never 4 + 1). */
+.pdk-kpis { container-type: inline-size; }
+.pdk-kpis-grid {
+  display: grid;
+  grid-template-columns: repeat(var(--pdk-kpis-wide, 4), minmax(0, 1fr));
+  gap: 16px;
+}
+@container (max-width: 960px) {
+  .pdk-kpis-grid { grid-template-columns: repeat(var(--pdk-kpis-medium, 3), minmax(0, 1fr)); }
+}
+@container (max-width: 520px) {
+  .pdk-kpis-grid { grid-template-columns: repeat(var(--pdk-kpis-narrow, 2), minmax(0, 1fr)); }
+  /* Two to a row: an odd last tile takes the whole row rather than half of it. */
+  .pdk-kpis[data-odd] .pdk-kpis-grid > :last-child { grid-column: 1 / -1; }
+}
+.pdk-kpi-hint {
+  margin-top: -4px;
+  font-size: 12px;
+  color: var(--pdk-ink-muted);
+}
+.pdk-kpi-text {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 22px;
+}
+.pdk-kpi-text-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.pdk-kpi-dot {
+  flex: none;
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: var(--pdk-ink-muted);
+}
+.pdk-kpi-dot-good { background: var(--pdk-good-mark); }
+.pdk-kpi-dot-bad { background: var(--pdk-bad-mark); }
+.pdk-kpi-dot-warning { background: var(--pdk-warning-mark); }
+.pdk-kpi-dot-info { background: var(--pdk-info); }
 
 .pdk-kpi {
   gap: 10px;

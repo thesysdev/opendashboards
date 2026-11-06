@@ -69,7 +69,7 @@ export const ChipFilter = defineComponent({
   name: "ChipFilter",
   props: chipFilterSchema,
   description:
-    "Pills for 2–6 segments; one is always selected.",
+    "Pills for 2–6 segments; one is always selected. In a FilterBar for a dashboard-wide segment, or in a Card's controls to switch that card's breakdown (leave label out there: the card title names it).",
   component: function ChipFilterView({ props }: ComponentRenderProps<z.infer<typeof chipFilterSchema>>) {
     const streaming = useIsStreaming();
     const field = useStateField(props.name, props.value);
@@ -108,7 +108,7 @@ export const SelectFilter = defineComponent({
   name: "SelectFilter",
   props: selectFilterSchema,
   description:
-    "Dropdown for one value out of a longer list.",
+    "Dropdown for one value out of a longer list. In a FilterBar for a dashboard-wide segment, or in a Card's controls to switch that card's breakdown.",
   component: function SelectFilterView({ props }: ComponentRenderProps<z.infer<typeof selectFilterSchema>>) {
     const streaming = useIsStreaming();
     const field = useStateField(props.name, props.value);

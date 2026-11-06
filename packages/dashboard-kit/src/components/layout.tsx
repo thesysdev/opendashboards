@@ -6,8 +6,8 @@ import { z } from "zod/v4";
 import { widthClass, widthSchema, type Width } from "../schema";
 import { Bars, Donut, Intervals, TimeSeries, Waterfall } from "./charts";
 import { Cohorts, Funnel, Goal, Heatmap, KeyValues, Leaderboard, SegmentedBar, Table } from "./data";
-import { FilterBar } from "./filters";
-import { Kpi, Stat } from "./kpi";
+import { ChipFilter, FilterBar, SelectFilter } from "./filters";
+import { Kpis, Stat } from "./kpi";
 import { GeoMap } from "./geo";
 import { Flow, Scatter } from "./relations";
 import { CompareProvider } from "./shared";
@@ -39,13 +39,14 @@ const cardSchema = z.object({
   content: z.array(cardContent),
   width: widthSchema.optional(),
   subtitle: z.string().optional(),
+  controls: z.array(z.union([ChipFilter.ref, SelectFilter.ref])).optional(),
 });
 
 export const Card = defineComponent({
   name: "Card",
   props: cardSchema,
   description:
-    "content stacks top to bottom, usually [Stat?, one visual]. Default width \"half\". title says what is plotted; subtitle gives units, period or source (\"Weekly · USD\").",
+    "content stacks top to bottom, usually [Stat?, one visual]. Default width \"half\". title says what is plotted; subtitle gives units, period or source (\"Weekly · USD\"). controls are this card's own switches, shown in its header: a ChipFilter or SelectFilter for what the card is broken down by or which metric it plots, e.g. Card(\"Top sources\", [Leaderboard(...)], \"half\", \"Visitors\", [ChipFilter(\"sourceBy\", [{value: \"channel\", label: \"Channel\"}, {value: \"domain\", label: \"Domain\"}], $sourceBy)]).",
   component: ({ props, renderNode }: ComponentRenderProps<z.infer<typeof cardSchema>>) => (
     <section className={`pdk-card ${widthClass(props.width, "half")}`} aria-label={props.title}>
       <header className="pdk-card-head">
@@ -53,6 +54,11 @@ export const Card = defineComponent({
           <h3 className="pdk-card-title">{props.title}</h3>
           {props.subtitle ? <p className="pdk-card-subtitle">{props.subtitle}</p> : null}
         </div>
+        {Array.isArray(props.controls) && props.controls.length ? (
+          <div className="pdk-card-controls" role="toolbar" aria-label={`${props.title} view`}>
+            {renderNode(props.controls)}
+          </div>
+        ) : null}
       </header>
       <div className="pdk-card-body">{renderNode(props.content)}</div>
     </section>
@@ -62,19 +68,19 @@ export const Card = defineComponent({
 /* ---------- Row ---------- */
 
 const rowSchema = z.object({
-  items: z.array(z.union([Kpi.ref, Card.ref])),
+  items: z.array(Card.ref),
 });
 
 export const Row = defineComponent({
   name: "Row",
   props: rowSchema,
   description:
-    "Kpis and Cards side by side on a 12-column grid.",
+    "Cards side by side on a 12-column grid; their widths add up to a full row.",
   component: function RowView({ props, renderNode }: ComponentRenderProps<z.infer<typeof rowSchema>>) {
     const items = Array.isArray(props.items) ? props.items : [];
     const widths = items.map((item) => {
       const node = item as { typeName?: string; props?: { width?: Width | null } } | null;
-      return node?.props?.width ?? (node?.typeName === "Kpi" ? "quarter" : "half");
+      return node?.props?.width ?? "half";
     });
     const mediumFill = orphans(widths, ["quarter", "third", "half"]);
     const smallFill = orphans(widths, ["quarter"]);
@@ -117,7 +123,7 @@ function orphans(widths: Width[], halves: Width[]): Set<number> {
 
 const sectionSchema = z.object({
   title: z.string(),
-  rows: z.array(Row.ref),
+  rows: z.array(z.union([Kpis.ref, Row.ref])),
   description: z.string().optional(),
 });
 
@@ -125,7 +131,7 @@ export const Section = defineComponent({
   name: "Section",
   props: sectionSchema,
   description:
-    "A titled group of rows. Pass \"\" as title for the lead KPI section.",
+    "A titled group of Kpis strips and Rows of Cards. Pass \"\" as title for the lead KPI section.",
   component: ({ props, renderNode }: ComponentRenderProps<z.infer<typeof sectionSchema>>) => (
     <section className="pdk-section">
       {props.title ? (
