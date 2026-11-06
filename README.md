@@ -1,36 +1,39 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Prism
 
-## Getting Started
+Live dashboards from your data, built by chatting. This repository currently contains the
+**Data Connections** slice: adding, testing and managing PostHog connections.
 
-First, run the development server:
+## Local development
 
 ```bash
-npm run dev
-# or
-yarn dev
-# or
+pnpm install
+cp .env.example .env.local
+pnpm db:up        # Postgres on localhost:54329 (plus a prism_test database)
+pnpm db:migrate
 pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Without `GATEWAY_SHARED_SECRET`, requests act as `DEV_USER_ID`, or as whatever `X-User-Id`
+header a request sends. Without `KMS_KEY_ID`, API keys are stored unencrypted. Both
+fallbacks only work outside production.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Tests
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+```bash
+pnpm test
+```
 
-## Learn More
+The connection service tests run against the `prism_test` database from `pnpm db:up`.
 
-To learn more about Next.js, take a look at the following resources:
+## How it fits together
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+| Area | Where |
+| --- | --- |
+| Gateway auth (`X-User-Id` + `X-Gateway-Secret`) | `lib/auth/`, `proxy.ts` |
+| Secret storage (`SecretBox`: `plaintext` now, `kms` stubbed) | `lib/secrets/` |
+| PostHog client (fixed US/EU hosts, error classification) | `lib/posthog/` |
+| Connection service (validation, ownership, statuses) | `lib/connections/` |
+| Schema and migrations | `lib/db/schema.ts`, `db/migrations/` |
+| UI | `app/(app)/`, `components/` |
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+Schema changes: edit `lib/db/schema.ts`, then run `pnpm db:generate` and `pnpm db:migrate`.

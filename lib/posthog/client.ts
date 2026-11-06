@@ -1,0 +1,117 @@
+import type { HostKind } from "@/lib/db/schema";
+
+import { POSTHOG_HOSTS } from "./hosts";
+
+export type PostHogErrorCode =
+  /** The key is wrong, revoked, or its user was deleted (PostHog sends 401 or 403). */
+  | "invalid_key"
+  /** 403 permission error naming a scope: the key lacks the Query Read permission. */
+  | "missing_scope"
+  /** 403 permission error otherwise: the key can't access this project. */
+  | "project_forbidden"
+  /** 404: no such project on this host. */
+  | "project_not_found"
+  /** 429: PostHog's rate limit or hourly query budget. */
+  | "rate_limited"
+  /** Network error, timeout, or 5xx. */
+  | "unavailable"
+  /** Anything else PostHog answered that we don't expect. */
+  | "unexpected";
+
+export class PostHogError extends Error {
+  constructor(
+    readonly code: PostHogErrorCode,
+    readonly status?: number,
+  ) {
+    super(`PostHog request failed: ${code}${status ? ` (HTTP ${status})` : ""}`);
+    this.name = "PostHogError";
+  }
+}
+
+export type PostHogTarget = { hostKind: HostKind; projectId: string; apiKey: string };
+
+const DEFAULT_TIMEOUT_MS = 15_000;
+
+/**
+ * Runs a HogQL query through `POST /api/projects/:id/query/`. The host comes
+ * from the host kind, never from a caller-supplied URL.
+ */
+export async function runHogQLQuery(
+  target: PostHogTarget,
+  query: string,
+  options: { signal?: AbortSignal; timeoutMs?: number; fetch?: typeof fetch } = {},
+): Promise<{ results: unknown[] }> {
+  const { url } = POSTHOG_HOSTS[target.hostKind];
+  const timeout = AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+
+  let response: Response;
+  try {
+    response = await (options.fetch ?? fetch)(
+      `${url}/api/projects/${encodeURIComponent(target.projectId)}/query/`,
+      {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${target.apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ query: { kind: "HogQLQuery", query }, name: "prism" }),
+        redirect: "error",
+        cache: "no-store",
+        signal,
+      },
+    );
+  } catch (error) {
+    // A caller's own abort is theirs to handle; a timeout or network error isn't.
+    if (options.signal?.aborted) throw error;
+    throw new PostHogError("unavailable");
+  }
+
+  if (!response.ok) throw new PostHogError(await classify(response), response.status);
+
+  const body: unknown = await response.json().catch(() => null);
+  if (!isRecord(body) || !Array.isArray(body.results)) {
+    throw new PostHogError("unexpected", response.status);
+  }
+  return { results: body.results };
+}
+
+/** Checks a key and project with the cheapest possible query. */
+export async function testConnection(
+  target: PostHogTarget,
+  options: { signal?: AbortSignal; fetch?: typeof fetch } = {},
+): Promise<void> {
+  await runHogQLQuery(target, "SELECT 1", options);
+}
+
+async function classify(response: Response): Promise<PostHogErrorCode> {
+  switch (response.status) {
+    case 401:
+    case 403: {
+      // PostHog answers a bad key with 403 too, so the body decides:
+      // {"type":"authentication_error","code":"authentication_failed",...}
+      const body = await errorBody(response);
+      if (response.status === 401 || body.type === "authentication_error") return "invalid_key";
+      return /scope/i.test(body.detail) ? "missing_scope" : "project_forbidden";
+    }
+    case 404:
+      return "project_not_found";
+    case 429:
+      return "rate_limited";
+    default:
+      return response.status >= 500 ? "unavailable" : "unexpected";
+  }
+}
+
+async function errorBody(response: Response): Promise<{ type: string; detail: string }> {
+  const body: unknown = await response.json().catch(() => null);
+  if (!isRecord(body)) return { type: "", detail: "" };
+  return {
+    type: typeof body.type === "string" ? body.type : "",
+    detail: typeof body.detail === "string" ? body.detail : "",
+  };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
