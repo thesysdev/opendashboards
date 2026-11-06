@@ -56,6 +56,13 @@ function shapeName(label: string, region: "world" | "us") {
   return COUNTRY_ALIASES[key] ?? label;
 }
 
+/** Readable name for the ranked list: "US" → "United States", "NY" → "New York". */
+function displayName(label: string, region: "world" | "us") {
+  const name = shapeName(label, region);
+  if (name === label) return label;
+  return name === "United States of America" ? "United States" : name;
+}
+
 /* ---------- Shapes, loaded on first use ---------- */
 
 const shapeCache: Partial<Record<"world" | "us", Promise<Shape[]>>> = {};
@@ -167,7 +174,7 @@ export const GeoMap = defineComponent({
           )}
           {hover ? (
             <div className="pdk-tooltip" style={{ position: "absolute", left: hover.x + 12, top: hover.y + 12, pointerEvents: "none", minWidth: 140 }}>
-              <div className="pdk-tooltip-title">{hovered?.label ?? hover.name}</div>
+              <div className="pdk-tooltip-title">{hovered ? displayName(hovered.label, region) : hover.name}</div>
               <div className="pdk-tooltip-row">
                 <span>Value</span>
                 <span className="pdk-tooltip-value">
@@ -192,7 +199,7 @@ export const GeoMap = defineComponent({
             <li key={entry.label} className="pdk-rank-row">
               <div className="pdk-rank-top">
                 <span className="pdk-rank-name" title={entry.label}>
-                  {entry.label}
+                  {displayName(entry.label, region)}
                   {shapes && !mapped.has(normalize(shapeName(entry.label, region))) ? (
                     <span style={{ marginLeft: 6, fontWeight: 400, fontSize: 11.5, color: "var(--pdk-ink-muted)" }}>not on map</span>
                   ) : null}

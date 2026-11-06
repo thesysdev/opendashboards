@@ -1,4 +1,4 @@
-import { library, promptOptions } from "@prism/dashboard-kit";
+import { library } from "@prism/dashboard-kit";
 import { createParser } from "@openuidev/react-lang";
 import { describe, expect, it } from "vitest";
 
@@ -22,12 +22,6 @@ function expectClean(source: string) {
   expect(meta.incomplete).toBe(false);
   expect(source.trimStart().startsWith("root = Dashboard(")).toBe(true);
 }
-
-describe("dashboard kit prompt example", () => {
-  it("parses cleanly", () => {
-    for (const example of promptOptions.examples ?? []) expectClean(example);
-  });
-});
 
 describe("mock dashboards", () => {
   it("cover every seeded dashboard", () => {

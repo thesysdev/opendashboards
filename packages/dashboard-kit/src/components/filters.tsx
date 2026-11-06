@@ -215,7 +215,7 @@ export const DateRangeFilter = defineComponent({
   name: "DateRangeFilter",
   props: dateRangeSchema,
   description:
-    "Dropdown with presets (default 7d, 30d, 90d, 12m, ytd) and a custom range. The value is a preset key or \"2026-10-01..2026-10-31\"; pass it to Query arguments.",
+    "Dropdown with presets (default 7d, 30d, 90d, 12m, ytd) and a custom range; the value is a preset key or \"2026-10-01..2026-10-31\". Only for live data that is fetched per range; with data written into the program, use PeriodPicker.",
   component: function DateRangeFilterView({ props }: ComponentRenderProps<z.infer<typeof dateRangeSchema>>) {
     const field = useStateField(props.name, props.value);
     const presets = options(props.presets).length ? options(props.presets) : DEFAULT_PRESETS;
@@ -305,7 +305,7 @@ export const MultiSelectFilter = defineComponent({
   name: "MultiSelectFilter",
   props: multiSelectSchema,
   description:
-    "Dropdown with checkboxes; the value is an array of selected values ([] means all). Pass it to Query arguments.",
+    "Dropdown with checkboxes; the value is an array of selected values ([] means all). Only for live data that is fetched per selection; with data written into the program, use ChipFilter or SelectFilter.",
   component: function MultiSelectFilterView({ props }: ComponentRenderProps<z.infer<typeof multiSelectSchema>>) {
     const field = useStateField(props.name, props.value);
     const list = options(props.options);
@@ -361,7 +361,7 @@ export const SearchFilter = defineComponent({
   name: "SearchFilter",
   props: searchFilterSchema,
   description:
-    "Search box. Pass its $variable to Table(..., search) or to Query arguments.",
+    "Search box. Pass its $variable to Table(..., search) to filter rows.",
   component: function SearchFilterView({ props }: ComponentRenderProps<z.infer<typeof searchFilterSchema>>) {
     const field = useStateField(props.name, props.value);
     const value = (field.value as string | undefined) ?? "";
