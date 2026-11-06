@@ -11,7 +11,6 @@ pnpm install
 cp .env.example .env.local
 pnpm db:up        # Postgres on localhost:54329 (plus a prism_test database)
 pnpm db:reset     # create the tables from lib/db/schema.ts
-pnpm db:seed      # optional: mock connections and apps for DEV_USER_ID
 pnpm dev
 ```
 

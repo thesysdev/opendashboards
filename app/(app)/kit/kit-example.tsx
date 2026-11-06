@@ -1,9 +1,9 @@
 "use client";
 
-import { MockDashboard } from "@/components/apps/mock-dashboard";
+import { KitDashboard } from "@/app/(app)/kit/kit-dashboard";
 
 import { GALLERY } from "./gallery";
 
 export function KitExample() {
-  return <MockDashboard source={GALLERY} />;
+  return <KitDashboard source={GALLERY} />;
 }

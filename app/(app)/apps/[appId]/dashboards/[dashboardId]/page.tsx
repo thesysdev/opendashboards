@@ -2,9 +2,7 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { DashboardPlaceholder } from "@/components/apps/dashboard-views";
-import { MockDashboard } from "@/components/apps/mock-dashboard";
 import { getCurrentUserApp } from "@/lib/apps";
-import { MOCK_DASHBOARDS } from "@/lib/mock-dashboards";
 
 type Params = Promise<{ appId: string; dashboardId: string }>;
 
@@ -23,7 +21,5 @@ async function Dashboard({ params }: { params: Params }) {
   const dashboard = app?.dashboards.find((candidate) => candidate.id === dashboardId);
   if (!dashboard) notFound();
 
-  const mock = MOCK_DASHBOARDS[dashboard.title];
-  if (mock) return <MockDashboard key={dashboard.id} source={mock} />;
   return <DashboardPlaceholder key={dashboard.id} title={dashboard.title} />;
 }

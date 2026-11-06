@@ -9,15 +9,14 @@ import "@prism/dashboard-kit/styles.css";
 const subscribe = () => () => {};
 
 /**
- * Renders a hand-written OpenUI Lang dashboard with Prism's dashboard kit.
- * A stand-in until the builder milestone streams real dashboards from
- * OpenUI Cloud.
+ * Renders an OpenUI Lang program with Prism's dashboard kit, for the /kit
+ * development pages.
  *
  * Client-only: react-lang 1.1 sets `$state` defaults in an effect, so a server
  * render evaluates every filtered value as null and paints "No data" until
  * hydration. A skeleton is honest about that wait.
  */
-export function MockDashboard({ source }: { source: string }) {
+export function KitDashboard({ source }: { source: string }) {
   const mounted = useSyncExternalStore(
     subscribe,
     () => true,
