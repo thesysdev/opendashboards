@@ -11,7 +11,11 @@ export type PostHogErrorCode =
   | "project_not_found"
   /** 429: PostHog's rate limit or hourly query budget. */
   | "rate_limited"
-  /** Network error, timeout, or 5xx. */
+  /** 400: the HogQL didn't parse or run; `detail` says why. */
+  | "bad_query"
+  /** The query ran past the time allowed. */
+  | "timeout"
+  /** Network error or 5xx. */
   | "unavailable"
   /** Anything else PostHog answered that we don't expect. */
   | "unexpected";
@@ -20,6 +24,8 @@ export class PostHogError extends Error {
   constructor(
     readonly code: PostHogErrorCode,
     readonly status?: number,
+    /** PostHog's explanation, for query errors. */
+    readonly detail?: string,
   ) {
     super(`PostHog request failed: ${code}${status ? ` (HTTP ${status})` : ""}`);
     this.name = "PostHogError";
@@ -38,7 +44,7 @@ export async function runHogQLQuery(
   target: PostHogTarget,
   query: string,
   options: { signal?: AbortSignal; timeoutMs?: number; fetch?: typeof fetch } = {},
-): Promise<{ results: unknown[] }> {
+): Promise<{ results: unknown[]; columns: string[] }> {
   const { url } = POSTHOG_HOSTS[target.hostKind];
   const timeout = AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
@@ -62,16 +68,20 @@ export async function runHogQLQuery(
   } catch (error) {
     // A caller's own abort is theirs to handle; a timeout or network error isn't.
     if (options.signal?.aborted) throw error;
-    throw new PostHogError("unavailable");
+    throw new PostHogError(timeout.aborted ? "timeout" : "unavailable");
   }
 
-  if (!response.ok) throw new PostHogError(await classify(response), response.status);
+  if (!response.ok) {
+    const body = await errorBody(response.clone());
+    throw new PostHogError(await classify(response), response.status, body.detail || undefined);
+  }
 
   const body: unknown = await response.json().catch(() => null);
   if (!isRecord(body) || !Array.isArray(body.results)) {
     throw new PostHogError("unexpected", response.status);
   }
-  return { results: body.results };
+  const columns = Array.isArray(body.columns) ? body.columns.map(String) : [];
+  return { results: body.results, columns };
 }
 
 /** Checks a key and project with the cheapest possible query. */
@@ -96,6 +106,8 @@ async function classify(response: Response): Promise<PostHogErrorCode> {
       return "project_not_found";
     case 429:
       return "rate_limited";
+    case 400:
+      return "bad_query";
     default:
       return response.status >= 500 ? "unavailable" : "unexpected";
   }

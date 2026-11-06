@@ -36,7 +36,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import type { ConnectionType } from "@/lib/connections/config";
+import type { ConnectionType } from "@/lib/sources/catalog";
 
 import { PostHogFormDialog, type SecretMode } from "./connection-form-dialog";
 import { PostgresFormDialog } from "./postgres-form-dialog";

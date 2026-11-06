@@ -10,10 +10,10 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
-import type { ConnectionConfig } from "@/lib/connections/config";
+import type { ConnectionConfig } from "@/lib/sources/catalog";
 import type { SealedSecret } from "@/lib/secrets/types";
 
-/** Matches CONNECTION_TYPES in lib/connections/config.ts (a test checks). */
+/** Matches CONNECTION_TYPES in lib/sources/catalog.ts (a test checks). */
 export const connectionTypeEnum = pgEnum("connection_type", ["posthog", "postgres"]);
 
 export const connectionStatusEnum = pgEnum("connection_status", [

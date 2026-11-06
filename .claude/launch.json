@@ -3,8 +3,11 @@
   "configurations": [
     {
       "name": "prism-dev",
-      "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["dev", "--port", "3100"],
+      "runtimeExecutable": "bash",
+      "runtimeArgs": [
+        "-c",
+        "export THESYS_API_KEY=\"$(. ~/.env >/dev/null 2>&1; printf %s \"$THESYS_API_KEY\")\"; exec pnpm dev --port 3100"
+      ],
       "port": 3100
     }
   ]

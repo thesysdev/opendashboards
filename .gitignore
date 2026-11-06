@@ -40,3 +40,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated from packages/dashboard-kit by `pnpm kit:spec`
+/lib/dashboards/generated/

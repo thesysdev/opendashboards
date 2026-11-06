@@ -18,7 +18,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { ConnectionField } from "@/lib/connections/errors";
-import { DEFAULT_PORT, parseConnectionString, SSL_MODES, type SslMode } from "@/lib/postgres/config";
+import { DEFAULT_PORT, parseConnectionString, SSL_MODES, type SslMode } from "@/lib/sources/postgres/catalog";
 
 import { showConnectionWarnings } from "./connection-feedback";
 import type { SecretMode } from "./connection-form-dialog";

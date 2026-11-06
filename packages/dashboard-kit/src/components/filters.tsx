@@ -32,7 +32,7 @@ export const PeriodPicker = defineComponent({
   name: "PeriodPicker",
   props: periodPickerSchema,
   description:
-    "Segmented control for a few date presets, e.g. [{value: \"7d\", label: \"7D\"}, {value: \"30d\", label: \"30D\"}]. Use with static data keyed by preset.",
+    "Segmented control for a few date presets, e.g. [{value: \"7d\", label: \"7D\"}, {value: \"30d\", label: \"30D\"}]. Pass its $variable into query arguments (live data), or key written-in data by preset.",
   component: function PeriodPickerView({ props }: ComponentRenderProps<z.infer<typeof periodPickerSchema>>) {
     const streaming = useIsStreaming();
     const field = useStateField(props.name, props.value);
@@ -215,7 +215,7 @@ export const DateRangeFilter = defineComponent({
   name: "DateRangeFilter",
   props: dateRangeSchema,
   description:
-    "Dropdown with presets (default 7d, 30d, 90d, 12m, ytd) and a custom range; the value is a preset key or \"2026-10-01..2026-10-31\". Only for live data that is fetched per range; with data written into the program, use PeriodPicker.",
+    "Dropdown with presets (default 7d, 30d, 90d, 12m, ytd) and a custom range; the value is a preset key or \"2026-10-01..2026-10-31\". For live data, pass its $variable into query arguments; with data written into the program, use PeriodPicker.",
   component: function DateRangeFilterView({ props }: ComponentRenderProps<z.infer<typeof dateRangeSchema>>) {
     const field = useStateField(props.name, props.value);
     const presets = options(props.presets).length ? options(props.presets) : DEFAULT_PRESETS;
@@ -305,7 +305,7 @@ export const MultiSelectFilter = defineComponent({
   name: "MultiSelectFilter",
   props: multiSelectSchema,
   description:
-    "Dropdown with checkboxes; the value is an array of selected values ([] means all). Only for live data that is fetched per selection; with data written into the program, use ChipFilter or SelectFilter.",
+    "Dropdown with checkboxes; the value is an array of selected values ([] means all). For live data, pass its $variable into query arguments; with data written into the program, use ChipFilter or SelectFilter.",
   component: function MultiSelectFilterView({ props }: ComponentRenderProps<z.infer<typeof multiSelectSchema>>) {
     const field = useStateField(props.name, props.value);
     const list = options(props.options);

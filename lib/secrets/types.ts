@@ -4,7 +4,8 @@
  * copying it into another row gets a decrypt error, not a working key.
  */
 export type SecretContext = {
-  purpose: "posthog-api-key" | "postgres-password";
+  /** What the secret is for, from its source: "posthog-api-key", "postgres-password". */
+  purpose: string;
   userId: string;
   connectionId: string;
 };

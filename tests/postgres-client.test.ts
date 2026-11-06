@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 
-import { testPostgresConnection, type PostgresTarget } from "@/lib/postgres/client";
-import { parseConnectionString, postgresAddress } from "@/lib/postgres/config";
-import { PostgresError, toPostgresError } from "@/lib/postgres/errors";
+import { testPostgresConnection, type PostgresTarget } from "@/lib/sources/postgres/client";
+import { parseConnectionString, postgresAddress } from "@/lib/sources/postgres/catalog";
+import { PostgresError, toPostgresError } from "@/lib/sources/postgres/errors";
 import { BlockedAddressError } from "@/lib/net/guarded-socket";
 
 import { TEST_DATABASE_URL } from "./global-setup";

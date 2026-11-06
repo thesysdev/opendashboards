@@ -60,6 +60,7 @@ export const componentGroups: ComponentGroup[] = [
     notes: [
       `Shared argument types: Format = ${FORMAT_PRESETS.map((preset) => `"${preset}"`).join(" | ")}, or {type, currency?, decimals?, prefix?, suffix?} to override, e.g. {type: "number", suffix: " seats"}. Width = ${WIDTHS.map((width) => `"${width}"`).join(" | ")}. GoodWhen = "up" | "down" | "neutral": which direction of change is good news.`,
       "Values are raw numbers with a Format; never formatted strings like \"$1.2K\" or \"12%\". percent values are already percentages (18.4 = 18.4%); ratio is for fractions; duration is seconds, ms milliseconds, days days.",
+      "Live data tools return { columns, rows, truncated }, rows being objects keyed by column. Read one column across all rows with a pluck: r = Query(...) then TimeSeries(r.rows.day, [Series(\"Events\", r.rows.events)]). Ask a query for exactly the rows and columns a card shows.",
       "To skip an optional argument before one you need, pass null: Kpi(\"CAC\", 1060, \"currency\", 1140, null, \"down\").",
       "Story order: a lead Section of 4 quarter-width Kpis (or 3 thirds), then trends, then breakdowns, then detail tables.",
       "Widths in each Row add up to a full row.",
@@ -70,7 +71,7 @@ export const componentGroups: ComponentGroup[] = [
     components: ["FilterBar", "PeriodPicker", "DateRangeFilter", "ChipFilter", "SelectFilter", "MultiSelectFilter", "SearchFilter", "CompareToggle"],
     notes: [
       "One FilterBar right after the header: date filter first, then segment filters, SearchFilter, and CompareToggle last. Never put filters inside cards.",
-      "Only cards whose numbers depend on a filter read it; point-in-time or cross-segment cards (open pipeline, a channel comparison) can ignore it. A filter must change what is shown: declare $period = \"30d\", pass $period to the filter, and read affected values from one object keyed by option: data[$period].mrr. With two filters nest the keys: data[$period][$channel].signups.",
+      "A filter must change what is shown, but only cards whose numbers depend on it read it; point-in-time or cross-segment cards can ignore it. Declare $period = \"30d\" and pass $period to the filter. With live data, pass the $variable into the data tool's arguments so the Query reloads when it changes. With data written into the program, key values by option: data[$period].mrr (nest keys for two filters: data[$period][$channel].signups).",
     ],
   },
   {

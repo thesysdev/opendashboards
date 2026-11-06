@@ -18,7 +18,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { ConnectionField } from "@/lib/connections/errors";
-import { HOST_KINDS, POSTHOG_HOSTS, type HostKind } from "@/lib/posthog/hosts";
+import { HOST_KINDS, POSTHOG_HOSTS, type HostKind } from "@/lib/sources/posthog/hosts";
 import type { SecretProvider } from "@/lib/secrets/types";
 
 export type SecretMode = SecretProvider | "unconfigured";

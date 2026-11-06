@@ -5,17 +5,15 @@ import { and, asc, eq } from "drizzle-orm";
 import type { Database } from "@/lib/db";
 import { appConnections, apps, dataConnections, type ConnectionStatus } from "@/lib/db/schema";
 import { logError } from "@/lib/log";
-import type { PostgresCheck, PostgresTarget } from "@/lib/postgres/client";
-import { passwordSchema } from "@/lib/postgres/config";
-import type { PostHogTarget } from "@/lib/posthog/client";
 import type { SecretBox, SecretContext } from "@/lib/secrets";
-
 import {
+  CONNECTION_TYPES,
   connectionConfigSchema,
   describeConnection,
   type ConnectionConfig,
   type ConnectionType,
-} from "./config";
+} from "@/lib/sources/catalog";
+import type { ConnectionSource, ConnectionWarning, OpenConnection } from "@/lib/sources/types";
 
 import {
   fail,
@@ -24,18 +22,17 @@ import {
   internalError,
   notFound,
   ok,
-  statusFor,
   type ConnectionError,
   type Result,
 } from "./errors";
 import {
-  apiKeySchema,
   connectionRefSchema,
-  createConnectionSchema,
+  createEnvelopeSchema,
   renameSchema,
   replaceCredentialSchema,
-  type CreateConnectionInput,
 } from "./schemas";
+
+export type { ConnectionWarning };
 
 /** What the UI sees of a connection: never the credential or the sealed secret. */
 export type ConnectionSummary = {
@@ -60,25 +57,20 @@ export type ConnectionServiceDeps = {
   db: Database;
   /** A function, so "no secret storage configured" surfaces per call, not at import. */
   secrets: () => SecretBox;
-  testConnection: (target: PostHogTarget) => Promise<void>;
-  testPostgres: (target: PostgresTarget) => Promise<PostgresCheck>;
+  /** The source for a type: lib/sources in the app, stubs in tests. */
+  sources: (type: ConnectionType) => ConnectionSource;
   now?: () => Date;
   /** How long a decrypted credential stays in memory. */
   keyCacheTtlMs?: number;
 };
-
-/** Things a check found that don't stop the connection from working. */
-export type ConnectionWarning = "can_write";
-
-/** Shown in place of a password: no characters of it, ever. */
-const PASSWORD_HINT = "password ••••";
 
 const DEFAULT_KEY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 /**
  * The data access layer for connections. Every function takes the user id
  * from the caller's verified session and scopes every query to it: another
- * user's connection is indistinguishable from one that doesn't exist.
+ * user's connection is indistinguishable from one that doesn't exist. Anything
+ * specific to a source type comes from that source (lib/sources).
  */
 export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db } = deps;
@@ -86,23 +78,15 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
   const keyCache = createKeyCache(deps.keyCacheTtlMs ?? DEFAULT_KEY_CACHE_TTL_MS, now);
 
   const context = (type: ConnectionType, userId: string, connectionId: string): SecretContext => ({
-    purpose: type === "postgres" ? "postgres-password" : "posthog-api-key",
+    purpose: deps.sources(type).credential.purpose,
     userId,
     connectionId,
   });
 
-  /** Runs the source's own check with this credential. */
-  async function check(config: ConnectionConfig, credential: string): Promise<ConnectionWarning[]> {
-    switch (config.type) {
-      case "posthog":
-        await deps.testConnection({ hostKind: config.hostKind, projectId: config.projectId, apiKey: credential });
-        return [];
-      case "postgres": {
-        const { type: _type, ...target } = config;
-        const result = await deps.testPostgres({ ...target, password: credential });
-        return result.canWrite ? ["can_write"] : [];
-      }
-    }
+  /** The source's own check, with the settings stripped of their type tag. */
+  function check(config: ConnectionConfig, credential: string): Promise<ConnectionWarning[]> {
+    const { type, ...settings } = config;
+    return deps.sources(type).test(settings, credential);
   }
 
   /** A stored row's config, validated: a row that doesn't parse is a bug, not user input. */
@@ -138,6 +122,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     }
   }
 
+  /** A failed check as a result, or rethrown when it's not a known failure. */
+  function checkFailure(error: unknown): Result<never> {
+    const known = fromCheckError(error);
+    if (known) return fail(known.error);
+    throw error;
+  }
+
   return {
     async list(userId: string): Promise<ConnectionSummary[]> {
       const rows = await db
@@ -161,50 +152,50 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         .where(eq(apps.userId, userId))
         .orderBy(asc(apps.name));
 
-      return rows.map(({ config, ...row }) => {
-        const { source, shortSource, detail, tile } = describeConnection(configOf({ config }));
-        return {
-          ...row,
-          source,
-          shortSource,
-          detail,
-          tile,
-          apps: appRows
-            .filter((app) => app.connectionId === row.id)
-            .map(({ id, name }) => ({ id, name })),
-        };
-      });
+      return rows.map(({ config, ...row }) => ({
+        ...row,
+        ...describeConnection(configOf({ config })),
+        apps: appRows.filter((app) => app.connectionId === row.id).map(({ id, name }) => ({ id, name })),
+      }));
     },
 
     /** Tests the credential against the source and saves the connection only if it works. */
     create(userId: string, input: unknown): Promise<Result<{ id: string; warnings: ConnectionWarning[] }>> {
       return guard("create", async () => {
-        const parsed = createConnectionSchema.safeParse(input);
-        if (!parsed.success) return fromValidation(parsed.error);
+        const envelope = createEnvelopeSchema.safeParse(input);
+        if (!envelope.success) return fromValidation(envelope.error);
+        const type = envelope.data.type as ConnectionType;
+        if (!(CONNECTION_TYPES as readonly string[]).includes(type)) {
+          return fail({ code: "validation", message: "Unknown source type." });
+        }
+        const source = deps.sources(type);
+        const { name, type: _type, [source.credential.field]: rawCredential, ...rawConfig } = envelope.data;
 
-        const { name, config, credential } = splitCreateInput(parsed.data);
+        const settings = source.configSchema.safeParse(rawConfig);
+        if (!settings.success) return fromValidation(settings.error);
+        const credential = source.credential.schema.safeParse(rawCredential);
+        if (!credential.success) return fromValidation(credential.error, () => source.credential.field);
+
+        const config = { type, ...settings.data } as ConnectionConfig;
         const id = randomUUID();
         let warnings: ConnectionWarning[];
         try {
           // Sealed first: no point testing a credential we can't store.
-          const secret = await deps.secrets().seal(credential, context(config.type, userId, id));
-          warnings = await check(config, credential);
-
+          const secret = await deps.secrets().seal(credential.data, context(type, userId, id));
+          warnings = await check(config, credential.data);
           await db.insert(dataConnections).values({
             id,
             userId,
             name,
-            type: config.type,
+            type,
             config,
             secret,
-            credentialHint: credentialHint(config.type, credential),
+            credentialHint: source.credential.hint(credential.data),
             status: "ok",
             lastCheckedAt: now(),
           });
         } catch (error) {
-          const known = fromCheckError(error);
-          if (known) return fail(known);
-          throw error;
+          return checkFailure(error);
         }
         return ok({ id, warnings });
       });
@@ -218,7 +209,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         const row = await findOwned(userId, parsed.data.id);
         if (!row) return notFound();
 
-        let failure: ConnectionError | null = null;
+        let failure: { error: ConnectionError; status: Exclude<ConnectionStatus, "ok"> } | null = null;
         try {
           const config = configOf(row);
           const credential = await keyCache.get(row.id, () =>
@@ -231,13 +222,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           keyCache.delete(row.id);
         }
 
-        const status = failure ? statusFor(failure.code) : "ok";
+        const status = failure ? failure.status : "ok";
         await db
           .update(dataConnections)
           .set({ status, lastCheckedAt: now(), updatedAt: now() })
           .where(and(eq(dataConnections.id, row.id), eq(dataConnections.userId, userId)));
 
-        return failure ? fail(failure) : ok({ status });
+        return failure ? fail(failure.error) : ok({ status });
       });
     },
 
@@ -245,36 +236,33 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     replaceCredential(userId: string, input: unknown): Promise<Result<{ warnings: ConnectionWarning[] }>> {
       return guard("replaceCredential", async () => {
         const parsed = replaceCredentialSchema.safeParse(input);
-        if (!parsed.success) return parsed.error.issues[0]?.path[0] === "id" ? notFound() : fromValidation(parsed.error);
+        if (!parsed.success) {
+          return parsed.error.issues[0]?.path[0] === "id" ? notFound() : fromValidation(parsed.error);
+        }
         const row = await findOwned(userId, parsed.data.id);
         if (!row) return notFound();
 
         const config = configOf(row);
-        const field = config.type === "postgres" ? "password" : "apiKey";
-        const credentialCheck = (config.type === "postgres" ? passwordSchema : apiKeySchema).safeParse(
-          parsed.data.credential,
-        );
-        if (!credentialCheck.success) return fromValidation(credentialCheck.error, () => field);
-        const credential = credentialCheck.data;
+        const source = deps.sources(config.type);
+        const credential = source.credential.schema.safeParse(parsed.data.credential);
+        if (!credential.success) return fromValidation(credential.error, () => source.credential.field);
 
         let warnings: ConnectionWarning[];
         try {
-          const secret = await deps.secrets().seal(credential, context(config.type, userId, row.id));
-          warnings = await check(config, credential);
+          const secret = await deps.secrets().seal(credential.data, context(config.type, userId, row.id));
+          warnings = await check(config, credential.data);
           await db
             .update(dataConnections)
             .set({
               secret,
-              credentialHint: credentialHint(config.type, credential),
+              credentialHint: source.credential.hint(credential.data),
               status: "ok",
               lastCheckedAt: now(),
               updatedAt: now(),
             })
             .where(and(eq(dataConnections.id, row.id), eq(dataConnections.userId, userId)));
         } catch (error) {
-          const known = fromCheckError(error);
-          if (known) return fail(known);
-          throw error;
+          return checkFailure(error);
         } finally {
           keyCache.delete(row.id);
         }
@@ -289,9 +277,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         const updated = await db
           .update(dataConnections)
           .set({ name: parsed.data.name, updatedAt: now() })
-          .where(
-            and(eq(dataConnections.id, parsed.data.id), eq(dataConnections.userId, userId)),
-          )
+          .where(and(eq(dataConnections.id, parsed.data.id), eq(dataConnections.userId, userId)))
           .returning({ id: dataConnections.id });
         return updated.length ? ok(undefined) : notFound();
       });
@@ -328,32 +314,29 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return ok(undefined);
       });
     },
+
+    /**
+     * A connection opened for a tool: its settings and decrypted credential,
+     * only if it belongs to `userId` and is of `type`. Server code only; the
+     * credential never leaves the server.
+     */
+    async open(userId: string, connectionId: string, type: ConnectionType): Promise<OpenConnection<Record<string, unknown>> | null> {
+      if (!connectionIdSchema(connectionId)) return null;
+      const row = await findOwned(userId, connectionId);
+      if (!row || row.type !== type) return null;
+      const { type: _type, ...settings } = configOf(row);
+      const credential = await keyCache.get(row.id, () => deps.secrets().open(row.secret, context(type, userId, row.id)));
+      return { id: row.id, name: row.name, config: settings, credential };
+    },
   };
 }
 
 export type ConnectionService = ReturnType<typeof createConnectionService>;
 
-/**
- * What the UI shows instead of the credential. API keys: `phx_…a1b2`, enough
- * to tell keys apart and useless to anyone who reads it. Passwords: nothing
- * of the password at all.
- */
-export function credentialHint(type: ConnectionType, credential: string): string {
-  if (type === "postgres") return PASSWORD_HINT;
-  return `${credential.slice(0, 4)}…${credential.slice(-4)}`;
-}
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const connectionIdSchema = (value: string) => UUID.test(value);
 
-/** Splits validated create input into name, stored config and credential. */
-function splitCreateInput(input: CreateConnectionInput): { name: string; config: ConnectionConfig; credential: string } {
-  if (input.type === "posthog") {
-    const { name, apiKey, ...config } = input;
-    return { name, config, credential: apiKey };
-  }
-  const { name, password, ...config } = input;
-  return { name, config, credential: password };
-}
-
-/** Decrypted keys, kept briefly so a busy dashboard doesn't decrypt per query. */
+/** Decrypted credentials, kept briefly so a busy dashboard doesn't decrypt per query. */
 function createKeyCache(ttlMs: number, now: () => Date) {
   const entries = new Map<string, { key: string; expiresAt: number }>();
   return {

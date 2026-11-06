@@ -7,6 +7,9 @@ import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
 import { appConnections, apps, dashboards, dataConnections } from "@/lib/db/schema";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
+import { postgresSource } from "@/lib/sources/postgres/source";
+import { posthogSource } from "@/lib/sources/posthog/source";
+import type { ConnectionSource } from "@/lib/sources/types";
 
 import { TEST_DATABASE_URL } from "./global-setup";
 
@@ -16,8 +19,8 @@ const threads = createThreadService({ db });
 const connections = createConnectionService({
   db,
   secrets: () => plaintextSecretBox,
-  testConnection: async () => {},
-  testPostgres: async () => ({ serverVersion: "16.4", canWrite: false }),
+  sources: (type) =>
+    ({ ...(type === "posthog" ? posthogSource : postgresSource), test: async () => [] }) as unknown as ConnectionSource,
 });
 
 async function addConnection(userId: string, name = "Production") {

@@ -17,13 +17,15 @@ export type PostgresErrorCode =
   | "timeout"
   /** TLS failed: no SSL on the server, or a certificate we couldn't verify. */
   | "tls_failed"
+  /** The SQL itself failed (syntax, unknown table, a write in a read-only query…); `detail` says why. */
+  | "bad_query"
   /** Anything else. */
   | "unexpected";
 
 export class PostgresError extends Error {
   constructor(
     readonly code: PostgresErrorCode,
-    /** The driver's message, for logs only: it can mention hosts and users. */
+    /** The driver's message. Shown to the query's author for bad_query; logs only otherwise. */
     readonly detail?: string,
   ) {
     super(`Postgres check failed: ${code}`);
@@ -61,6 +63,8 @@ export function toPostgresError(error: unknown): PostgresError {
       return new PostgresError("unreachable", message);
     case "57014":
       return new PostgresError("timeout", message);
+    case "25006":
+      return new PostgresError("bad_query", "Queries are read-only: only SELECT is allowed.");
     // Node network errors.
     case "ENOTFOUND":
     case "EAI_AGAIN":
@@ -70,6 +74,9 @@ export function toPostgresError(error: unknown): PostgresError {
       return new PostgresError("timeout", message);
   }
   if (NETWORK_UNREACHABLE.has(code)) return new PostgresError("unreachable", message);
+  // SQLSTATE classes for a query the server understood but rejected: syntax and
+  // access rules (42), data (22), feature (0A), cursor and transaction state (24, 25, 34).
+  if (/^(42|22|0A|24|25|34)[0-9A-Z]{3}$/.test(code)) return new PostgresError("bad_query", message);
   if (TLS_CODES.test(code) || /does not support SSL|certificate|self[- ]signed|SSL/i.test(message)) {
     return new PostgresError("tls_failed", message);
   }

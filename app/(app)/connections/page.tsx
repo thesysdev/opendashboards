@@ -10,7 +10,7 @@ import { EmptyState, PageHeader, SectionLabel } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { requireUser } from "@/lib/auth/user";
 import { getConnectionService, type ConnectionSummary } from "@/lib/connections";
-import type { ConnectionType } from "@/lib/connections/config";
+import { CATALOGS } from "@/lib/sources/catalog";
 import type { ConnectionStatus } from "@/lib/db/schema";
 import { formatRelative } from "@/lib/format";
 import { getSecretMode } from "@/lib/secrets";
@@ -66,12 +66,12 @@ async function ConnectionsContent() {
       <section aria-labelledby="available-sources" className="mt-10">
         <SectionLabel id="available-sources">Available sources</SectionLabel>
         <ul className="divide-y rounded-xl border">
-          {SOURCES.map((source) => (
+          {CATALOGS.map((source) => (
             <li key={source.type} className="flex items-center gap-3 p-3.5">
               <SourceTile label={source.tile} />
               <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{source.name}</p>
-                <p className="truncate text-sm text-muted-foreground">{source.description}</p>
+                <p className="text-sm font-medium">{source.label}</p>
+                <p className="truncate text-sm text-muted-foreground">{source.blurb}</p>
               </div>
               <AddConnectionButton source={source.type} secretMode={secretMode} />
             </li>
@@ -84,10 +84,6 @@ async function ConnectionsContent() {
   );
 }
 
-const SOURCES: { type: ConnectionType; name: string; tile: string; description: string }[] = [
-  { type: "posthog", name: "PostHog", tile: "PH", description: "Events · Persons · Sessions · HogQL" },
-  { type: "postgres", name: "Postgres", tile: "PG", description: "Any database reachable on the public internet" },
-];
 
 function ConnectionRow({
   connection,

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { requireUser } from "@/lib/auth/user";
 import { getAppService } from "@/lib/apps";
+import { getConnectionService } from "@/lib/connections";
 import type { AppResult } from "@/lib/apps/errors";
 
 /*
@@ -40,4 +41,21 @@ export async function deleteAppAction(input: unknown): Promise<AppResult<never>>
   if (!result.ok) return result;
   revalidateShell();
   redirect("/apps");
+}
+
+/**
+ * The prompt the app was created with, taken once so it's sent exactly once:
+ * the Build chat sends it as its first message, naming the data sources the
+ * user picked.
+ */
+export async function takePendingPromptAction(appId: string): Promise<string | null> {
+  const user = await requireUser();
+  const pending = await getAppService().takePendingPrompt(user.id, appId);
+  if (!pending) return null;
+  const connections = (await getConnectionService().list(user.id)).filter((connection) =>
+    pending.connectionIds.includes(connection.id),
+  );
+  if (!connections.length) return pending.prompt;
+  const names = connections.map((connection) => `${connection.name} (${connection.id})`).join(", ");
+  return `${pending.prompt}\n\nUse these data sources: ${names}`;
 }

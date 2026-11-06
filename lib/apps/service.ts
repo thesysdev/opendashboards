@@ -8,7 +8,7 @@ import {
   dataConnections,
   type ConnectionStatus,
 } from "@/lib/db/schema";
-import type { ConnectionType } from "@/lib/connections/config";
+import type { ConnectionType } from "@/lib/sources/catalog";
 import { logError } from "@/lib/log";
 
 import { fail, fromValidation, internalError, notFound, ok, type AppResult } from "./errors";

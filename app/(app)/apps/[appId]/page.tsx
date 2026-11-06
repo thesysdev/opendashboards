@@ -1,7 +1,8 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
-import { DashboardPlaceholder, NoDashboards } from "@/components/apps/dashboard-views";
+import { NoDashboards } from "@/components/apps/dashboard-views";
+import { LiveDashboard } from "@/components/apps/live-dashboard";
 import { getCurrentUserApp } from "@/lib/apps";
 
 /** An app's home: its first dashboard, or the empty state when it has none. */
@@ -20,7 +21,7 @@ async function AppHome({ params }: { params: Promise<{ appId: string }> }) {
 
   const first = app.dashboards[0];
   return first ? (
-    <DashboardPlaceholder title={first.title} />
+    <LiveDashboard key={first.id} artifactId={first.artifactId} />
   ) : (
     <NoDashboards hasPendingPrompt={Boolean(app.pendingPrompt)} />
   );

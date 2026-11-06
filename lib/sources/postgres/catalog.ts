@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import type { SourceCatalog } from "../types";
+
 /**
  * Where a Postgres connection points, and how. Safe for the browser: no
  * password here. Host, port and database are fixed once the connection is
@@ -87,3 +89,12 @@ export function postgresAddress(config: Pick<PostgresConfig, "host" | "port" | "
   const host = config.host.includes(":") ? `[${config.host}]` : config.host;
   return `${config.user}@${host}:${config.port}/${config.database}`;
 }
+
+export const postgresCatalog: SourceCatalog<PostgresConfig, "postgres"> = {
+  type: "postgres",
+  label: "Postgres",
+  blurb: "Any database reachable on the public internet",
+  tile: "PG",
+  configSchema: postgresConfigSchema,
+  describe: (config) => ({ source: "Postgres", shortSource: "Postgres", detail: postgresAddress(config), tile: "PG" }),
+};

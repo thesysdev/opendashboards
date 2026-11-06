@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 
-import { PostHogError, runHogQLQuery, testConnection, type PostHogTarget } from "@/lib/posthog/client";
+import { PostHogError, runHogQLQuery, testConnection, type PostHogTarget } from "@/lib/sources/posthog/client";
 
 const target: PostHogTarget = { hostKind: "posthog_eu", projectId: "42", apiKey: "phx_key" };
 
@@ -16,9 +16,10 @@ async function codeFor(fetchImpl: typeof fetch) {
 
 describe("runHogQLQuery", () => {
   it("posts HogQL to the fixed host for the region, with the key as a bearer token", async () => {
-    const fetchImpl = respond(200, { results: [[1]] });
+    const fetchImpl = respond(200, { results: [[1]], columns: ["1"] });
     await expect(runHogQLQuery(target, "SELECT 1", { fetch: fetchImpl })).resolves.toEqual({
       results: [[1]],
+      columns: ["1"],
     });
 
     const [url, init] = fetchImpl.mock.calls[0];
@@ -65,7 +66,9 @@ describe("error classification", () => {
     expect(await codeFor(respond(404, {}))).toBe("project_not_found");
     expect(await codeFor(respond(429, {}))).toBe("rate_limited");
     expect(await codeFor(respond(502, {}))).toBe("unavailable");
-    expect(await codeFor(respond(400, {}))).toBe("unexpected");
+    // 400 is a query PostHog couldn't run; its detail is kept for the query's author.
+    expect(await codeFor(respond(400, { detail: "Unknown table" }))).toBe("bad_query");
+    expect(await codeFor(respond(418, {}))).toBe("unexpected");
   });
 
   it("treats network errors and malformed bodies as unavailable or unexpected", async () => {

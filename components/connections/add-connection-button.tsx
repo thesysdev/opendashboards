@@ -4,7 +4,7 @@ import { PlusIcon } from "lucide-react";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
-import type { ConnectionType } from "@/lib/connections/config";
+import type { ConnectionType } from "@/lib/sources/catalog";
 
 import { PostHogFormDialog, type SecretMode } from "./connection-form-dialog";
 import { PostgresFormDialog } from "./postgres-form-dialog";

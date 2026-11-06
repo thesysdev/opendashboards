@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
-import { DashboardPlaceholder } from "@/components/apps/dashboard-views";
+import { LiveDashboard } from "@/components/apps/live-dashboard";
 import { getCurrentUserApp } from "@/lib/apps";
 
 type Params = Promise<{ appId: string; dashboardId: string }>;
@@ -21,5 +21,5 @@ async function Dashboard({ params }: { params: Params }) {
   const dashboard = app?.dashboards.find((candidate) => candidate.id === dashboardId);
   if (!dashboard) notFound();
 
-  return <DashboardPlaceholder key={dashboard.id} title={dashboard.title} />;
+  return <LiveDashboard key={dashboard.id} artifactId={dashboard.artifactId} />;
 }

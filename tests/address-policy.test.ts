@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { CONNECTION_TYPES } from "@/lib/connections/config";
+import { CONNECTION_TYPES } from "@/lib/sources/catalog";
 import { connectionTypeEnum } from "@/lib/db/schema";
 import {
   BlockedAddressError,

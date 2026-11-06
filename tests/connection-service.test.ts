@@ -4,9 +4,12 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
 import { appConnections, apps, dataConnections } from "@/lib/db/schema";
-import type { PostgresCheck } from "@/lib/postgres/client";
-import { PostgresError } from "@/lib/postgres/errors";
-import { PostHogError } from "@/lib/posthog/client";
+import type { PostgresCheck } from "@/lib/sources/postgres/client";
+import { postgresSource } from "@/lib/sources/postgres/source";
+import { posthogSource } from "@/lib/sources/posthog/source";
+import type { ConnectionSource } from "@/lib/sources/types";
+import { PostgresError } from "@/lib/sources/postgres/errors";
+import { PostHogError } from "@/lib/sources/posthog/client";
 import type { SecretBox } from "@/lib/secrets";
 import { createKmsSecretBox } from "@/lib/secrets/kms";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
@@ -30,11 +33,27 @@ function makeService(
 ) {
   const testConnection = vi.fn(overrides.test ?? (async () => {}));
   const testPostgres = vi.fn(overrides.testPostgres ?? (async () => READ_ONLY));
+  // The real sources, with only their network checks stubbed.
+  const sources = (type: string): ConnectionSource =>
+    (type === "posthog"
+      ? {
+          ...posthogSource,
+          test: async (config: Record<string, unknown>, credential: string) => {
+            await (testConnection as (target: unknown) => Promise<void>)({ ...config, apiKey: credential });
+            return [];
+          },
+        }
+      : {
+          ...postgresSource,
+          test: async (config: Record<string, unknown>, credential: string) => {
+            const result = await (testPostgres as (target: unknown) => Promise<PostgresCheck>)({ ...config, password: credential });
+            return result.canWrite ? ["can_write"] : [];
+          },
+        }) as unknown as ConnectionSource;
   const service = createConnectionService({
     db,
     secrets: () => overrides.secrets ?? plaintextSecretBox,
-    testConnection,
-    testPostgres,
+    sources,
   });
   return { service, testConnection, testPostgres };
 }

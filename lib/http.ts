@@ -44,12 +44,12 @@ export function route<Ctx>(
 }
 
 /** Reads a small JSON body; only `application/json` is accepted. */
-export async function readJson(request: Request): Promise<unknown> {
+export async function readJson(request: Request, { maxBytes = MAX_JSON_BYTES } = {}): Promise<unknown> {
   if (!request.headers.get("content-type")?.toLowerCase().startsWith("application/json")) {
     throw new HttpError(415, "Expected application/json");
   }
   const text = await request.text();
-  if (text.length > MAX_JSON_BYTES) throw new HttpError(413, "Request body too large");
+  if (Buffer.byteLength(text) > maxBytes) throw new HttpError(413, "Request body too large");
   try {
     return JSON.parse(text);
   } catch {
