@@ -53,11 +53,9 @@ type OpenDialog = "replace" | "rename" | "delete" | null;
 export function ConnectionActions({
   connection,
   secretMode,
-  allowLocal,
 }: {
   connection: Connection;
   secretMode: SecretMode;
-  allowLocal: boolean;
 }) {
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const [testing, startTest] = useTransition();
@@ -108,7 +106,6 @@ export function ConnectionActions({
           open={dialog === "replace"}
           onOpenChange={close}
           secretMode={secretMode}
-          allowLocal={allowLocal}
         />
       ) : (
         <PostHogFormDialog

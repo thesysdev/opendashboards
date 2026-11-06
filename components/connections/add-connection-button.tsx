@@ -12,11 +12,9 @@ import { PostgresFormDialog } from "./postgres-form-dialog";
 export function AddConnectionButton({
   source,
   secretMode,
-  allowLocal,
 }: {
   source: ConnectionType;
   secretMode: SecretMode;
-  allowLocal: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const dialog = { mode: "create" as const, open, onOpenChange: setOpen, secretMode };
@@ -27,7 +25,7 @@ export function AddConnectionButton({
         Add connection
       </Button>
       {source === "postgres" ? (
-        <PostgresFormDialog {...dialog} allowLocal={allowLocal} />
+        <PostgresFormDialog {...dialog} />
       ) : (
         <PostHogFormDialog {...dialog} />
       )}

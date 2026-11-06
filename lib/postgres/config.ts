@@ -6,8 +6,8 @@ import { z } from "zod";
  * saved; pointing elsewhere means a new connection.
  */
 
-/** verify-full: encrypted, certificate checked (default). require: encrypted only. disable: development only. */
-export const SSL_MODES = ["verify-full", "require", "disable"] as const;
+/** verify-full: encrypted, certificate checked (default). require: encrypted only. Never unencrypted. */
+export const SSL_MODES = ["verify-full", "require"] as const;
 export type SslMode = (typeof SSL_MODES)[number];
 
 export const DEFAULT_PORT = 5432;
@@ -75,8 +75,10 @@ export function parseConnectionString(input: string): ParsedConnectionString | n
 
   const sslmode = url.searchParams.get("sslmode");
   if (sslmode === "verify-full" || sslmode === "verify-ca") fields.sslMode = "verify-full";
-  else if (sslmode === "require" || sslmode === "prefer" || sslmode === "allow") fields.sslMode = "require";
-  else if (sslmode === "disable") fields.sslMode = "disable";
+  // prefer/allow/disable can mean no encryption, which Prism never uses: encrypt at least.
+  else if (sslmode === "require" || sslmode === "prefer" || sslmode === "allow" || sslmode === "disable") {
+    fields.sslMode = "require";
+  }
   return fields;
 }
 

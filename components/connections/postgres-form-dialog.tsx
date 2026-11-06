@@ -18,7 +18,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { ConnectionField } from "@/lib/connections/errors";
-import { DEFAULT_PORT, parseConnectionString, type SslMode } from "@/lib/postgres/config";
+import { DEFAULT_PORT, parseConnectionString, SSL_MODES, type SslMode } from "@/lib/postgres/config";
 
 import { showConnectionWarnings } from "./connection-feedback";
 import type { SecretMode } from "./connection-form-dialog";
@@ -27,8 +27,6 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   secretMode: SecretMode;
-  /** Local development may connect to private hosts and turn SSL off. */
-  allowLocal: boolean;
 } & ({ mode: "create" } | { mode: "replace"; connection: { id: string; name: string } });
 
 type Values = {
@@ -54,7 +52,6 @@ const EMPTY: Values = {
 const SSL_LABELS: Record<SslMode, string> = {
   "verify-full": "Verify certificate",
   require: "Encrypt only",
-  disable: "Off",
 };
 
 const READ_ONLY_ROLE_SQL = `CREATE ROLE prism_reader LOGIN PASSWORD '…';
@@ -66,7 +63,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 
 /** Adds a Postgres connection, or changes an existing one's password. */
 export function PostgresFormDialog(props: Props) {
-  const { open, onOpenChange, secretMode, allowLocal } = props;
+  const { open, onOpenChange, secretMode } = props;
   const replacing = props.mode === "replace";
 
   const [values, setValues] = useState<Values>(EMPTY);
@@ -87,7 +84,6 @@ export function PostgresFormDialog(props: Props) {
   };
 
   const storageMissing = secretMode === "unconfigured";
-  const sslModes: SslMode[] = allowLocal ? ["verify-full", "require", "disable"] : ["verify-full", "require"];
 
   function reset() {
     setValues(EMPTY);
@@ -116,7 +112,7 @@ export function PostgresFormDialog(props: Props) {
       ...(parsed.database !== undefined && { database: parsed.database }),
       ...(parsed.user !== undefined && { user: parsed.user }),
       ...(parsed.password !== undefined && { password: parsed.password }),
-      ...(parsed.sslMode !== undefined && sslModes.includes(parsed.sslMode) && { sslMode: parsed.sslMode }),
+      ...(parsed.sslMode !== undefined && { sslMode: parsed.sslMode }),
     }));
     setFieldErrors({});
     setPasteNote("Filled in the fields below. Check them, then test.");
@@ -256,7 +252,7 @@ export function PostgresFormDialog(props: Props) {
                   onValueChange={(value) => value && update("sslMode", value as SslMode)}
                   className="w-full"
                 >
-                  {sslModes.map((mode) => (
+                  {SSL_MODES.map((mode) => (
                     <ToggleGroupItem key={mode} value={mode} className="flex-1">
                       {SSL_LABELS[mode]}
                     </ToggleGroupItem>
@@ -265,9 +261,7 @@ export function PostgresFormDialog(props: Props) {
                 <FieldDescription>
                   {values.sslMode === "verify-full"
                     ? "Encrypted, and the server's certificate is checked. Recommended."
-                    : values.sslMode === "require"
-                      ? "Encrypted, but the certificate isn't checked. Use for self-signed certificates."
-                      : "Unencrypted. Local development only."}
+                    : "Encrypted, but the certificate isn't checked. Use for self-signed certificates."}
                 </FieldDescription>
                 <FieldError>{fieldErrors.sslMode}</FieldError>
               </Field>

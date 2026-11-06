@@ -26,7 +26,8 @@ describe("parseConnectionString", () => {
     expect(mode("verify-ca")).toBe("verify-full");
     expect(mode("verify-full")).toBe("verify-full");
     expect(mode("prefer")).toBe("require");
-    expect(mode("disable")).toBe("disable");
+    // Prism never connects unencrypted, so "disable" still encrypts.
+    expect(mode("disable")).toBe("require");
     expect(parseConnectionString("postgres://h/db")?.sslMode).toBeUndefined();
   });
 
@@ -64,11 +65,10 @@ describe("toPostgresError", () => {
 });
 
 /**
- * Against the real Postgres from docker-compose (the test database). It
- * lives on localhost, so these also prove the address guard: without
- * allowLocal, the same server is refused.
+ * The local Postgres from docker-compose is reachable, but it's on localhost:
+ * the guard must refuse it by name and by IP before any login is attempted.
  */
-describe("testPostgresConnection (local Postgres)", () => {
+describe("testPostgresConnection", () => {
   const url = new URL(TEST_DATABASE_URL);
   const local: PostgresTarget = {
     host: url.hostname,
@@ -76,36 +76,22 @@ describe("testPostgresConnection (local Postgres)", () => {
     database: url.pathname.slice(1),
     user: decodeURIComponent(url.username),
     password: decodeURIComponent(url.password),
-    sslMode: "disable",
+    sslMode: "require",
   };
-  const check = (target: Partial<PostgresTarget>, allowLocal = true) =>
-    testPostgresConnection({ ...local, ...target }, { allowLocal });
-  const code = (promise: Promise<unknown>) =>
-    promise.then(
+  const code = (target: Partial<PostgresTarget>) =>
+    testPostgresConnection({ ...local, ...target }).then(
       () => "ok",
       (error: unknown) => (error instanceof PostgresError ? error.code : `not a PostgresError: ${String(error)}`),
     );
 
-  it("connects, reports the version, and notices a user that can write", async () => {
-    const result = await check({});
-    expect(result.serverVersion).toMatch(/^\d+(\.\d+)?/);
-    // The test user owns the tables.
-    expect(result.canWrite).toBe(true);
+  it("refuses a running local server by name and by IP", async () => {
+    expect(await code({})).toBe("host_blocked");
+    expect(await code({ host: "127.0.0.1" })).toBe("host_blocked");
+    expect(await code({ host: "::1" })).toBe("host_blocked");
   });
 
-  it("refuses the same server when local hosts aren't allowed", async () => {
-    expect(await code(check({}, false))).toBe("tls_failed"); // SSL off is local-only too
-    expect(await code(check({ sslMode: "require" }, false))).toBe("host_blocked");
-    expect(await code(check({ host: "127.0.0.1", sslMode: "require" }, false))).toBe("host_blocked");
-  });
-
-  it("reports a wrong password, an unknown database and a closed port", async () => {
-    expect(await code(check({ password: "wrong" }))).toBe("auth_failed");
-    expect(await code(check({ database: "no_such_database" }))).toBe("database_not_found");
-    expect(await code(check({ port: 1 }))).toBe("unreachable");
-  });
-
-  it("fails TLS against a server without SSL", async () => {
-    expect(await code(check({ sslMode: "require" }))).toBe("tls_failed");
+  it("refuses private and metadata addresses without connecting", async () => {
+    expect(await code({ host: "10.0.0.5" })).toBe("host_blocked");
+    expect(await code({ host: "169.254.169.254" })).toBe("host_blocked");
   });
 });

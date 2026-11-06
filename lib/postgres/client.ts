@@ -4,10 +4,10 @@ import type { ConnectionOptions } from "node:tls";
 
 import pg from "pg";
 
-import { createGuardedSocket, localHostsAllowed } from "@/lib/net/guarded-socket";
+import { createGuardedSocket } from "@/lib/net/guarded-socket";
 
 import type { PostgresConfig, SslMode } from "./config";
-import { PostgresError, toPostgresError } from "./errors";
+import { toPostgresError } from "./errors";
 
 export type PostgresTarget = PostgresConfig & { password: string };
 
@@ -42,16 +42,7 @@ const WRITE_ACCESS_SQL = `
  * public addresses (see lib/net/guarded-socket.ts), TLS follows the SSL mode,
  * and everything runs inside a READ ONLY transaction.
  */
-export async function testPostgresConnection(
-  target: PostgresTarget,
-  options: { allowLocal?: boolean } = {},
-): Promise<PostgresCheck> {
-  const allowLocal = options.allowLocal ?? localHostsAllowed();
-  if (target.sslMode === "disable" && !allowLocal) {
-    // The schema allows the value; only local development may use it.
-    throw new PostgresError("tls_failed", "SSL can only be turned off in local development");
-  }
-
+export async function testPostgresConnection(target: PostgresTarget): Promise<PostgresCheck> {
   const client = new pg.Client({
     host: target.host,
     port: target.port,
@@ -59,7 +50,7 @@ export async function testPostgresConnection(
     user: target.user,
     password: target.password,
     ssl: sslOptions(target.sslMode),
-    stream: () => createGuardedSocket(allowLocal),
+    stream: () => createGuardedSocket(),
     connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
     statement_timeout: STATEMENT_TIMEOUT_MS,
     query_timeout: STATEMENT_TIMEOUT_MS + 2_000,
@@ -85,14 +76,12 @@ export async function testPostgresConnection(
   }
 }
 
-function sslOptions(mode: SslMode): false | ConnectionOptions {
+function sslOptions(mode: SslMode): ConnectionOptions {
   switch (mode) {
     case "verify-full":
       // Certificate chain and hostname checked; pg sets servername from the host.
       return { rejectUnauthorized: true };
     case "require":
       return { rejectUnauthorized: false };
-    case "disable":
-      return false;
   }
 }

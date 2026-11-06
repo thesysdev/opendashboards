@@ -14,7 +14,7 @@ import ipaddr from "ipaddr.js";
  *
  * The check runs inside the socket's own DNS lookup, on the addresses it is
  * about to connect to, so a hostname can't pass a check and then resolve
- * somewhere else (DNS rebinding).
+ * somewhere else (DNS rebinding). There is no exception, in any environment.
  */
 
 /** The host resolves to an address we refuse to connect to. */
@@ -28,14 +28,6 @@ export class BlockedAddressError extends Error {
   }
 }
 
-/**
- * Local development can allow private and loopback hosts (a database in
- * Docker) with PRISM_DEV_ALLOW_LOCAL_DATABASES=true. Production ignores it.
- */
-export function localHostsAllowed(env: NodeJS.ProcessEnv = process.env): boolean {
-  return env.NODE_ENV !== "production" && env.PRISM_DEV_ALLOW_LOCAL_DATABASES === "true";
-}
-
 /** Whether an IP address (v4 or v6, as a string) is a public unicast address. */
 export function isPublicAddress(address: string): boolean {
   if (!net.isIP(address)) return false;
@@ -45,18 +37,6 @@ export function isPublicAddress(address: string): boolean {
     parsed = (parsed as ipaddr.IPv6).toIPv4Address();
   }
   return parsed.range() === "unicast";
-}
-
-function isAllowed(address: string, allowLocal: boolean): boolean {
-  if (isPublicAddress(address)) return true;
-  if (!allowLocal || !net.isIP(address)) return false;
-  // Development: private networks and loopback, but still never link-local
-  // or anything else (metadata endpoints stay unreachable).
-  let parsed = ipaddr.parse(address);
-  if (parsed.kind() === "ipv6" && (parsed as ipaddr.IPv6).isIPv4MappedAddress()) {
-    parsed = (parsed as ipaddr.IPv6).toIPv4Address();
-  }
-  return ["private", "loopback", "uniqueLocal"].includes(parsed.range());
 }
 
 type LookupCallback = (
@@ -70,7 +50,7 @@ type LookupCallback = (
  * fails if any of them is blocked, so a host can't mix a public and a private
  * address and hope for the latter.
  */
-export function createGuardedLookup(allowLocal = localHostsAllowed()) {
+export function createGuardedLookup() {
   return function guardedLookup(
     hostname: string,
     options: LookupOneOptions | LookupAllOptions,
@@ -78,7 +58,7 @@ export function createGuardedLookup(allowLocal = localHostsAllowed()) {
   ): void {
     dns.lookup(hostname, { ...options, all: true }, (error, addresses) => {
       if (error) return callback(error, []);
-      const blocked = addresses.find(({ address }) => !isAllowed(address, allowLocal));
+      const blocked = addresses.find(({ address }) => !isPublicAddress(address));
       if (blocked) return callback(new BlockedAddressError(hostname, blocked.address), []);
       if (!addresses.length) {
         return callback(Object.assign(new Error(`No addresses for ${hostname}`), { code: "ENOTFOUND" }), []);
@@ -95,14 +75,14 @@ export function createGuardedLookup(allowLocal = localHostsAllowed()) {
  * `socket.connect(port, host)`, which this routes through the guarded lookup.
  * TLS upgrades still see the original hostname, so certificate checks work.
  */
-export function createGuardedSocket(allowLocal = localHostsAllowed()): net.Socket {
+export function createGuardedSocket(): net.Socket {
   const socket = new net.Socket();
   const connect = socket.connect.bind(socket) as (options: net.TcpNetConnectOpts) => net.Socket;
-  const lookup = createGuardedLookup(allowLocal);
+  const lookup = createGuardedLookup();
 
   socket.connect = ((port: number, host: string) => {
     // Node skips the lookup for IP literals, so check those directly.
-    if (net.isIP(host) && !isAllowed(host, allowLocal)) {
+    if (net.isIP(host) && !isPublicAddress(host)) {
       process.nextTick(() => socket.destroy(new BlockedAddressError(host, host)));
       return socket;
     }

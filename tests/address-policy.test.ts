@@ -6,7 +6,6 @@ import {
   BlockedAddressError,
   createGuardedLookup,
   isPublicAddress,
-  localHostsAllowed,
 } from "@/lib/net/guarded-socket";
 
 describe("isPublicAddress", () => {
@@ -58,25 +57,11 @@ describe("isPublicAddress", () => {
 });
 
 describe("guarded lookup", () => {
-  const lookup = (host: string, allowLocal: boolean) =>
-    new Promise<unknown>((resolve, reject) =>
-      createGuardedLookup(allowLocal)(host, {}, (error, address) => (error ? reject(error) : resolve(address))),
-    );
-
   it("refuses a name that resolves to loopback", async () => {
-    await expect(lookup("localhost", false)).rejects.toBeInstanceOf(BlockedAddressError);
-  });
-
-  it("allows it only when local hosts are allowed", async () => {
-    await expect(lookup("localhost", true)).resolves.toMatch(/^(127\.0\.0\.1|::1)$/);
-  });
-});
-
-describe("localHostsAllowed", () => {
-  it("is off unless asked for, and always off in production", () => {
-    expect(localHostsAllowed({ NODE_ENV: "development" })).toBe(false);
-    expect(localHostsAllowed({ NODE_ENV: "development", PRISM_DEV_ALLOW_LOCAL_DATABASES: "true" })).toBe(true);
-    expect(localHostsAllowed({ NODE_ENV: "production", PRISM_DEV_ALLOW_LOCAL_DATABASES: "true" })).toBe(false);
+    const lookup = new Promise<unknown>((resolve, reject) =>
+      createGuardedLookup()("localhost", {}, (error, address) => (error ? reject(error) : resolve(address))),
+    );
+    await expect(lookup).rejects.toBeInstanceOf(BlockedAddressError);
   });
 });
 

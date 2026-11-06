@@ -13,7 +13,6 @@ import { getConnectionService, type ConnectionSummary } from "@/lib/connections"
 import type { ConnectionType } from "@/lib/connections/config";
 import type { ConnectionStatus } from "@/lib/db/schema";
 import { formatRelative } from "@/lib/format";
-import { localHostsAllowed } from "@/lib/net/guarded-socket";
 import { getSecretMode } from "@/lib/secrets";
 import { cn } from "@/lib/utils";
 
@@ -38,7 +37,6 @@ async function ConnectionsContent() {
   const user = await requireUser();
   const connections = await getConnectionService().list(user.id);
   const secretMode = getSecretMode();
-  const allowLocal = localHostsAllowed();
   const now = new Date();
 
   return (
@@ -58,7 +56,6 @@ async function ConnectionsContent() {
                 key={connection.id}
                 connection={connection}
                 secretMode={secretMode}
-                allowLocal={allowLocal}
                 now={now}
               />
             ))}
@@ -76,7 +73,7 @@ async function ConnectionsContent() {
                 <p className="text-sm font-medium">{source.name}</p>
                 <p className="truncate text-sm text-muted-foreground">{source.description}</p>
               </div>
-              <AddConnectionButton source={source.type} secretMode={secretMode} allowLocal={allowLocal} />
+              <AddConnectionButton source={source.type} secretMode={secretMode} />
             </li>
           ))}
         </ul>
@@ -95,12 +92,10 @@ const SOURCES: { type: ConnectionType; name: string; tile: string; description: 
 function ConnectionRow({
   connection,
   secretMode,
-  allowLocal,
   now,
 }: {
   connection: ConnectionSummary;
   secretMode: SecretMode;
-  allowLocal: boolean;
   now: Date;
 }) {
   const details = [
@@ -126,7 +121,6 @@ function ConnectionRow({
           apps: connection.apps,
         }}
         secretMode={secretMode}
-        allowLocal={allowLocal}
       />
     </li>
   );
