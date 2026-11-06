@@ -10,10 +10,13 @@
     "test": "vitest run",
     "db:up": "docker compose up -d --wait",
     "db:reset": "node scripts/db-reset.mjs",
-    "db:seed": "node scripts/db-seed.mjs"
+    "db:seed": "node scripts/db-seed.mjs",
+    "openui:sync": "node scripts/openui-sync.mjs"
   },
   "dependencies": {
     "@openuidev/react-headless": "0.18.4",
+    "@openuidev/react-lang": "^1.1.0",
+    "@prism/dashboard-kit": "workspace:^",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",
     "drizzle-orm": "^0.45.4",

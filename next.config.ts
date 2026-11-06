@@ -12,9 +12,14 @@ const nextConfig: NextConfig = {
   experimental: {
     agentFeedback: true,
   },
+  // The dashboard kit is a workspace package consumed from source.
+  transpilePackages: ["@prism/dashboard-kit"],
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
+    // Pinned to this folder, so a dependency installed from a path outside it
+    // (scripts/openui-sync.mjs) can't widen what Turbopack resolves and watches.
+    root: import.meta.dirname,
     rules: {
       "*.css": {
         loaders: ["@tailwindcss/turbopack"],
