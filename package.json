@@ -10,8 +10,7 @@
     "test": "vitest run",
     "db:up": "docker compose up -d --wait",
     "db:reset": "node scripts/db-reset.mjs",
-    "db:seed": "node scripts/db-seed.mjs",
-    "openui:sync": "node scripts/openui-sync.mjs"
+    "db:seed": "node scripts/db-seed.mjs"
   },
   "dependencies": {
     "@openuidev/react-headless": "0.18.4",

@@ -17,8 +17,7 @@ const nextConfig: NextConfig = {
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
-    // Pinned to this folder, so a dependency installed from a path outside it
-    // (scripts/openui-sync.mjs) can't widen what Turbopack resolves and watches.
+    // Pinned to this folder so Turbopack never resolves or watches outside it.
     root: import.meta.dirname,
     rules: {
       "*.css": {
