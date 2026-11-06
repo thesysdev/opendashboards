@@ -17,10 +17,12 @@ const connections = createConnectionService({
   db,
   secrets: () => plaintextSecretBox,
   testConnection: async () => {},
+  testPostgres: async () => ({ serverVersion: "16.4", canWrite: false }),
 });
 
 async function addConnection(userId: string, name = "Production") {
   const result = await connections.create(userId, {
+    type: "posthog",
     name,
     hostKind: "posthog_us",
     projectId: "1",

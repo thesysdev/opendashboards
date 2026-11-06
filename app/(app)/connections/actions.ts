@@ -33,8 +33,9 @@ export async function retestConnectionAction(input: unknown) {
   });
 }
 
-export async function replaceKeyAction(input: unknown) {
-  return run((userId) => getConnectionService().replaceKey(userId, input));
+/** A new API key (PostHog) or password (Postgres) for a saved connection. */
+export async function replaceCredentialAction(input: unknown) {
+  return run((userId) => getConnectionService().replaceCredential(userId, input));
 }
 
 export async function renameConnectionAction(input: unknown) {

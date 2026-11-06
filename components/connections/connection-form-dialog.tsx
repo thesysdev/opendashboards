@@ -4,7 +4,7 @@ import { ExternalLinkIcon, Loader2Icon, TriangleAlertIcon } from "lucide-react";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { createConnectionAction, replaceKeyAction } from "@/app/(app)/connections/actions";
+import { createConnectionAction, replaceCredentialAction } from "@/app/(app)/connections/actions";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,13 +18,12 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { ConnectionField } from "@/lib/connections/errors";
-import type { HostKind } from "@/lib/db/schema";
-import { POSTHOG_HOSTS } from "@/lib/posthog/hosts";
+import { HOST_KINDS, POSTHOG_HOSTS, type HostKind } from "@/lib/posthog/hosts";
 import type { SecretProvider } from "@/lib/secrets/types";
 
 export type SecretMode = SecretProvider | "unconfigured";
 
-type ExistingConnection = { id: string; name: string; hostKind: HostKind; projectId: string };
+type ExistingConnection = { id: string; name: string };
 
 type Props = {
   open: boolean;
@@ -36,11 +35,11 @@ type Values = { name: string; hostKind: HostKind; projectId: string; apiKey: str
 
 const EMPTY: Values = { name: "", hostKind: "posthog_us", projectId: "", apiKey: "" };
 
-/** Adds a PostHog connection, or replaces an existing connection's key. */
-export function ConnectionFormDialog(props: Props) {
+/** Adds a PostHog connection, or replaces an existing PostHog connection's key. */
+export function PostHogFormDialog(props: Props) {
   const { open, onOpenChange, secretMode } = props;
   const replacing = props.mode === "replace";
-  const initial: Values = replacing ? { ...props.connection, apiKey: "" } : EMPTY;
+  const initial: Values = EMPTY;
 
   const [values, setValues] = useState<Values>(initial);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ConnectionField, string>>>({});
@@ -67,8 +66,8 @@ export function ConnectionFormDialog(props: Props) {
     event.preventDefault();
     startTransition(async () => {
       const result = replacing
-        ? await replaceKeyAction({ id: props.connection.id, apiKey: values.apiKey })
-        : await createConnectionAction(values);
+        ? await replaceCredentialAction({ id: props.connection.id, credential: values.apiKey })
+        : await createConnectionAction({ type: "posthog", ...values });
 
       if (result.ok) {
         toast.success(replacing ? "Key replaced" : `Connected to ${values.name.trim()}`);
@@ -123,47 +122,47 @@ export function ConnectionFormDialog(props: Props) {
               </Field>
             )}
 
-            <Field data-invalid={!!fieldErrors.hostKind || undefined}>
-              <FieldLabel id={ids.region}>Region</FieldLabel>
-              <ToggleGroup
-                type="single"
-                variant="outline"
-                aria-labelledby={ids.region}
-                value={values.hostKind}
-                onValueChange={(value) => value && update("hostKind", value as HostKind)}
-                disabled={replacing}
-                className="w-full"
-              >
-                {(Object.keys(POSTHOG_HOSTS) as HostKind[]).map((kind) => (
-                  <ToggleGroupItem key={kind} value={kind} className="flex-1">
-                    {POSTHOG_HOSTS[kind].label}
-                  </ToggleGroupItem>
-                ))}
-              </ToggleGroup>
-              <FieldError>{fieldErrors.hostKind}</FieldError>
-            </Field>
+            {!replacing && (
+              <>
+              <Field data-invalid={!!fieldErrors.hostKind || undefined}>
+                <FieldLabel id={ids.region}>Region</FieldLabel>
+                <ToggleGroup
+                  type="single"
+                  variant="outline"
+                  aria-labelledby={ids.region}
+                  value={values.hostKind}
+                  onValueChange={(value) => value && update("hostKind", value as HostKind)}
+                  className="w-full"
+                >
+                  {HOST_KINDS.map((kind) => (
+                    <ToggleGroupItem key={kind} value={kind} className="flex-1">
+                      {POSTHOG_HOSTS[kind].label}
+                    </ToggleGroupItem>
+                  ))}
+                </ToggleGroup>
+                <FieldError>{fieldErrors.hostKind}</FieldError>
+              </Field>
 
-            <Field data-invalid={!!fieldErrors.projectId || undefined}>
-              <FieldLabel htmlFor={ids.projectId}>Project ID</FieldLabel>
-              <Input
-                id={ids.projectId}
-                value={values.projectId}
-                onChange={(e) => update("projectId", e.target.value)}
-                placeholder="12345"
-                inputMode="numeric"
-                autoComplete="off"
-                disabled={replacing}
-                aria-invalid={!!fieldErrors.projectId || undefined}
-                required
-              />
-              {!replacing && (
+              <Field data-invalid={!!fieldErrors.projectId || undefined}>
+                <FieldLabel htmlFor={ids.projectId}>Project ID</FieldLabel>
+                <Input
+                  id={ids.projectId}
+                  value={values.projectId}
+                  onChange={(e) => update("projectId", e.target.value)}
+                  placeholder="12345"
+                  inputMode="numeric"
+                  autoComplete="off"
+                  aria-invalid={!!fieldErrors.projectId || undefined}
+                  required
+                />
                 <FieldDescription>
                   Find it in PostHog&apos;s{" "}
                   <ExternalLink href={`${host.url}/settings/project`}>project settings</ExternalLink>.
                 </FieldDescription>
-              )}
-              <FieldError>{fieldErrors.projectId}</FieldError>
-            </Field>
+                <FieldError>{fieldErrors.projectId}</FieldError>
+              </Field>
+              </>
+            )}
 
             <Field data-invalid={!!fieldErrors.apiKey || undefined}>
               <FieldLabel htmlFor={ids.apiKey}>Personal API key</FieldLabel>
@@ -180,7 +179,7 @@ export function ConnectionFormDialog(props: Props) {
                 autoFocus={replacing}
               />
               <FieldDescription>
-                <ExternalLink href={`${host.url}/settings/user-api-keys`}>Create a key</ExternalLink>{" "}
+                {replacing ? "Create a key" : <ExternalLink href={`${host.url}/settings/user-api-keys`}>Create a key</ExternalLink>}{" "}
                 with only the <strong className="font-medium text-foreground">Query Read</strong>{" "}
                 scope, limited to this project.
               </FieldDescription>

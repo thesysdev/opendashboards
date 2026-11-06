@@ -50,7 +50,7 @@ async function Prompt() {
   const user = await requireUser();
   const connections = await getConnectionService().list(user.id);
   return (
-    <PromptBox connections={connections.map(({ id, name, hostKind }) => ({ id, name, hostKind }))} />
+    <PromptBox connections={connections.map(({ id, name, shortSource }) => ({ id, name, source: shortSource }))} />
   );
 }
 

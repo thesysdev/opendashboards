@@ -5,14 +5,15 @@ import { Suspense } from "react";
 import { AddConnectionButton } from "@/components/connections/add-connection-button";
 import { ConnectionActions } from "@/components/connections/connection-actions";
 import type { SecretMode } from "@/components/connections/connection-form-dialog";
-import { PostHogTile } from "@/components/connections/source-tile";
+import { SourceTile } from "@/components/connections/source-tile";
 import { EmptyState, PageHeader, SectionLabel } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { requireUser } from "@/lib/auth/user";
 import { getConnectionService, type ConnectionSummary } from "@/lib/connections";
+import type { ConnectionType } from "@/lib/connections/config";
 import type { ConnectionStatus } from "@/lib/db/schema";
 import { formatRelative } from "@/lib/format";
-import { POSTHOG_HOSTS } from "@/lib/posthog/hosts";
+import { localHostsAllowed } from "@/lib/net/guarded-socket";
 import { getSecretMode } from "@/lib/secrets";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +24,7 @@ export default function ConnectionsPage() {
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
       <PageHeader
         title="Data Connections"
-        description="Connect your analytics sources. Prism only runs read-only queries against them to build live dashboards."
+        description="Connect your analytics and databases. Prism only runs read-only queries against them to build live dashboards."
       />
       <Suspense fallback={<ConnectionsSkeleton />}>
         <ConnectionsContent />
@@ -37,6 +38,7 @@ async function ConnectionsContent() {
   const user = await requireUser();
   const connections = await getConnectionService().list(user.id);
   const secretMode = getSecretMode();
+  const allowLocal = localHostsAllowed();
   const now = new Date();
 
   return (
@@ -56,6 +58,7 @@ async function ConnectionsContent() {
                 key={connection.id}
                 connection={connection}
                 secretMode={secretMode}
+                allowLocal={allowLocal}
                 now={now}
               />
             ))}
@@ -65,16 +68,18 @@ async function ConnectionsContent() {
 
       <section aria-labelledby="available-sources" className="mt-10">
         <SectionLabel id="available-sources">Available sources</SectionLabel>
-        <div className="flex items-center gap-3 rounded-xl border p-3.5">
-          <PostHogTile />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-medium">PostHog</p>
-            <p className="truncate text-sm text-muted-foreground">
-              Events · Persons · Sessions · HogQL
-            </p>
-          </div>
-          <AddConnectionButton secretMode={secretMode} />
-        </div>
+        <ul className="divide-y rounded-xl border">
+          {SOURCES.map((source) => (
+            <li key={source.type} className="flex items-center gap-3 p-3.5">
+              <SourceTile label={source.tile} />
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-medium">{source.name}</p>
+                <p className="truncate text-sm text-muted-foreground">{source.description}</p>
+              </div>
+              <AddConnectionButton source={source.type} secretMode={secretMode} allowLocal={allowLocal} />
+            </li>
+          ))}
+        </ul>
       </section>
 
       <StorageNote secretMode={secretMode} />
@@ -82,25 +87,32 @@ async function ConnectionsContent() {
   );
 }
 
+const SOURCES: { type: ConnectionType; name: string; tile: string; description: string }[] = [
+  { type: "posthog", name: "PostHog", tile: "PH", description: "Events · Persons · Sessions · HogQL" },
+  { type: "postgres", name: "Postgres", tile: "PG", description: "Any database reachable on the public internet" },
+];
+
 function ConnectionRow({
   connection,
   secretMode,
+  allowLocal,
   now,
 }: {
   connection: ConnectionSummary;
   secretMode: SecretMode;
+  allowLocal: boolean;
   now: Date;
 }) {
   const details = [
-    POSTHOG_HOSTS[connection.hostKind].label,
-    `Project ${connection.projectId}`,
-    connection.keyHint,
+    connection.source,
+    connection.detail,
+    connection.credentialHint,
     `checked ${formatRelative(connection.lastCheckedAt, now)}`,
   ];
 
   return (
     <li className="flex items-center gap-3 p-3.5">
-      <PostHogTile />
+      <SourceTile label={connection.tile} />
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{connection.name}</p>
         <p className="truncate text-sm text-muted-foreground">{details.join(" · ")}</p>
@@ -110,11 +122,11 @@ function ConnectionRow({
         connection={{
           id: connection.id,
           name: connection.name,
-          hostKind: connection.hostKind,
-          projectId: connection.projectId,
+          type: connection.type,
           apps: connection.apps,
         }}
         secretMode={secretMode}
+        allowLocal={allowLocal}
       />
     </li>
   );
@@ -139,9 +151,9 @@ function StatusBadge({ status }: { status: ConnectionStatus }) {
 function StorageNote({ secretMode }: { secretMode: SecretMode }) {
   const text =
     secretMode === "kms"
-      ? "Keys are encrypted with KMS and never leave the server."
+      ? "Keys and passwords are encrypted with KMS and never leave the server."
       : secretMode === "plaintext"
-        ? "Keys never leave the server. In local development they're stored unencrypted."
+        ? "Keys and passwords never leave the server. In local development they're stored unencrypted."
         : "Secret storage isn't set up on this server yet.";
   return (
     <p className="mt-8 flex items-center justify-center gap-2 text-center text-xs text-muted-foreground">

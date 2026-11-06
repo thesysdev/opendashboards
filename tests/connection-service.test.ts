@@ -4,6 +4,8 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
 import { appConnections, apps, dataConnections } from "@/lib/db/schema";
+import type { PostgresCheck } from "@/lib/postgres/client";
+import { PostgresError } from "@/lib/postgres/errors";
 import { PostHogError } from "@/lib/posthog/client";
 import type { SecretBox } from "@/lib/secrets";
 import { createKmsSecretBox } from "@/lib/secrets/kms";
@@ -14,23 +16,30 @@ import { TEST_DATABASE_URL } from "./global-setup";
 const { db, pool } = createDatabase(TEST_DATABASE_URL);
 
 const VALID = {
+  type: "posthog",
   name: "Production",
   hostKind: "posthog_us",
   projectId: "12345",
   apiKey: "phx_abcdefghijklmnopqrstuvwxyz1234",
 };
 
-function makeService(overrides: { secrets?: SecretBox; test?: () => Promise<void> } = {}) {
+const READ_ONLY: PostgresCheck = { serverVersion: "16.4", canWrite: false };
+
+function makeService(
+  overrides: { secrets?: SecretBox; test?: () => Promise<void>; testPostgres?: () => Promise<PostgresCheck> } = {},
+) {
   const testConnection = vi.fn(overrides.test ?? (async () => {}));
+  const testPostgres = vi.fn(overrides.testPostgres ?? (async () => READ_ONLY));
   const service = createConnectionService({
     db,
     secrets: () => overrides.secrets ?? plaintextSecretBox,
     testConnection,
+    testPostgres,
   });
-  return { service, testConnection };
+  return { service, testConnection, testPostgres };
 }
 
-async function createOk(userId: string, input = VALID) {
+async function createOk(userId: string, input: object = VALID) {
   const { service } = makeService();
   const result = await service.create(userId, input);
   if (!result.ok) throw new Error(`create failed: ${result.error.code}`);
@@ -49,7 +58,7 @@ describe("create", () => {
   it("tests the key, then saves a connection without exposing the key", async () => {
     const { service, testConnection } = makeService();
     const result = await service.create("alice", VALID);
-    expect(result.ok).toBe(true);
+    expect(result).toMatchObject({ ok: true, data: { warnings: [] } });
     expect(testConnection).toHaveBeenCalledWith({
       hostKind: "posthog_us",
       projectId: "12345",
@@ -57,7 +66,14 @@ describe("create", () => {
     });
 
     const [listed] = await service.list("alice");
-    expect(listed).toMatchObject({ name: "Production", status: "ok", keyHint: "phx_…1234" });
+    expect(listed).toMatchObject({
+      name: "Production",
+      type: "posthog",
+      source: "PostHog · US Cloud",
+      detail: "Project 12345",
+      credentialHint: "phx_…1234",
+      status: "ok",
+    });
     expect(JSON.stringify(listed)).not.toContain(VALID.apiKey);
   });
 
@@ -109,7 +125,7 @@ describe("ownership", () => {
     for (const result of [
       await service.retest("bob", { id }),
       await service.rename("bob", { id, name: "Hijacked" }),
-      await service.replaceKey("bob", { id, apiKey: VALID.apiKey }),
+      await service.replaceCredential("bob", { id, credential: VALID.apiKey }),
       await service.remove("bob", { id }),
     ]) {
       expect(result).toMatchObject({ ok: false, error: { code: "not_found" } });
@@ -180,9 +196,9 @@ describe("retest", () => {
     expect(open).toHaveBeenCalledTimes(1);
 
     const newKey = "phx_zyxwvutsrqponmlkjihgfedcba9876";
-    expect(await service.replaceKey("alice", { id, apiKey: newKey })).toEqual({
+    expect(await service.replaceCredential("alice", { id, credential: newKey })).toEqual({
       ok: true,
-      data: undefined,
+      data: { warnings: [] },
     });
     await service.retest("alice", { id });
     expect(open).toHaveBeenCalledTimes(2);
@@ -190,7 +206,7 @@ describe("retest", () => {
   });
 });
 
-describe("replaceKey", () => {
+describe("replaceCredential", () => {
   it("keeps the old key when the new one fails, and never changes the host", async () => {
     const id = await createOk("alice");
     const { service, testConnection } = makeService({
@@ -199,18 +215,28 @@ describe("replaceKey", () => {
       },
     });
 
-    const result = await service.replaceKey("alice", {
+    const result = await service.replaceCredential("alice", {
       id,
-      apiKey: "phx_badbadbadbadbadbadbad1",
+      credential: "phx_badbadbadbadbadbadbad1",
       hostKind: "posthog_eu",
     });
     expect(result).toMatchObject({ ok: false, error: { code: "validation" } });
     expect(testConnection).not.toHaveBeenCalled();
 
-    const failed = await service.replaceKey("alice", { id, apiKey: "phx_badbadbadbadbadbadbad1" });
-    expect(failed).toMatchObject({ ok: false, error: { code: "invalid_key" } });
+    const failed = await service.replaceCredential("alice", { id, credential: "phx_badbadbadbadbadbadbad1" });
+    expect(failed).toMatchObject({ ok: false, error: { code: "invalid_key", field: "apiKey" } });
     const [row] = await service.list("alice");
-    expect(row).toMatchObject({ keyHint: "phx_…1234", hostKind: "posthog_us" });
+    expect(row).toMatchObject({ credentialHint: "phx_…1234", source: "PostHog · US Cloud" });
+  });
+
+  it("validates the new key as a PostHog key", async () => {
+    const id = await createOk("alice");
+    const { service, testConnection } = makeService();
+    expect(await service.replaceCredential("alice", { id, credential: "hunter2" })).toMatchObject({
+      ok: false,
+      error: { code: "validation", field: "apiKey" },
+    });
+    expect(testConnection).not.toHaveBeenCalled();
   });
 });
 
@@ -243,5 +269,126 @@ describe("rename and remove", () => {
     const { service } = makeService();
     expect(await service.remove("alice", { id })).toEqual({ ok: true, data: undefined });
     expect(await service.list("alice")).toEqual([]);
+  });
+});
+
+const PG = {
+  type: "postgres",
+  name: "Warehouse",
+  host: "db.example.com",
+  port: 5432,
+  database: "app",
+  user: "analyst",
+  password: "s3cret-Passw0rd",
+  sslMode: "verify-full",
+};
+
+describe("postgres", () => {
+  it("tests with the password, then saves without exposing it", async () => {
+    const seal = vi.fn(plaintextSecretBox.seal);
+    const { service, testPostgres } = makeService({ secrets: { ...plaintextSecretBox, seal } });
+
+    expect(await service.create("alice", PG)).toMatchObject({ ok: true, data: { warnings: [] } });
+    expect(testPostgres).toHaveBeenCalledWith({
+      host: "db.example.com",
+      port: 5432,
+      database: "app",
+      user: "analyst",
+      password: PG.password,
+      sslMode: "verify-full",
+    });
+    expect(seal).toHaveBeenCalledWith(PG.password, expect.objectContaining({ purpose: "postgres-password" }));
+
+    const [listed] = await service.list("alice");
+    expect(listed).toMatchObject({
+      type: "postgres",
+      source: "Postgres",
+      detail: "analyst@db.example.com:5432/app",
+      tile: "PG",
+      credentialHint: "password ••••",
+    });
+    expect(JSON.stringify(listed)).not.toContain(PG.password);
+  });
+
+  it("accepts the port as text, as a form sends it", async () => {
+    const { service, testPostgres } = makeService();
+    expect(await service.create("alice", { ...PG, port: "6543" })).toMatchObject({ ok: true });
+    expect(testPostgres).toHaveBeenCalledWith(expect.objectContaining({ port: 6543 }));
+  });
+
+  it("warns when the user can write", async () => {
+    const { service } = makeService({ testPostgres: async () => ({ serverVersion: "16.4", canWrite: true }) });
+    expect(await service.create("alice", PG)).toMatchObject({ ok: true, data: { warnings: ["can_write"] } });
+  });
+
+  it("maps failed checks to their fields and saves nothing", async () => {
+    for (const [code, field] of [
+      ["auth_failed", "password"],
+      ["database_not_found", "database"],
+      ["host_blocked", "host"],
+      ["host_not_found", "host"],
+      ["tls_failed", "sslMode"],
+    ] as const) {
+      const { service } = makeService({
+        testPostgres: async () => {
+          throw new PostgresError(code);
+        },
+      });
+      expect(await service.create("alice", PG)).toMatchObject({ ok: false, error: { code, field } });
+    }
+    expect(await makeService().service.list("alice")).toEqual([]);
+  });
+
+  it("rejects a connection string, a socket path or an unknown SSL mode before connecting", async () => {
+    const { service, testPostgres } = makeService();
+    for (const [input, field] of [
+      [{ ...PG, connectionString: "postgres://x" }, undefined],
+      [{ ...PG, host: "/var/run/postgresql" }, "host"],
+      [{ ...PG, host: "postgres://db.example.com" }, "host"],
+      [{ ...PG, host: "db.example.com:5432" }, "host"],
+      [{ ...PG, port: 70000 }, "port"],
+      [{ ...PG, sslMode: "prefer" }, "sslMode"],
+      [{ ...PG, password: "" }, "password"],
+    ] as const) {
+      const result = await service.create("alice", input);
+      expect(result).toMatchObject({ ok: false, error: { code: "validation" } });
+      if (field && !result.ok) expect(result.error.field).toBe(field);
+    }
+    expect(testPostgres).not.toHaveBeenCalled();
+  });
+
+  it("changes the password only, and keeps the old one when the new one fails", async () => {
+    const id = await createOk("alice", PG);
+    const rejecting = makeService({
+      testPostgres: async () => {
+        throw new PostgresError("auth_failed");
+      },
+    });
+    expect(await rejecting.service.replaceCredential("alice", { id, credential: "wrong" })).toMatchObject({
+      ok: false,
+      error: { code: "auth_failed", field: "password" },
+    });
+    expect(await rejecting.service.replaceCredential("alice", { id, credential: "" })).toMatchObject({
+      ok: false,
+      error: { code: "validation", field: "password" },
+    });
+
+    const { service, testPostgres } = makeService();
+    expect(await service.replaceCredential("alice", { id, credential: "new-Passw0rd" })).toMatchObject({ ok: true });
+    await service.retest("alice", { id });
+    expect(testPostgres).toHaveBeenLastCalledWith(
+      expect.objectContaining({ host: "db.example.com", database: "app", password: "new-Passw0rd" }),
+    );
+  });
+
+  it("records an unreachable server as unavailable, not invalid", async () => {
+    const id = await createOk("alice", PG);
+    const { service } = makeService({
+      testPostgres: async () => {
+        throw new PostgresError("unreachable");
+      },
+    });
+    await service.retest("alice", { id });
+    expect((await service.list("alice"))[0].status).toBe("unavailable");
   });
 });

@@ -1,7 +1,7 @@
 import { cn } from "@/lib/utils";
 
-/** The square icon tile at the start of a source or connection row. */
-export function PostHogTile({ className }: { className?: string }) {
+/** The square tile at the start of a source or connection row: "PH", "PG". */
+export function SourceTile({ label, className }: { label: string; className?: string }) {
   return (
     <div
       aria-hidden
@@ -10,7 +10,7 @@ export function PostHogTile({ className }: { className?: string }) {
         className,
       )}
     >
-      PH
+      {label}
     </div>
   );
 }

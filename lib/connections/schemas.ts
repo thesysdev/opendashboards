@@ -1,19 +1,14 @@
 import { z } from "zod";
 
-import { hostKindEnum } from "@/lib/db/schema";
+import { passwordSchema, postgresConfigSchema } from "@/lib/postgres/config";
+
+import { posthogConfigSchema } from "./config";
 
 export const connectionNameSchema = z
   .string()
   .trim()
   .min(1, "Enter a name.")
   .max(80, "Keep the name under 80 characters.");
-
-export const hostKindSchema = z.enum(hostKindEnum.enumValues, { error: "Choose a region." });
-
-export const projectIdSchema = z
-  .string()
-  .trim()
-  .regex(/^\d{1,12}$/, "The project ID is a number. Find it in PostHog's project settings.");
 
 export const apiKeySchema = z
   .string()
@@ -22,17 +17,24 @@ export const apiKeySchema = z
 
 export const connectionIdSchema = z.uuid();
 
-/** `.strict()`: an unexpected field (a URL, a host) fails instead of being ignored. */
-export const createConnectionSchema = z
-  .object({
-    name: connectionNameSchema,
-    hostKind: hostKindSchema,
-    projectId: projectIdSchema,
-    apiKey: apiKeySchema,
-  })
+/**
+ * One shape per source type. `.strict()`: an unexpected field (a URL, a
+ * connection string) fails instead of being ignored.
+ */
+export const createConnectionSchema = z.discriminatedUnion("type", [
+  posthogConfigSchema
+    .extend({ type: z.literal("posthog"), name: connectionNameSchema, apiKey: apiKeySchema })
+    .strict(),
+  postgresConfigSchema
+    .extend({ type: z.literal("postgres"), name: connectionNameSchema, password: passwordSchema })
+    .strict(),
+]);
+
+/** A new API key or password. Which one is checked against the saved connection's type. */
+export const replaceCredentialSchema = z
+  .object({ id: connectionIdSchema, credential: z.string() })
   .strict();
 
-export const replaceKeySchema = z.object({ id: connectionIdSchema, apiKey: apiKeySchema }).strict();
 export const renameSchema = z.object({ id: connectionIdSchema, name: connectionNameSchema }).strict();
 export const connectionRefSchema = z.object({ id: connectionIdSchema }).strict();
 

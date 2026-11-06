@@ -1,6 +1,4 @@
-import type { HostKind } from "@/lib/db/schema";
-
-import { POSTHOG_HOSTS } from "./hosts";
+import { POSTHOG_HOSTS, type HostKind } from "./hosts";
 
 export type PostHogErrorCode =
   /** The key is wrong, revoked, or its user was deleted (PostHog sends 401 or 403). */

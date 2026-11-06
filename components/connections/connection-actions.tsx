@@ -36,15 +36,15 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import type { HostKind } from "@/lib/db/schema";
+import type { ConnectionType } from "@/lib/connections/config";
 
-import { ConnectionFormDialog, type SecretMode } from "./connection-form-dialog";
+import { PostHogFormDialog, type SecretMode } from "./connection-form-dialog";
+import { PostgresFormDialog } from "./postgres-form-dialog";
 
 type Connection = {
   id: string;
   name: string;
-  hostKind: HostKind;
-  projectId: string;
+  type: ConnectionType;
   apps: { id: string; name: string }[];
 };
 
@@ -53,9 +53,11 @@ type OpenDialog = "replace" | "rename" | "delete" | null;
 export function ConnectionActions({
   connection,
   secretMode,
+  allowLocal,
 }: {
   connection: Connection;
   secretMode: SecretMode;
+  allowLocal: boolean;
 }) {
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const [testing, startTest] = useTransition();
@@ -85,7 +87,7 @@ export function ConnectionActions({
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setDialog("replace")}>
             <KeyRoundIcon aria-hidden />
-            Replace key
+            {connection.type === "postgres" ? "Change password" : "Replace key"}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setDialog("rename")}>
             <PencilIcon aria-hidden />
@@ -99,13 +101,24 @@ export function ConnectionActions({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <ConnectionFormDialog
-        mode="replace"
-        connection={connection}
-        open={dialog === "replace"}
-        onOpenChange={close}
-        secretMode={secretMode}
-      />
+      {connection.type === "postgres" ? (
+        <PostgresFormDialog
+          mode="replace"
+          connection={connection}
+          open={dialog === "replace"}
+          onOpenChange={close}
+          secretMode={secretMode}
+          allowLocal={allowLocal}
+        />
+      ) : (
+        <PostHogFormDialog
+          mode="replace"
+          connection={connection}
+          open={dialog === "replace"}
+          onOpenChange={close}
+          secretMode={secretMode}
+        />
+      )}
       <RenameDialog connection={connection} open={dialog === "rename"} onOpenChange={close} />
       <DeleteDialog connection={connection} open={dialog === "delete"} onOpenChange={close} />
     </>
@@ -245,7 +258,7 @@ function DeleteDialog({
                   </ul>
                 </>
               ) : (
-                <p>This deletes the connection and its stored key. It can&apos;t be undone.</p>
+                <p>This deletes the connection and its stored credential. It can&apos;t be undone.</p>
               )}
             </div>
           </AlertDialogDescription>

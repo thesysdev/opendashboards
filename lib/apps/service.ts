@@ -7,8 +7,8 @@ import {
   dashboards,
   dataConnections,
   type ConnectionStatus,
-  type HostKind,
 } from "@/lib/db/schema";
+import type { ConnectionType } from "@/lib/connections/config";
 import { logError } from "@/lib/log";
 
 import { fail, fromValidation, internalError, notFound, ok, type AppResult } from "./errors";
@@ -35,7 +35,7 @@ export type AppDetail = {
   createdAt: Date;
   updatedAt: Date;
   dashboards: { id: string; title: string; artifactId: string; position: number }[];
-  connections: (AppConnectionBadge & { hostKind: HostKind; status: ConnectionStatus })[];
+  connections: (AppConnectionBadge & { type: ConnectionType; status: ConnectionStatus })[];
 };
 
 /**
@@ -68,7 +68,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         appId: appConnections.appId,
         id: dataConnections.id,
         name: dataConnections.name,
-        hostKind: dataConnections.hostKind,
+        type: dataConnections.type,
         status: dataConnections.status,
       })
       .from(appConnections)
@@ -168,7 +168,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         ...rest,
         pendingConnections,
         dashboards: appDashboards,
-        connections: badges.map(({ id, name, hostKind, status }) => ({ id, name, hostKind, status })),
+        connections: badges.map(({ id, name, type, status }) => ({ id, name, type, status })),
       };
     },
 

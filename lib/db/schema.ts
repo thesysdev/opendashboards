@@ -10,19 +10,18 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 
+import type { ConnectionConfig } from "@/lib/connections/config";
 import type { SealedSecret } from "@/lib/secrets/types";
 
-export const connectionTypeEnum = pgEnum("connection_type", ["posthog"]);
-
-/** Where a connection points. Chosen from this list when it's added, never typed in. */
-export const hostKindEnum = pgEnum("host_kind", ["posthog_us", "posthog_eu"]);
+/** Matches CONNECTION_TYPES in lib/connections/config.ts (a test checks). */
+export const connectionTypeEnum = pgEnum("connection_type", ["posthog", "postgres"]);
 
 export const connectionStatusEnum = pgEnum("connection_status", [
   /** The last check passed. */
   "ok",
-  /** The key or project is wrong: the user has to fix it. */
+  /** The credential or settings are wrong: the user has to fix them. */
   "invalid",
-  /** We couldn't check (PostHog or secret storage unavailable): retry later. */
+  /** We couldn't check (source or secret storage unavailable): retry later. */
   "unavailable",
 ]);
 
@@ -33,13 +32,16 @@ export const dataConnections = pgTable(
     userId: text("user_id").notNull(),
     name: text("name").notNull(),
     type: connectionTypeEnum("type").notNull(),
-    /** Fixed after creation: a different host means a new connection. */
-    hostKind: hostKindEnum("host_kind").notNull(),
-    projectId: text("project_id").notNull(),
-    /** The API key, sealed by a SecretBox. Never sent to the browser. */
+    /**
+     * Where the connection points, per type (PostHog region and project;
+     * Postgres host, port, database, user, SSL mode). Validated on every read.
+     * Fixed after creation: pointing elsewhere means a new connection.
+     */
+    config: jsonb("config").$type<ConnectionConfig>().notNull(),
+    /** The API key or password, sealed by a SecretBox. Never sent to the browser. */
     secret: jsonb("secret").$type<SealedSecret>().notNull(),
-    /** e.g. "phx_…a1b2", so the UI never needs the key itself. */
-    keyHint: text("key_hint").notNull(),
+    /** e.g. "phx_…a1b2", so the UI never needs the credential itself. */
+    credentialHint: text("credential_hint").notNull(),
     status: connectionStatusEnum("status").notNull(),
     lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -134,5 +136,4 @@ export const appThreads = pgTable(
 );
 
 export type DataConnectionRow = typeof dataConnections.$inferSelect;
-export type HostKind = (typeof hostKindEnum.enumValues)[number];
 export type ConnectionStatus = (typeof connectionStatusEnum.enumValues)[number];

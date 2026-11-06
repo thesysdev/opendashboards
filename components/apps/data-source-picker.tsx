@@ -12,11 +12,10 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { POSTHOG_HOSTS } from "@/lib/posthog/hosts";
-import type { HostKind } from "@/lib/db/schema";
 import { cn } from "@/lib/utils";
 
-export type PickerConnection = { id: string; name: string; hostKind: HostKind };
+/** `source` is a short label such as "PostHog US" or "Postgres". */
+export type PickerConnection = { id: string; name: string; source: string };
 
 /**
  * The composer's data source dropdown: pick which connections the prompt is
@@ -76,7 +75,7 @@ export function DataSourcePicker({
                 >
                   <span className="min-w-0 flex-1 truncate">{connection.name}</span>
                   <span className="shrink-0 text-xs text-muted-foreground">
-                    {POSTHOG_HOSTS[connection.hostKind].label.replace(" Cloud", "")}
+                    {connection.source}
                   </span>
                 </DropdownMenuCheckboxItem>
               ))}
