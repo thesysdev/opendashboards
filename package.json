@@ -9,10 +9,11 @@
     "lint": "eslint",
     "test": "vitest run",
     "db:up": "docker compose up -d --wait",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate"
+    "db:reset": "node scripts/db-reset.mjs",
+    "db:seed": "node scripts/db-seed.mjs"
   },
   "dependencies": {
+    "@openuidev/react-headless": "0.18.4",
     "class-variance-authority": "^0.7.1",
     "cn": "^0.5.2",
     "drizzle-orm": "^0.45.4",

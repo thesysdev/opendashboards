@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { AppsTree } from "@/components/shell/apps-tree";
 import { Brand } from "@/components/shell/brand";
 import { MobileNav } from "@/components/shell/mobile-nav";
-import { SidebarNav } from "@/components/shell/sidebar-nav";
+import { NavLink } from "@/components/shell/nav-link";
 import { SidebarUser, SidebarUserFallback } from "@/components/shell/sidebar-user";
 import { UserAvatar, UserAvatarFallback } from "@/components/shell/user-avatar";
 
@@ -12,9 +13,20 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
     <div className="flex h-dvh bg-neutral-50">
       {/* md and up: the sidebar holds the brand, the nav, and the user. */}
       <aside className="hidden w-56 shrink-0 flex-col px-3 py-3 md:flex">
-        <HomeLink className="mb-3 flex h-9 items-center px-2.5" />
-        <SidebarNav />
-        <div className="mt-auto">
+        <HomeLink className="mb-3 flex h-9 shrink-0 items-center px-2.5" />
+        <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
+          <NavLink href="/apps" label="Apps" icon="apps" exact />
+          {/* Apps take the leftover height and scroll, so what's below always shows. */}
+          <div className="-mx-1 mt-0.5 min-h-0 flex-1 overflow-y-auto px-1 pb-2">
+            <Suspense fallback={null}>
+              <AppsTree />
+            </Suspense>
+          </div>
+          <div className="shrink-0 border-t pt-2">
+            <NavLink href="/connections" label="Data Connections" icon="connections" />
+          </div>
+        </nav>
+        <div className="mt-1 shrink-0">
           <Suspense fallback={<SidebarUserFallback />}>
             <SidebarUser />
           </Suspense>

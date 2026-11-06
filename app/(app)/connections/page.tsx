@@ -11,6 +11,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { requireUser } from "@/lib/auth/user";
 import { getConnectionService, type ConnectionSummary } from "@/lib/connections";
 import type { ConnectionStatus } from "@/lib/db/schema";
+import { formatRelative } from "@/lib/format";
 import { POSTHOG_HOSTS } from "@/lib/posthog/hosts";
 import { getSecretMode } from "@/lib/secrets";
 import { cn } from "@/lib/utils";
@@ -163,19 +164,4 @@ function ConnectionsSkeleton() {
       </div>
     </div>
   );
-}
-
-const RELATIVE = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
-
-function formatRelative(date: Date, now: Date): string {
-  const seconds = Math.round((date.getTime() - now.getTime()) / 1000);
-  const units: [Intl.RelativeTimeFormatUnit, number][] = [
-    ["day", 86_400],
-    ["hour", 3_600],
-    ["minute", 60],
-  ];
-  for (const [unit, size] of units) {
-    if (Math.abs(seconds) >= size) return RELATIVE.format(Math.round(seconds / size), unit);
-  }
-  return "just now";
 }

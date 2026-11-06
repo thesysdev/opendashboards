@@ -1,17 +1,15 @@
 import { sql } from "drizzle-orm";
-import { migrate } from "drizzle-orm/node-postgres/migrator";
-import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
-import { apps, dataConnections } from "@/lib/db/schema";
+import { appConnections, apps, dataConnections } from "@/lib/db/schema";
 import { PostHogError } from "@/lib/posthog/client";
 import type { SecretBox } from "@/lib/secrets";
 import { createKmsSecretBox } from "@/lib/secrets/kms";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 
-const TEST_DATABASE_URL =
-  process.env.TEST_DATABASE_URL ?? "postgres://prism:prism@localhost:54329/prism_test";
+import { TEST_DATABASE_URL } from "./global-setup";
 
 const { db, pool } = createDatabase(TEST_DATABASE_URL);
 
@@ -38,10 +36,6 @@ async function createOk(userId: string, input = VALID) {
   if (!result.ok) throw new Error(`create failed: ${result.error.code}`);
   return result.data.id;
 }
-
-beforeAll(async () => {
-  await migrate(db, { migrationsFolder: "./db/migrations" });
-});
 
 beforeEach(async () => {
   await db.execute(sql`TRUNCATE ${apps}, ${dataConnections} CASCADE`);
@@ -233,7 +227,8 @@ describe("rename and remove", () => {
 
   it("refuses to delete a connection an app uses, and lists the apps", async () => {
     const id = await createOk("alice");
-    await db.insert(apps).values({ userId: "alice", name: "Growth", connectionId: id });
+    const [app] = await db.insert(apps).values({ userId: "alice", name: "Growth" }).returning();
+    await db.insert(appConnections).values({ appId: app.id, connectionId: id });
     const { service } = makeService();
 
     expect(await service.remove("alice", { id })).toMatchObject({

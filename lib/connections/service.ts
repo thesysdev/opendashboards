@@ -3,7 +3,13 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq } from "drizzle-orm";
 
 import type { Database } from "@/lib/db";
-import { apps, dataConnections, type ConnectionStatus, type HostKind } from "@/lib/db/schema";
+import {
+  appConnections,
+  apps,
+  dataConnections,
+  type ConnectionStatus,
+  type HostKind,
+} from "@/lib/db/schema";
 import { logError } from "@/lib/log";
 import type { PostHogTarget } from "@/lib/posthog/client";
 import type { SecretBox, SecretContext } from "@/lib/secrets";
@@ -78,8 +84,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
   async function appsUsing(userId: string, connectionId: string) {
     return db
       .select({ id: apps.id, name: apps.name })
-      .from(apps)
-      .where(and(eq(apps.connectionId, connectionId), eq(apps.userId, userId)))
+      .from(appConnections)
+      .innerJoin(apps, eq(apps.id, appConnections.appId))
+      .where(and(eq(appConnections.connectionId, connectionId), eq(apps.userId, userId)))
       .orderBy(asc(apps.name));
   }
 
@@ -110,8 +117,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         .orderBy(asc(dataConnections.createdAt));
 
       const appRows = await db
-        .select({ id: apps.id, name: apps.name, connectionId: apps.connectionId })
-        .from(apps)
+        .select({ id: apps.id, name: apps.name, connectionId: appConnections.connectionId })
+        .from(appConnections)
+        .innerJoin(apps, eq(apps.id, appConnections.appId))
         .where(eq(apps.userId, userId))
         .orderBy(asc(apps.name));
 
@@ -246,7 +254,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         const inUse = (users: { id: string; name: string }[]) =>
           fail({
             code: "in_use",
-            message: "Apps use this connection. Remove it from them before deleting it.",
+            message: "Dashboards in these apps use this connection. Delete those apps first.",
             apps: users,
           });
 

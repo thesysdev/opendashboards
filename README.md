@@ -1,7 +1,8 @@
 # Prism
 
-Live dashboards from your data, built by chatting. This repository currently contains the
-**Data Connections** slice: adding, testing and managing PostHog connections.
+Live dashboards from your data, built by chatting. So far: **Data Connections** (adding,
+testing and managing PostHog connections) and **Apps** (the home page, the app workspace, and
+the chat thread mapping, ready for the chat milestone).
 
 ## Local development
 
@@ -9,7 +10,8 @@ Live dashboards from your data, built by chatting. This repository currently con
 pnpm install
 cp .env.example .env.local
 pnpm db:up        # Postgres on localhost:54329 (plus a prism_test database)
-pnpm db:migrate
+pnpm db:reset     # create the tables from lib/db/schema.ts
+pnpm db:seed      # optional: mock connections and apps for DEV_USER_ID
 pnpm dev
 ```
 
@@ -23,7 +25,7 @@ fallbacks only work outside production.
 pnpm test
 ```
 
-The connection service tests run against the `prism_test` database from `pnpm db:up`.
+The service tests run against the `prism_test` database from `pnpm db:up`.
 
 ## How it fits together
 
@@ -33,7 +35,10 @@ The connection service tests run against the `prism_test` database from `pnpm db
 | Secret storage (`SecretBox`: `plaintext` now, `kms` stubbed) | `lib/secrets/` |
 | PostHog client (fixed US/EU hosts, error classification) | `lib/posthog/` |
 | Connection service (validation, ownership, statuses) | `lib/connections/` |
+| Apps, connection usage, thread mapping | `lib/apps/`, `app/api/apps/[appId]/threads/` |
 | Schema and migrations | `lib/db/schema.ts`, `db/migrations/` |
 | UI | `app/(app)/`, `components/` |
 
-Schema changes: edit `lib/db/schema.ts`, then run `pnpm db:generate` and `pnpm db:migrate`.
+While Prism is being built there are no migrations. To change the schema, edit
+`lib/db/schema.ts` and run `pnpm db:reset`: it drops all data and recreates the tables (it
+refuses non-local databases). The test suite resets `prism_test` the same way before it runs.

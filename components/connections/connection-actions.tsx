@@ -237,7 +237,7 @@ function DeleteDialog({
             <div>
               {blocked ? (
                 <>
-                  <p>These apps use this connection. Remove it from them before deleting it.</p>
+                  <p>Dashboards in these apps use this connection. Delete those apps first.</p>
                   <ul className="mt-3 list-disc pl-5 text-foreground">
                     {blockingApps.map((app) => (
                       <li key={app.id}>{app.name}</li>
