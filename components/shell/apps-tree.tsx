@@ -13,7 +13,7 @@ export async function AppsTree() {
   const apps = await getAppService().tree(user.id);
 
   if (!apps.length) {
-    return <p className="px-2.5 py-1.5 text-xs text-muted-foreground">No apps yet</p>;
+    return <p className="py-1.5 pl-7 text-xs text-muted-foreground">No apps yet</p>;
   }
   return <AppsTreeNav apps={apps} />;
 }

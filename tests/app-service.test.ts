@@ -1,7 +1,7 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
-import { createAppService, nameFromPrompt } from "@/lib/apps/service";
+import { appName, createAppService } from "@/lib/apps/service";
 import { createThreadService } from "@/lib/apps/threads";
 import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
@@ -58,19 +58,21 @@ describe("create", () => {
     });
   });
 
-  it("stores the prompt and chosen sources, and names the app from the prompt", async () => {
+  it("stores the prompt and chosen sources, and names the app after them", async () => {
     const prod = await addConnection("alice", "Production");
     await addConnection("alice", "Staging");
     const id = await createApp("alice", "show me weekly signups by plan and country for the last year.", [prod]);
     const app = await appsService.get("alice", id);
     expect(app).toMatchObject({
-      name: "Show me weekly signups by plan…",
+      name: "Production: App 1",
       pendingPrompt: "show me weekly signups by plan and country for the last year.",
       pendingConnections: [{ id: prod, name: "Production" }],
       dashboards: [],
       // Picking a source isn't using it: usage is recorded when dashboards query it.
       connections: [],
     });
+    const next = await createApp("alice", "another", [prod]);
+    expect((await appsService.get("alice", next))?.name).toBe("Production: App 2");
   });
 
   it("refuses another user's data source", async () => {
@@ -127,7 +129,7 @@ describe("list, rename, remove", () => {
     await appsService.rename("alice", { id: older, name: "Renamed" });
 
     const listed = await appsService.list("alice");
-    expect(listed.map((app) => app.name)).toEqual(["Renamed", "Newer"]);
+    expect(listed.map((app) => app.name)).toEqual(["Renamed", "Production: App 2"]);
     expect(listed[0]).toMatchObject({
       dashboardCount: 2,
       connections: [{ id: connectionId, name: "Production" }],
@@ -163,10 +165,10 @@ describe("tree", () => {
     ]);
 
     expect(await appsService.tree("alice")).toEqual([
-      { id: second, name: "Second", dashboards: [] },
+      { id: second, name: "Production: App 2", dashboards: [] },
       {
         id: first,
-        name: "First",
+        name: "Production: App 1",
         dashboards: [
           { id: expect.any(String), title: "First tab" },
           { id: expect.any(String), title: "Second tab" },
@@ -303,10 +305,21 @@ describe("threads", () => {
   });
 });
 
-describe("nameFromPrompt", () => {
-  it("takes up to six words of the first line", () => {
-    expect(nameFromPrompt("signups by week.")).toBe("Signups by week");
-    expect(nameFromPrompt("one two three four five six seven")).toBe("One two three four five six…");
-    expect(nameFromPrompt("first line\nsecond line")).toBe("First line");
+describe("appName", () => {
+  it("names an app after its data sources and numbers it", () => {
+    expect(appName(["Retail sales"], [])).toBe("Retail sales: App 1");
+    expect(appName(["Retail sales"], ["Retail sales: App 1", "Retail sales: App 4", "Production: App 9"])).toBe(
+      "Retail sales: App 5",
+    );
+    expect(appName(["Retail sales"], ["My renamed app"])).toBe("Retail sales: App 1");
+  });
+
+  it("lists two sources and counts the rest", () => {
+    expect(appName(["Retail sales", "Production"], [])).toBe("Retail sales + Production: App 1");
+    expect(appName(["A", "B", "C"], ["A + 2 more: App 1"])).toBe("A + 2 more: App 2");
+  });
+
+  it("treats source names literally", () => {
+    expect(appName(["Sales (EU)"], ["Sales (EU): App 2"])).toBe("Sales (EU): App 3");
   });
 });

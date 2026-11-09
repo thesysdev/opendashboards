@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronRightIcon, LayoutDashboardIcon } from "lucide-react";
+import { ChevronRightIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState } from "react";
@@ -56,13 +56,17 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
 
         return (
           <li key={app.id}>
+            {/*
+              The chevron sits in the nav's icon column; names start right
+              after it, so as much of the width as possible goes to them.
+            */}
             <div className="group relative">
               <Link
                 href={appPath(app.id)}
                 aria-current={isActiveApp && !app.dashboards.length ? "page" : undefined}
                 title={app.name}
                 className={cn(
-                  "flex h-8 items-center rounded-lg pr-8 pl-2.5 text-sm text-foreground/70 transition-colors",
+                  "flex h-8 items-center rounded-lg pr-2 pl-7 text-sm text-foreground/70 transition-colors",
                   "hover:bg-black/[0.04] hover:text-foreground",
                   "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
                   isActiveApp && "font-medium text-foreground",
@@ -78,10 +82,8 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                   aria-expanded={isOpen}
                   aria-label={`${isOpen ? "Collapse" : "Expand"} ${app.name}`}
                   className={cn(
-                    "absolute top-1 right-1 flex size-6 items-center justify-center rounded-md text-muted-foreground transition",
+                    "absolute top-1.5 left-1.5 flex size-5 items-center justify-center rounded-md text-muted-foreground transition-colors",
                     "hover:bg-black/[0.06] hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
-                    // Shown on hover or focus; always shown while open.
-                    !isOpen && "opacity-0 group-hover:opacity-100 focus-visible:opacity-100",
                   )}
                 >
                   <ChevronRightIcon className={cn("size-3.5 transition-transform", isOpen && "rotate-90")} aria-hidden />
@@ -90,7 +92,11 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
             </div>
 
             {isOpen && (
-              <ul aria-label={`${app.name} dashboards`} className="mt-0.5 mb-1 flex flex-col gap-0.5">
+              <ul
+                aria-label={`${app.name} dashboards`}
+                // A guide line down the chevron's column ties the dashboards to their app.
+                className="relative mt-0.5 mb-1 flex flex-col gap-0.5 before:absolute before:inset-y-0 before:left-4 before:w-px before:bg-border"
+              >
                 {app.dashboards.map((dashboard) => {
                   const active = dashboard.id === activeDashboardId;
                   return (
@@ -100,13 +106,12 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                         aria-current={active ? "page" : undefined}
                         title={dashboard.title}
                         className={cn(
-                          "flex h-7 items-center gap-2 rounded-lg pr-7 pl-4 text-[0.8125rem] text-foreground/65 transition-colors",
+                          "flex h-8 items-center rounded-lg pr-8 pl-7 text-[0.8125rem] text-foreground/65 transition-colors",
                           "hover:bg-black/[0.04] hover:text-foreground",
                           "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
                           active && "bg-black/[0.06] font-medium text-foreground",
                         )}
                       >
-                        <LayoutDashboardIcon className="size-3.5 shrink-0 opacity-60" aria-hidden />
                         <span className="truncate">{dashboard.title}</span>
                       </Link>
                       <DashboardMenu

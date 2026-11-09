@@ -183,7 +183,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         const { prompt, connectionIds } = parsed.data;
 
         const owned = await db
-          .select({ id: dataConnections.id })
+          .select({ id: dataConnections.id, name: dataConnections.name })
           .from(dataConnections)
           .where(and(eq(dataConnections.userId, userId), inArray(dataConnections.id, connectionIds)));
         if (owned.length !== connectionIds.length) {
@@ -194,11 +194,14 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
           });
         }
 
+        // Named after its data sources, in the order they were picked; the user renames it.
+        const sources = connectionIds.map((id) => owned.find((row) => row.id === id)!.name);
+        const taken = await db.select({ name: apps.name }).from(apps).where(eq(apps.userId, userId));
         const [app] = await db
           .insert(apps)
           .values({
             userId,
-            name: nameFromPrompt(prompt),
+            name: appName(sources, taken.map((row) => row.name)),
             pendingPrompt: prompt,
             pendingConnectionIds: connectionIds,
           })
@@ -291,12 +294,21 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
 
 export type AppService = ReturnType<typeof createAppService>;
 
-/** A starting name from the prompt's first line: up to six words. */
-export function nameFromPrompt(prompt: string): string {
-  const firstLine = prompt.trim().split(/\r?\n/)[0] ?? "";
-  const words = firstLine.replace(/[.!?:;,]+$/, "").split(/\s+/).filter(Boolean);
-  let name = words.slice(0, 6).join(" ");
-  if (words.length > 6) name += "…";
-  if (name.length > 60) name = `${name.slice(0, 59).trimEnd()}…`;
-  return name ? name[0].toUpperCase() + name.slice(1) : "Untitled app";
+/**
+ * A new app's name: its data sources and a number, "Retail sales: App 2",
+ * one more than the highest already used for those sources. No model is
+ * involved; the user renames it whenever they like.
+ */
+export function appName(sources: string[], taken: string[]): string {
+  let prefix =
+    sources.length === 0
+      ? "Untitled"
+      : sources.length <= 2
+        ? sources.join(" + ")
+        : `${sources[0]} + ${sources.length - 1} more`;
+  if (prefix.length > 60) prefix = `${prefix.slice(0, 59).trimEnd()}…`;
+
+  const pattern = new RegExp(`^${prefix.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}: App (\\d+)$`);
+  const highest = Math.max(0, ...taken.map((name) => Number(pattern.exec(name)?.[1] ?? 0)));
+  return `${prefix}: App ${highest + 1}`;
 }
