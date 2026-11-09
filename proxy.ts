@@ -1,12 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import {
-  AUTHORIZATION_HEADER,
-  authenticate,
-  getAuthConfig,
-  USER_ID_HEADER,
-  type AuthConfig,
-} from "@/lib/auth/verify";
+import { checkClaims, devUser, getAuthConfig, type AuthConfig } from "@/lib/auth/verify";
 import { count } from "@/lib/metrics";
 import { readSession } from "@/lib/supabase/session";
 
@@ -23,11 +17,7 @@ function refuse(request: NextRequest, status: 401 | 403) {
   return NextResponse.redirect(url);
 }
 
-/**
- * Signs requests in before any page, Route Handler or Server Action runs, and
- * passes the identity on as a header. `requireUser()` checks that header again
- * close to the data, as the Next.js docs recommend.
- */
+/** Signs requests in before any page, Route Handler or Server Action runs. `requireUser()` checks again close to the data. */
 export async function proxy(request: NextRequest) {
   let config: AuthConfig;
   try {
@@ -38,29 +28,22 @@ export async function proxy(request: NextRequest) {
   }
 
   if (config.mode === "dev") {
-    const result = await authenticate(request.headers, config);
-    return result.ok ? NextResponse.next() : new NextResponse("Unauthorized", { status: 401 });
+    return devUser(request.headers, config.devUserId).ok ? NextResponse.next() : new NextResponse("Unauthorized", { status: 401 });
   }
-
-  // Identity only ever comes from the session below, never from the browser.
-  const headers = new Headers(request.headers);
-  headers.delete(AUTHORIZATION_HEADER);
-  headers.delete(USER_ID_HEADER);
-
-  if (request.nextUrl.pathname.startsWith("/auth/")) return NextResponse.next({ request: { headers } });
+  if (request.nextUrl.pathname.startsWith("/auth/")) return NextResponse.next();
 
   const session = await readSession(request);
-  if (!session.accessToken) return session.apply(refuse(request, 401));
+  if (session.unavailable) {
+    count("prism.auth.rejected", { reason: "auth_unavailable" });
+    return unavailable();
+  }
 
-  headers.set(AUTHORIZATION_HEADER, `Bearer ${session.accessToken}`);
-  const result = await authenticate(headers, config);
-  if (result.ok) return session.apply(NextResponse.next({ request: { headers } }));
+  const result = checkClaims(session.claims, config.allowlist);
+  // `request` carries any refreshed cookies, so the app doesn't refresh the session again.
+  if (result.ok) return session.apply(NextResponse.next({ request }));
 
-  // Counted only here: requireUser() re-checks every request that passes.
-  count("prism.auth.rejected", { reason: result.reason });
-  if (result.reason === "auth_unavailable") return unavailable();
-  if (result.reason === "not_allowed") return session.apply(refuse(request, 403));
-  return session.apply(refuse(request, 401));
+  if (result.reason !== "signed_out") count("prism.auth.rejected", { reason: result.reason });
+  return session.apply(refuse(request, result.reason === "not_allowed" ? 403 : 401));
 }
 
 export const config = {
