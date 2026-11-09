@@ -121,42 +121,46 @@ function ConnectionRow({
   ];
 
   return (
-    <li className="flex items-center gap-3 p-3.5">
-      <SourceTile label={connection.tile} />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{connection.name}</p>
-        <p className="truncate text-sm text-muted-foreground">{details.join(" · ")}</p>
-        <UsedBy apps={connection.apps} />
+    <li className="p-3.5">
+      <div className="flex items-center gap-3">
+        <SourceTile label={connection.tile} />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{connection.name}</p>
+          <p className="truncate text-sm text-muted-foreground">{details.join(" · ")}</p>
+        </div>
+        <StatusBadge status={connection.status} />
+        <ConnectionActions
+          connection={{
+            id: connection.id,
+            name: connection.name,
+            type: connection.type,
+            apps: connection.apps,
+          }}
+          secretMode={secretMode}
+        />
       </div>
-      <StatusBadge status={connection.status} />
-      <ConnectionActions
-        connection={{
-          id: connection.id,
-          name: connection.name,
-          type: connection.type,
-          apps: connection.apps,
-        }}
-        secretMode={secretMode}
-      />
+      <UsedBy apps={connection.apps} />
     </li>
   );
 }
 
 function DemoRow({ demo }: { demo: DemoDatasetSummary }) {
   return (
-    <li className="flex items-center gap-3 p-3.5">
-      <SourceTile label="DM" />
-      <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{demo.name}</p>
-        <p className="line-clamp-2 text-sm text-muted-foreground">{demo.description}</p>
-        <UsedBy apps={demo.apps} />
+    <li className="p-3.5">
+      <div className="flex items-center gap-3">
+        <SourceTile label="DM" />
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-sm font-medium">{demo.name}</p>
+          <p className="line-clamp-2 text-sm text-muted-foreground">{demo.description}</p>
+        </div>
+        <DemoDatasetSwitch
+          dataset={demo.key}
+          name={demo.name}
+          installed={demo.connectionId !== null}
+          apps={demo.apps}
+        />
       </div>
-      <DemoDatasetSwitch
-        dataset={demo.key}
-        name={demo.name}
-        installed={demo.connectionId !== null}
-        apps={demo.apps}
-      />
+      <UsedBy apps={demo.apps} />
     </li>
   );
 }
