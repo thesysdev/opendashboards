@@ -23,11 +23,19 @@ export interface SecretBox {
   open(sealed: SealedSecret, context: SecretContext): Promise<string>;
 }
 
-/** A provider that exists but isn't built yet. */
-export class NotImplementedError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "NotImplementedError";
+/** The secret store couldn't be reached or refused the call. A retry may work. */
+export class SecretStorageUnavailableError extends Error {
+  constructor(message: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "SecretStorageUnavailableError";
+  }
+}
+
+/** The stored value can't be opened for this user and connection: the user has to enter it again. */
+export class SecretUnreadableError extends Error {
+  constructor(options?: ErrorOptions) {
+    super("The stored secret can't be decrypted for this connection", options);
+    this.name = "SecretUnreadableError";
   }
 }
 

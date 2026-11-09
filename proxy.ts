@@ -7,7 +7,7 @@ import { authenticate, getAuthConfig, type AuthConfig } from "@/lib/auth/gateway
  * Route Handler or Server Action runs. `requireUser()` checks again close to
  * the data, as the Next.js docs recommend.
  */
-export function proxy(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let config: AuthConfig;
   try {
     config = getAuthConfig();
@@ -15,7 +15,8 @@ export function proxy(request: NextRequest) {
     return new NextResponse("Service unavailable", { status: 503 });
   }
 
-  const result = authenticate(request.headers, config);
+  const result = await authenticate(request.headers, config);
+  if (!result.ok && result.reason === "auth_unavailable") return new NextResponse("Service unavailable", { status: 503 });
   if (!result.ok) return new NextResponse("Unauthorized", { status: 401 });
   return NextResponse.next();
 }

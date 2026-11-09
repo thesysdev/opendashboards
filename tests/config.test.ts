@@ -17,6 +17,8 @@ const PROD_SECRETS = {
   THESYS_API_KEY: "key",
   GATEWAY_SHARED_SECRET: SECRET,
   KMS_KEY_ID: "kms",
+  KMS_ROLE_ARN: "arn:aws:iam::1:role/prism",
+  SUPABASE_URL: "https://project.supabase.co",
 };
 
 /** prod's settings with some changed, as if someone edited prod.ts. */
@@ -60,6 +62,7 @@ describe("the settings files", () => {
 describe("settingsProblems", () => {
   it.each([
     ["a dev user", (s: Settings) => (s.auth.devUserId = "dev-user"), "auth.devUserId"],
+    ["no public host", (s: Settings) => (s.auth.publicHost = null), "auth.publicHost"],
     ["plaintext secrets", (s: Settings) => (s.secrets.allowPlaintext = true), "secrets.allowPlaintext"],
     ["the /kit pages", (s: Settings) => (s.kitPages = true), "kitPages"],
     ["a connect timeout", (s: Settings) => (s.network.connectAttemptTimeoutMs = 2_000), "connectAttemptTimeoutMs"],
@@ -77,7 +80,12 @@ describe("secretProblems", () => {
 
   it("names each missing secret prod needs", () => {
     const problems = secretProblems("prod", settingsFor("prod"), { NODE_ENV: "production" });
-    expect(problems.join("\n")).toMatch(/DATABASE_URL[\s\S]*THESYS_API_KEY[\s\S]*GATEWAY_SHARED_SECRET[\s\S]*KMS_KEY_ID/);
+    expect(problems.join("\n")).toMatch(/DATABASE_URL[\s\S]*THESYS_API_KEY[\s\S]*GATEWAY_SHARED_SECRET[\s\S]*KMS_KEY_ID[\s\S]*KMS_ROLE_ARN/);
+  });
+
+  it("needs Supabase wherever a gateway secret is set", () => {
+    const { SUPABASE_URL: _unset, ...env } = PROD_SECRETS;
+    expect(secretProblems("prod", settingsFor("prod"), env).join("\n")).toContain("SUPABASE_URL");
   });
 
   it("refuses a short gateway secret", () => {

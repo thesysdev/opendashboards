@@ -16,6 +16,9 @@ type Ctx = { params: Promise<{ appId: string }> };
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
+/** A turn runs up to `maxAgentRounds` model calls, each with its own tool calls. */
+export const maxDuration = 800;
+
 /**
  * One turn of the Build chat. Runs the agent's tool loop over OpenUI Gateway
  * and streams it as AG-UI events (text, tool calls and their results) for
@@ -71,7 +74,6 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
         await runner.done();
         translate.finish();
         emit({ type: EventType.RUN_FINISHED, threadId, runId } as BaseEvent);
-        controller.close();
       } catch (error) {
         if (request.signal.aborted) {
           controller.close();
@@ -84,6 +86,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
         return; // Failed: save nothing.
       }
 
+      // Saved before the stream closes: a Vercel Function can stop once its response ends.
       // The new turn: the user's message, then every message the loop added.
       const turnMessages = runner.messages.slice(system.length - 1 + messages.length) as ChatCompletionMessageParam[];
       try {
@@ -96,6 +99,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
       } catch (error) {
         logError("chat.save", error);
       }
+      controller.close();
     },
   });
 

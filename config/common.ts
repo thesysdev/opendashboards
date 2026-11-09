@@ -9,5 +9,6 @@ export const common: CommonSettings = {
     maxAgentRounds: 24,
   },
   posthog: { queryTimeoutMs: 50_000, checkTimeoutMs: 15_000, maxRows: { agent: 200, dashboard: 10_000 } },
+  kms: { region: "us-east-1" },
   postgres: { connectTimeoutMs: 5_000, statementTimeoutMs: 15_000, maxRows: { agent: 200, dashboard: 10_000 } },
 };

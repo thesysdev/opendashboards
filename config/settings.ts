@@ -29,6 +29,10 @@ export type CommonSettings = {
     /** Rows a query may return: the agent reads results, dashboards draw them. */
     maxRows: { agent: number; dashboard: number };
   };
+  kms: {
+    /** Where the KMS key that seals data-source credentials lives. */
+    region: string;
+  };
   postgres: {
     connectTimeoutMs: number;
     statementTimeoutMs: number;
@@ -45,6 +49,11 @@ export type EnvironmentSettings = {
      * through the gateway, with GATEWAY_SHARED_SECRET. Local only.
      */
     devUserId: string | null;
+    /**
+     * The host people use Prism at, when a gateway sits in front of it.
+     * Cross-site checks accept it alongside the request's own host.
+     */
+    publicHost: string | null;
   };
   secrets: {
     /** Store data-source keys unencrypted when no KMS key is configured. Local only. */

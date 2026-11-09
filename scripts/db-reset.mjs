@@ -1,6 +1,5 @@
-// Drops everything in the database and recreates the tables from
-// lib/db/schema.ts. While Prism is being built there's no migration history:
-// change the schema, then run `pnpm db:reset`. All data is lost.
+// Drops everything in a local database and recreates the tables by running
+// every migration, so tests exercise what production runs. All data is lost.
 //
 // Usage: pnpm db:reset              (DATABASE_URL from .env.local)
 //        DATABASE_URL=… pnpm db:reset
@@ -31,9 +30,9 @@ await client.query(
 );
 await client.end();
 
-execFileSync("pnpm", ["exec", "drizzle-kit", "push", "--force"], {
+execFileSync("node", ["scripts/db-migrate.mjs"], {
   stdio: process.env.DB_RESET_QUIET ? "ignore" : "inherit",
-  env: { ...process.env, DATABASE_URL: url },
+  env: { ...process.env, DATABASE_URL: url, DATABASE_URL_UNPOOLED: url },
 });
 
 if (!process.env.DB_RESET_QUIET) console.log(`Reset ${new URL(url).pathname.slice(1)}: all data dropped, tables recreated.`);

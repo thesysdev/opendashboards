@@ -1,30 +1,90 @@
+import { DecryptCommand, EncryptCommand, KMSClient } from "@aws-sdk/client-kms";
+import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
+
+import { config } from "@/config";
+
 import {
-  NotImplementedError,
   SecretProviderMismatchError,
+  SecretStorageUnavailableError,
+  SecretUnreadableError,
   type SealedSecret,
   type SecretBox,
   type SecretContext,
 } from "./types";
 
+/** The part of the KMS client this provider uses, so tests can stand in for AWS. */
+export type KmsClient = Pick<KMSClient, "send">;
+
+export type KmsOptions = {
+  /** The role to assume through Vercel OIDC. Without one, the AWS SDK's own credentials are used. */
+  roleArn?: string;
+  /** Replaces the real client in tests. */
+  client?: KmsClient;
+};
+
+function createClient(roleArn: string | undefined): KMSClient {
+  return new KMSClient({
+    region: config().kms.region,
+    ...(roleArn ? { credentials: awsCredentialsProvider({ roleArn }) } : {}),
+  });
+}
+
+/** KMS treats the encryption context as authenticated data: it must match to decrypt. */
+const encryptionContext = ({ purpose, userId, connectionId }: SecretContext) => ({ purpose, userId, connectionId });
+
 /**
- * AWS KMS, reached through Vercel OIDC federation. Not built yet: sealing and
- * opening throw. When it is, `seal` calls KMS Encrypt and `open` calls KMS
- * Decrypt, both with `context` as the encryption context.
+ * AWS KMS, reached through Vercel OIDC federation. `context` is the encryption
+ * context, so a sealed secret only opens for the same user and connection.
+ * Credentials are far below KMS's 4 KB limit, so they're encrypted directly.
  */
-export function createKmsSecretBox(keyId: string): SecretBox {
+export function createKmsSecretBox(keyId: string, options: KmsOptions = {}): SecretBox {
+  let client = options.client;
+  const kms = () => (client ??= createClient(options.roleArn));
+
   return {
     provider: "kms",
 
-    async seal(_plaintext: string, _context: SecretContext): Promise<SealedSecret> {
-      throw new NotImplementedError(`KMS secret storage isn't implemented yet (key ${keyId})`);
+    async seal(plaintext: string, context: SecretContext): Promise<SealedSecret> {
+      let blob: Uint8Array | undefined;
+      try {
+        ({ CiphertextBlob: blob } = await kms().send(
+          new EncryptCommand({
+            KeyId: keyId,
+            Plaintext: new TextEncoder().encode(plaintext),
+            EncryptionContext: encryptionContext(context),
+          }),
+        ));
+      } catch (cause) {
+        throw new SecretStorageUnavailableError("KMS couldn't encrypt the secret", { cause });
+      }
+      if (!blob) throw new SecretStorageUnavailableError("KMS returned no ciphertext");
+      return { v: 1, provider: "kms", keyId, ciphertext: Buffer.from(blob).toString("base64") };
     },
 
-    async open(sealed: SealedSecret, _context: SecretContext): Promise<string> {
+    async open(sealed: SealedSecret, context: SecretContext): Promise<string> {
       // Checked first: a plaintext row must never be used by a KMS deployment.
       if (sealed.provider !== "kms") {
         throw new SecretProviderMismatchError("kms", sealed.provider);
       }
-      throw new NotImplementedError(`KMS secret storage isn't implemented yet (key ${keyId})`);
+      let plaintext: Uint8Array | undefined;
+      try {
+        ({ Plaintext: plaintext } = await kms().send(
+          new DecryptCommand({
+            // The key it was sealed with, so secrets outlive a change of KMS_KEY_ID.
+            KeyId: sealed.keyId,
+            CiphertextBlob: Buffer.from(sealed.ciphertext, "base64"),
+            EncryptionContext: encryptionContext(context),
+          }),
+        ));
+      } catch (cause) {
+        // A wrong context or a damaged value. Anything else may pass on a retry.
+        if (cause instanceof Error && cause.name === "InvalidCiphertextException") {
+          throw new SecretUnreadableError({ cause });
+        }
+        throw new SecretStorageUnavailableError("KMS couldn't decrypt the secret", { cause });
+      }
+      if (!plaintext) throw new SecretStorageUnavailableError("KMS returned no plaintext");
+      return new TextDecoder().decode(plaintext);
     },
   };
 }
