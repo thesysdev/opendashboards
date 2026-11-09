@@ -261,7 +261,7 @@ function DataStep({
                 <SourceTile label={source.tile} className="size-9" />
                 <span className="min-w-0 flex-1">
                   <span className="block text-sm font-medium">{source.label}</span>
-                  <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">{source.blurb}</span>
+                  <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">{source.blurb}</span>
                 </span>
                 <PlusIcon className="mt-0.5 size-4 shrink-0 text-muted-foreground" aria-hidden />
               </button>
@@ -290,7 +290,7 @@ function DataStep({
                   <SourceTile label="DM" className="size-9" />
                   <span className="min-w-0 flex-1">
                     <span className="block text-sm font-medium">{demo.name}</span>
-                    <span className="mt-0.5 line-clamp-2 block text-xs text-muted-foreground">
+                    <span className="mt-0.5 line-clamp-2 text-xs text-muted-foreground">
                       {demo.description}
                     </span>
                   </span>
