@@ -4,6 +4,7 @@ import type { ConnectionOptions } from "node:tls";
 
 import pg from "pg";
 
+import { config as appConfig } from "@/config";
 import { createGuardedSocket } from "@/lib/net/guarded-socket";
 
 import type { QueryResult } from "../types";
@@ -20,8 +21,6 @@ export type PostgresCheck = {
   canWrite: boolean;
 };
 
-const CONNECT_TIMEOUT_MS = 5_000;
-const STATEMENT_TIMEOUT_MS = 15_000;
 
 /** Does the role have any way to change data? Owners have every right, so they count. */
 const WRITE_ACCESS_SQL = `
@@ -53,9 +52,9 @@ async function withReadOnly<T>(target: PostgresTarget, fn: (client: pg.Client) =
     password: target.password,
     ssl: sslOptions(target.sslMode),
     stream: () => createGuardedSocket(),
-    connectionTimeoutMillis: CONNECT_TIMEOUT_MS,
-    statement_timeout: STATEMENT_TIMEOUT_MS,
-    query_timeout: STATEMENT_TIMEOUT_MS + 2_000,
+    connectionTimeoutMillis: appConfig().postgres.connectTimeoutMs,
+    statement_timeout: appConfig().postgres.statementTimeoutMs,
+    query_timeout: appConfig().postgres.statementTimeoutMs + 2_000,
     application_name: "prism",
   });
   // A dropped connection emits 'error' on the client; without a listener it would crash the process.

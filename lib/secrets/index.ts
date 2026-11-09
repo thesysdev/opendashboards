@@ -1,27 +1,38 @@
+import { config, secrets, type Environment } from "@/config";
+
 import { createKmsSecretBox } from "./kms";
 import { plaintextSecretBox } from "./plaintext";
 import { SecretStorageNotConfiguredError, type SecretBox, type SecretProvider } from "./types";
 
 export * from "./types";
 
-type Env = Record<string, string | undefined>;
+/** What secret storage needs from the configuration. */
+export type SecretSettings = { environment: Environment; kmsKeyId: string | undefined; allowPlaintext: boolean };
+
+const current = (): SecretSettings => {
+  const { env, secrets: settings } = config();
+  return { environment: env, kmsKeyId: secrets.kmsKeyId(), allowPlaintext: settings.allowPlaintext };
+};
+
+/** Plaintext is allowed only where the settings allow it and only locally, whatever a settings file says. */
+const plaintextAllowed = (settings: SecretSettings) => settings.allowPlaintext && settings.environment === "local";
 
 /**
- * Which provider this deployment uses: KMS when `KMS_KEY_ID` is set, else
- * plaintext outside production. Production without KMS throws: secrets are
- * never stored unencrypted there.
+ * Which provider this deployment uses: KMS when a KMS key is configured,
+ * else plaintext locally where the settings allow it. Anywhere else without
+ * KMS throws: secrets are never stored unencrypted there.
  */
-export function getSecretBox(env: Env = process.env): SecretBox {
-  if (env.KMS_KEY_ID) return createKmsSecretBox(env.KMS_KEY_ID);
-  if (env.NODE_ENV === "production") throw new SecretStorageNotConfiguredError();
+export function getSecretBox(settings: SecretSettings = current()): SecretBox {
+  if (settings.kmsKeyId) return createKmsSecretBox(settings.kmsKeyId);
+  if (!plaintextAllowed(settings)) throw new SecretStorageNotConfiguredError();
   warnPlaintextOnce();
   return plaintextSecretBox;
 }
 
 /** For the UI: which provider is in use, without throwing. */
-export function getSecretMode(env: Env = process.env): SecretProvider | "unconfigured" {
-  if (env.KMS_KEY_ID) return "kms";
-  return env.NODE_ENV === "production" ? "unconfigured" : "plaintext";
+export function getSecretMode(settings: SecretSettings = current()): SecretProvider | "unconfigured" {
+  if (settings.kmsKeyId) return "kms";
+  return plaintextAllowed(settings) ? "plaintext" : "unconfigured";
 }
 
 let warned = false;

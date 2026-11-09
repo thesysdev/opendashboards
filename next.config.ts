@@ -1,4 +1,7 @@
 import type { NextConfig } from "next";
+import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_SERVER } from "next/constants";
+
+import { validateConfig } from "./config";
 
 const nextConfig: NextConfig = {
   async redirects() {
@@ -28,4 +31,13 @@ const nextConfig: NextConfig = {
   },
 };
 
-export default nextConfig;
+/**
+ * Validates Prism's configuration before Next.js uses this one. A throw here
+ * stops `next dev`, `next build` and `next start` before anything is served
+ * (a throw in instrumentation.ts only fails each request). Settings files are
+ * checked in every phase; secrets only where a server starts.
+ */
+export default function config(phase: string): NextConfig {
+  validateConfig({ withSecrets: phase === PHASE_DEVELOPMENT_SERVER || phase === PHASE_PRODUCTION_SERVER });
+  return nextConfig;
+}

@@ -4,12 +4,12 @@ import OpenAI from "openai";
 import type { RunnableToolFunctionWithContext } from "openai/lib/RunnableFunction";
 import { z } from "zod";
 
+import { config, secrets } from "@/config";
 import {
   artifactOf,
   deleteDashboard,
   getDashboardService,
   getDashboards,
-  MODEL,
   readDashboard,
 } from "@/lib/dashboards";
 import { logError } from "@/lib/log";
@@ -22,12 +22,13 @@ import { ToolError, toolsFor, type ToolContext } from "@/lib/tools";
  * dashboards in OpenUI Cloud. The chat itself is Markdown.
  */
 
-export { MODEL };
 
-const GATEWAY_URL = "https://api.thesys.dev/v1/embed";
 
 /** Model rounds per turn, tool calls included. */
-export const MAX_ROUNDS = 24;
+export const maxRounds = () => config().openui.maxAgentRounds;
+
+/** The model that runs the Build agent. */
+export const model = () => config().openui.model;
 
 export const SYSTEM_PROMPT = `You are Prism's dashboard builder. The user is building an app: a set of live dashboards over their own data.
 
@@ -37,9 +38,9 @@ export const SYSTEM_PROMPT = `You are Prism's dashboard builder. The user is bui
 
 let gateway: OpenAI | undefined;
 
-/** OpenUI Gateway, with THESYS_API_KEY from the server's environment. */
+/** OpenUI Gateway, as configured: its URL and the THESYS_API_KEY secret. */
 export function getGateway(): OpenAI {
-  gateway ??= new OpenAI({ baseURL: GATEWAY_URL, apiKey: process.env.THESYS_API_KEY });
+  gateway ??= new OpenAI({ baseURL: config().openui.gatewayUrl, apiKey: secrets.thesysApiKey() });
   return gateway;
 }
 

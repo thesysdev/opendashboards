@@ -13,19 +13,32 @@ const headers = (values: Record<string, string>) => new Headers(values);
 
 describe("getAuthConfig", () => {
   it("uses gateway mode when a secret is set", () => {
-    expect(getAuthConfig({ GATEWAY_SHARED_SECRET: SECRET })).toEqual({ mode: "gateway", secret: SECRET });
+    expect(getAuthConfig({ environment: "prod", devUserId: null, gatewaySecret: SECRET })).toEqual({ mode: "gateway", secret: SECRET });
+    expect(getAuthConfig({ environment: "local", devUserId: "dev-user", gatewaySecret: SECRET })).toEqual({
+      mode: "gateway",
+      secret: SECRET,
+    });
   });
 
-  it("refuses production without a secret", () => {
-    expect(() => getAuthConfig({ NODE_ENV: "production" })).toThrow(AuthConfigError);
+  it("refuses prod without a secret", () => {
+    expect(() => getAuthConfig({ environment: "prod", devUserId: null, gatewaySecret: undefined })).toThrow(AuthConfigError);
+  });
+
+  it("refuses a dev user outside local, even with a secret", () => {
+    expect(() => getAuthConfig({ environment: "prod", devUserId: "dev-user", gatewaySecret: undefined })).toThrow(
+      AuthConfigError,
+    );
+    expect(() => getAuthConfig({ environment: "prod", devUserId: "dev-user", gatewaySecret: SECRET })).toThrow(
+      AuthConfigError,
+    );
   });
 
   it("refuses a short secret", () => {
-    expect(() => getAuthConfig({ GATEWAY_SHARED_SECRET: "short" })).toThrow(AuthConfigError);
+    expect(() => getAuthConfig({ environment: "prod", devUserId: null, gatewaySecret: "short" })).toThrow(AuthConfigError);
   });
 
-  it("falls back to the dev user outside production", () => {
-    expect(getAuthConfig({ NODE_ENV: "development", DEV_USER_ID: "alice" })).toEqual({
+  it("uses local's dev user without a secret", () => {
+    expect(getAuthConfig({ environment: "local", devUserId: "alice", gatewaySecret: undefined })).toEqual({
       mode: "dev",
       devUserId: "alice",
     });

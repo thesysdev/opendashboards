@@ -14,18 +14,22 @@ import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 const context: SecretContext = { purpose: "posthog-api-key", userId: "u1", connectionId: "c1" };
 
 describe("getSecretBox", () => {
-  it("uses KMS when KMS_KEY_ID is set, in any environment", () => {
-    expect(getSecretBox({ KMS_KEY_ID: "key", NODE_ENV: "production" }).provider).toBe("kms");
-    expect(getSecretBox({ KMS_KEY_ID: "key", NODE_ENV: "development" }).provider).toBe("kms");
+  it("uses KMS when a KMS key is configured, in any environment", () => {
+    expect(getSecretBox({ environment: "prod", kmsKeyId: "key", allowPlaintext: false }).provider).toBe("kms");
+    expect(getSecretBox({ environment: "local", kmsKeyId: "key", allowPlaintext: true }).provider).toBe("kms");
   });
 
-  it("uses plaintext outside production without KMS", () => {
-    expect(getSecretBox({ NODE_ENV: "development" }).provider).toBe("plaintext");
+  it("uses plaintext locally where the settings allow it", () => {
+    expect(getSecretBox({ environment: "local", kmsKeyId: undefined, allowPlaintext: true }).provider).toBe("plaintext");
   });
 
-  it("refuses production without KMS", () => {
-    expect(() => getSecretBox({ NODE_ENV: "production" })).toThrow(SecretStorageNotConfiguredError);
-    expect(getSecretMode({ NODE_ENV: "production" })).toBe("unconfigured");
+  it("refuses prod without KMS, even if its settings allowed plaintext", () => {
+    for (const allowPlaintext of [false, true]) {
+      expect(() => getSecretBox({ environment: "prod", kmsKeyId: undefined, allowPlaintext })).toThrow(
+        SecretStorageNotConfiguredError,
+      );
+      expect(getSecretMode({ environment: "prod", kmsKeyId: undefined, allowPlaintext })).toBe("unconfigured");
+    }
   });
 });
 

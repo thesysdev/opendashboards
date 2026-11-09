@@ -2,6 +2,8 @@ import "server-only";
 
 import { z } from "zod";
 
+import { config as appConfig } from "@/config";
+
 import type { ConnectionSource, QueryResult, SourceTool } from "../types";
 
 import { posthogCatalog, type PostHogConfig } from "./catalog";
@@ -12,11 +14,6 @@ export const apiKeySchema = z
   .trim()
   .regex(/^phx_[A-Za-z0-9_-]{16,200}$/, "Personal API keys start with phx_.");
 
-/** How long a data query may run: inside the dashboard interpreter's 60-second budget. */
-const QUERY_TIMEOUT_MS = 50_000;
-
-/** Rows a caller may get back: the agent reads results, so keep them short. */
-const MAX_ROWS = { agent: 200, dashboard: 10_000 } as const;
 
 async function hogql(
   connection: { config: PostHogConfig; credential: string },
@@ -27,7 +24,7 @@ async function hogql(
   const { results, columns } = await runHogQLQuery(
     { hostKind: connection.config.hostKind, projectId: connection.config.projectId, apiKey: connection.credential },
     query,
-    { signal, timeoutMs: QUERY_TIMEOUT_MS },
+    { signal, timeoutMs: appConfig().posthog.queryTimeoutMs },
   );
   const rows = results.slice(0, maxRows).map((row) =>
     Array.isArray(row) ? Object.fromEntries(columns.map((column, i) => [column, row[i] ?? null])) : { value: row },
@@ -52,7 +49,7 @@ const queryTool: SourceTool<PostHogConfig, { hogql: string }> = {
     truncated: false,
   },
   callers: ["agent", "dashboard"],
-  execute: (connection, { hogql: query }, { signal, caller }) => hogql(connection, query, MAX_ROWS[caller], signal),
+  execute: (connection, { hogql: query }, { signal, caller }) => hogql(connection, query, appConfig().posthog.maxRows[caller], signal),
 };
 
 const eventsTool: SourceTool<PostHogConfig, { days?: number }> = {
@@ -129,7 +126,10 @@ export const posthogSource: ConnectionSource<PostHogConfig> = {
       case "bad_query":
         return {
           status: "unavailable",
-          error: { code: "bad_query", message: error.detail ? `HogQL error: ${error.detail}` : "PostHog rejected the query." },
+          error: {
+            code: "bad_query",
+            message: error.detail ? `HogQL error: ${queryProblem(error.detail)}` : "PostHog rejected the query.",
+          },
         };
       case "timeout":
         return {
@@ -150,3 +150,13 @@ export const posthogSource: ConnectionSource<PostHogConfig> = {
   },
   tools: [queryTool, eventsTool],
 };
+
+/**
+ * PostHog's reason a query failed, without the expanded SQL it appends ("In
+ * query SELECT …"), which repeats internal joins and the project id and can
+ * run to thousands of characters. The full detail goes to the server log.
+ */
+export function queryProblem(detail: string): string {
+  const reason = detail.split(/\s+In query\s/)[0]?.trim() || detail;
+  return reason.length > 300 ? `${reason.slice(0, 300)}…` : reason;
+}

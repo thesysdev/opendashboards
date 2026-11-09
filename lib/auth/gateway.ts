@@ -1,5 +1,7 @@
 import { createHash, timingSafeEqual } from "node:crypto";
 
+import { config, MIN_GATEWAY_SECRET_LENGTH, secrets, type Environment } from "@/config";
+
 /**
  * Gateway authentication.
  *
@@ -16,7 +18,6 @@ import { createHash, timingSafeEqual } from "node:crypto";
 export const USER_ID_HEADER = "x-user-id";
 export const GATEWAY_SECRET_HEADER = "x-gateway-secret";
 
-const MIN_SECRET_LENGTH = 32;
 const USER_ID_PATTERN = /^[A-Za-z0-9_.:@-]{1,128}$/;
 
 export type AuthConfig =
@@ -32,30 +33,42 @@ export class AuthConfigError extends Error {
   }
 }
 
-type Env = Record<string, string | undefined>;
+/** What auth needs from the configuration: the environment, its dev user, and the gateway secret. */
+export type AuthSettings = { environment: Environment; devUserId: string | null; gatewaySecret: string | undefined };
+
+const currentAuthSettings = (): AuthSettings => {
+  const { env, auth } = config();
+  return { environment: env, devUserId: auth.devUserId, gatewaySecret: secrets.gatewaySecret() };
+};
 
 /**
- * Reads the auth configuration. Fails closed: production without a gateway
- * secret is a configuration error, never an unauthenticated app.
+ * Decides how requests are authenticated. Fails closed: outside local there
+ * is never a dev user, so the gateway secret is required and nothing runs
+ * unauthenticated. Locally a gateway secret, if set, is used too.
+ *
+ * Startup validation (next.config.ts) already refuses these cases; this
+ * refuses them again in case a request somehow gets this far.
  */
-export function getAuthConfig(env: Env = process.env): AuthConfig {
-  const secret = env.GATEWAY_SHARED_SECRET;
+export function getAuthConfig(settings: AuthSettings = currentAuthSettings()): AuthConfig {
+  if (settings.environment !== "local" && settings.devUserId !== null) {
+    throw new AuthConfigError(`${settings.environment} can't have a dev user; only local may skip the gateway`);
+  }
+  const secret = settings.gatewaySecret;
   if (secret) {
-    if (secret.length < MIN_SECRET_LENGTH) {
+    if (secret.length < MIN_GATEWAY_SECRET_LENGTH) {
       throw new AuthConfigError(
-        `GATEWAY_SHARED_SECRET must be at least ${MIN_SECRET_LENGTH} characters`,
+        `GATEWAY_SHARED_SECRET must be at least ${MIN_GATEWAY_SECRET_LENGTH} characters`,
       );
     }
     return { mode: "gateway", secret };
   }
-  if (env.NODE_ENV === "production") {
-    throw new AuthConfigError("GATEWAY_SHARED_SECRET must be set in production");
+  if (settings.devUserId === null) {
+    throw new AuthConfigError("GATEWAY_SHARED_SECRET must be set outside local");
   }
-  const devUserId = env.DEV_USER_ID || "dev-user";
-  if (!USER_ID_PATTERN.test(devUserId)) {
-    throw new AuthConfigError("DEV_USER_ID has an invalid format");
+  if (!USER_ID_PATTERN.test(settings.devUserId)) {
+    throw new AuthConfigError("The configured dev user id has an invalid format");
   }
-  return { mode: "dev", devUserId };
+  return { mode: "dev", devUserId: settings.devUserId };
 }
 
 export type AuthResult =

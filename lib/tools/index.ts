@@ -77,7 +77,12 @@ function fromSource(source: ConnectionSource, tool: SourceTool<Record<string, un
         result = await tool.execute(connection, toolArgs, { signal, caller });
       } catch (error) {
         const known = fromCheckError(error);
-        if (known) throw new ToolError(known.error.code, known.error.message);
+        if (known) {
+          // The caller gets a short message; keep the cause (network error, PostHog's
+          // detail) in the server log, where it can be diagnosed.
+          if (known.status === "unavailable") logError(`tools.${tool.name}`, error);
+          throw new ToolError(known.error.code, known.error.message);
+        }
         logError(`tools.${tool.name}`, error);
         throw new ToolError("internal", "The tool failed unexpectedly.");
       }

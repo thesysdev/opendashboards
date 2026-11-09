@@ -84,3 +84,19 @@ describe("error classification", () => {
     expect(String((error as Error).message)).not.toContain("phx_key");
   });
 });
+
+describe("queryProblem", () => {
+  it("keeps PostHog's reason and drops the expanded SQL", async () => {
+    const { queryProblem } = await import("@/lib/sources/posthog/source");
+    expect(
+      queryProblem(
+        "Column 'st' is not under aggregate function and not in GROUP BY keys. In query SELECT toString(st) FROM events WHERE equals(events.team_id, 79652)",
+      ),
+    ).toBe("Column 'st' is not under aggregate function and not in GROUP BY keys.");
+  });
+
+  it("leaves a detail without SQL alone", async () => {
+    const { queryProblem } = await import("@/lib/sources/posthog/source");
+    expect(queryProblem("Unable to resolve field: foo")).toBe("Unable to resolve field: foo");
+  });
+});

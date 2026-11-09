@@ -1,3 +1,5 @@
+import { config } from "@/config";
+
 import { POSTHOG_HOSTS, type HostKind } from "./hosts";
 
 export type PostHogErrorCode =
@@ -26,15 +28,15 @@ export class PostHogError extends Error {
     readonly status?: number,
     /** PostHog's explanation, for query errors. */
     readonly detail?: string,
+    options?: { cause?: unknown },
   ) {
-    super(`PostHog request failed: ${code}${status ? ` (HTTP ${status})` : ""}`);
+    super(`PostHog request failed: ${code}${status ? ` (HTTP ${status})` : ""}`, options);
     this.name = "PostHogError";
   }
 }
 
 export type PostHogTarget = { hostKind: HostKind; projectId: string; apiKey: string };
 
-const DEFAULT_TIMEOUT_MS = 15_000;
 
 /**
  * Runs a HogQL query through `POST /api/projects/:id/query/`. The host comes
@@ -46,7 +48,7 @@ export async function runHogQLQuery(
   options: { signal?: AbortSignal; timeoutMs?: number; fetch?: typeof fetch } = {},
 ): Promise<{ results: unknown[]; columns: string[] }> {
   const { url } = POSTHOG_HOSTS[target.hostKind];
-  const timeout = AbortSignal.timeout(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
+  const timeout = AbortSignal.timeout(options.timeoutMs ?? config().posthog.checkTimeoutMs);
   const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
 
   let response: Response;
@@ -68,7 +70,7 @@ export async function runHogQLQuery(
   } catch (error) {
     // A caller's own abort is theirs to handle; a timeout or network error isn't.
     if (options.signal?.aborted) throw error;
-    throw new PostHogError(timeout.aborted ? "timeout" : "unavailable");
+    throw new PostHogError(timeout.aborted ? "timeout" : "unavailable", undefined, undefined, { cause: error });
   }
 
   if (!response.ok) {

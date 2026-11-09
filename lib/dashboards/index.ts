@@ -9,6 +9,7 @@ import {
 } from "@openuidev/server";
 import { parseMessage } from "@openuidev/lang-core";
 
+import { config, secrets } from "@/config";
 import { getDb } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { ToolError, toolsFor, type ToolContext } from "@/lib/tools";
@@ -16,16 +17,14 @@ import { ToolError, toolsFor, type ToolContext } from "@/lib/tools";
 import spec from "./generated/kit.spec.json";
 import { createDashboardService, type DashboardService } from "./service";
 
-/** The model that builds and edits dashboards, and runs the Build chat. */
-export const MODEL = "anthropic/claude-sonnet-5.5";
 
 let client: OpenUIClient | undefined;
 let dashboards: Dashboard<ToolContext> | undefined;
 let service: DashboardService | undefined;
 
-/** OpenUI Cloud, with THESYS_API_KEY from the server's environment. */
+/** OpenUI Cloud, as configured: its API and the THESYS_API_KEY secret. */
 export function getOpenUI(): OpenUIClient {
-  client ??= new OpenUIClient();
+  client ??= new OpenUIClient({ apiKey: secrets.thesysApiKey(), baseUrl: config().openui.apiUrl });
   return client;
 }
 
@@ -37,7 +36,7 @@ export function getOpenUI(): OpenUIClient {
 export function getDashboards(): Dashboard<ToolContext> {
   dashboards ??= getOpenUI().defineDashboard<ToolContext>({
     library: spec as unknown as DashboardOptions<ToolContext>["library"],
-    model: MODEL,
+    model: config().openui.model,
     tools: dataTools(),
   });
   return dashboards;
@@ -48,7 +47,6 @@ export function getDashboardService(): DashboardService {
   return service;
 }
 
-const CLOUD_URL = "https://api.thesys.dev";
 
 /**
  * Deletes a dashboard in OpenUI Cloud, as its owner. The server SDK has no
@@ -58,7 +56,7 @@ const CLOUD_URL = "https://api.thesys.dev";
  */
 async function deleteInCloud(userId: string, artifactId: string): Promise<void> {
   const { token } = await getOpenUI().createFrontendToken({ userId });
-  const response = await fetch(`${CLOUD_URL}/v1/artifacts/${encodeURIComponent(artifactId)}`, {
+  const response = await fetch(`${config().openui.apiUrl}/v1/artifacts/${encodeURIComponent(artifactId)}`, {
     method: "DELETE",
     headers: { "x-thesys-frontend-token": token },
     cache: "no-store",
@@ -83,7 +81,7 @@ export async function readDashboard(
   if (!dashboard) return { ok: false, reason: "not_found" };
   try {
     const { token } = await getOpenUI().createFrontendToken({ userId });
-    const response = await fetch(`${CLOUD_URL}/v1/artifacts/${encodeURIComponent(artifactId)}`, {
+    const response = await fetch(`${config().openui.apiUrl}/v1/artifacts/${encodeURIComponent(artifactId)}`, {
       headers: { "x-thesys-frontend-token": token },
       cache: "no-store",
     });

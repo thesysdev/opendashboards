@@ -1,8 +1,10 @@
 import { EventType, type BaseEvent } from "@ag-ui/core";
 import { storeChatCompletionHistory } from "@openuidev/server/openai";
+import { APIError } from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
-import { agentTools, getGateway, MAX_ROUNDS, MODEL, SYSTEM_PROMPT, type TurnContext } from "@/lib/agent";
+import { secrets } from "@/config";
+import { agentTools, getGateway, maxRounds, model, SYSTEM_PROMPT, type TurnContext } from "@/lib/agent";
 import { createAgUiTranslator, sse } from "@/lib/agent/ag-ui";
 import { chatBodySchema, VIEWING_DASHBOARD, type ChatBody } from "@/lib/agent/messages";
 import { getThreadService } from "@/lib/apps";
@@ -54,13 +56,13 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
 
       const runner = getGateway().chat.completions.runTools(
         {
-          model: MODEL,
+          model: model(),
           messages: [...system, ...messages],
           tools: agentTools(),
           toolContext: turn,
           stream: true,
         },
-        { signal: request.signal, maxChatCompletions: MAX_ROUNDS },
+        { signal: request.signal, maxChatCompletions: maxRounds() },
       );
       runner.on("chunk", (chunk) => translate.chunk(chunk));
       runner.on("message", (message) => translate.message(message));
@@ -77,7 +79,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
         }
         logError("chat.turn", error);
         translate.finish();
-        emit({ type: EventType.RUN_ERROR, message: "The agent stopped unexpectedly. Try again." } as BaseEvent);
+        emit({ type: EventType.RUN_ERROR, message: turnFailure(error) } as BaseEvent);
         controller.close();
         return; // Failed: save nothing.
       }
@@ -86,7 +88,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
       const turnMessages = runner.messages.slice(system.length - 1 + messages.length) as ChatCompletionMessageParam[];
       try {
         await storeChatCompletionHistory({
-          apiKey: process.env.THESYS_API_KEY ?? "",
+          apiKey: secrets.thesysApiKey() ?? "",
           conversationId: threadId,
           messages: turnMessages,
         });
@@ -101,3 +103,18 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
     headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache, no-transform" },
   });
 });
+
+/** What the chat shows when a turn fails: OpenUI Gateway's refusals by name. */
+function turnFailure(error: unknown): string {
+  if (error instanceof APIError) {
+    // An error Gateway sends inside the stream has no HTTP status; its code carries it ("429").
+    const status = error.status ?? (typeof error.code === "string" ? Number(error.code) : undefined);
+    if (status === 429) return "OpenUI Gateway is rate-limiting requests right now. Try again in a minute.";
+    if (status === 401 || status === 403) return "OpenUI Gateway refused Prism's API key.";
+    if (status === 402) return "OpenUI Gateway says this account is out of credits.";
+    if (typeof status === "number" && status >= 500) {
+      return `OpenUI Gateway had an error (HTTP ${status}). Try again.`;
+    }
+  }
+  return "The agent stopped unexpectedly. Try again.";
+}

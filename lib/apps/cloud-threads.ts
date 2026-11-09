@@ -1,5 +1,6 @@
 import "server-only";
 
+import { config } from "@/config";
 import { getOpenUI } from "@/lib/dashboards";
 
 /**
@@ -10,7 +11,7 @@ import { getOpenUI } from "@/lib/dashboards";
 export async function ownsConversation(userId: string, conversationId: string): Promise<boolean> {
   const { token } = await getOpenUI().createFrontendToken({ userId });
   const response = await fetch(
-    `https://api.thesys.dev/v1/conversations/${encodeURIComponent(conversationId)}`,
+    `${config().openui.apiUrl}/v1/conversations/${encodeURIComponent(conversationId)}`,
     { headers: { "x-thesys-frontend-token": token }, cache: "no-store" },
   );
   return response.ok;

@@ -2,14 +2,14 @@ import "server-only";
 
 import { z } from "zod";
 
+import { config as appConfig } from "@/config";
+
 import type { ConnectionSource, SourceTool } from "../types";
 
 import { passwordSchema, postgresCatalog, type PostgresConfig } from "./catalog";
 import { listPostgresTables, queryPostgres, testPostgresConnection } from "./client";
 import { PostgresError } from "./errors";
 
-/** Rows a caller may get back: the agent reads results, so keep them short. */
-const MAX_ROWS = { agent: 200, dashboard: 10_000 } as const;
 
 const target = (connection: { config: PostgresConfig; credential: string }) => ({
   ...connection.config,
@@ -38,7 +38,7 @@ const queryTool: SourceTool<PostgresConfig, { sql: string; params?: (string | nu
   },
   callers: ["agent", "dashboard"],
   execute: (connection, { sql, params = [] }, { caller }) =>
-    queryPostgres(target(connection), sql, params, MAX_ROWS[caller]),
+    queryPostgres(target(connection), sql, params, appConfig().postgres.maxRows[caller]),
 };
 
 const tablesTool: SourceTool<PostgresConfig, { schema?: string }> = {
