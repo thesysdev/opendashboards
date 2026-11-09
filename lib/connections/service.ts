@@ -1,9 +1,10 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNull } from "drizzle-orm";
 
+import type { DemoDataset } from "@/config";
 import type { Database } from "@/lib/db";
-import { appConnections, apps, dataConnections, type ConnectionStatus } from "@/lib/db/schema";
+import { appConnections, apps, dataConnections, type ConnectionStatus, type DataConnectionRow } from "@/lib/db/schema";
 import { logError } from "@/lib/log";
 import type { SecretBox, SecretContext } from "@/lib/secrets";
 import {
@@ -28,6 +29,7 @@ import {
 import {
   connectionRefSchema,
   createEnvelopeSchema,
+  demoRefSchema,
   renameSchema,
   replaceCredentialSchema,
 } from "./schemas";
@@ -51,6 +53,20 @@ export type ConnectionSummary = {
   status: ConnectionStatus;
   lastCheckedAt: Date;
   apps: { id: string; name: string }[];
+  /** Set for an installed demo dataset: which one, and what's in it. */
+  demo: { key: string; description: string } | null;
+};
+
+/** A demo dataset as the Connections and home pages show it. */
+export type DemoDatasetSummary = {
+  key: string;
+  name: string;
+  description: string;
+  prompts: string[];
+  /** The user's connection to it, when installed. */
+  connectionId: string | null;
+  /** Apps that use it: it can't be uninstalled while there are any. */
+  apps: { id: string; name: string }[];
 };
 
 export type ConnectionServiceDeps = {
@@ -62,7 +78,14 @@ export type ConnectionServiceDeps = {
   now?: () => Date;
   /** How long a decrypted credential stays in memory. */
   keyCacheTtlMs?: number;
+  /** Demo datasets on offer, and the shared read-only password. No password: none on offer. */
+  demo?: { datasets: () => DemoDataset[]; password: () => string | undefined };
 };
+
+/** How an installed demo dataset reads in lists and pickers. */
+function describeDemo(dataset: DemoDataset) {
+  return { ...describeConnection({ type: "postgres", ...dataset.postgres }), source: "Demo dataset", shortSource: "Demo", tile: "DM" };
+}
 
 const DEFAULT_KEY_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -88,6 +111,16 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     const { type, ...settings } = config;
     return deps.sources(type).test(settings, credential);
   }
+
+  /** The demo datasets on offer: none without the shared password. */
+  function demoDatasets(): DemoDataset[] {
+    return deps.demo?.password() ? deps.demo.datasets() : [];
+  }
+
+  const demoDatasetFor = (key: string | null) => (key ? demoDatasets().find((dataset) => dataset.key === key) : undefined);
+
+  const demoReadOnly = (): Result<never> =>
+    fail({ code: "demo_dataset", message: "Demo datasets can't be changed. Uninstall it from Data Connections instead." });
 
   /** A stored row's config, validated: a row that doesn't parse is a bug, not user input. */
   function configOf(row: { config: unknown }): ConnectionConfig {
@@ -129,7 +162,33 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     throw error;
   }
 
-  return {
+  /** Deletes a connection, or uninstalls a demo dataset, if no app uses it. */
+  async function removeRow(userId: string, row: DataConnectionRow): Promise<Result<undefined>> {
+    const inUse = (users: { id: string; name: string }[]) =>
+      fail({
+        code: "in_use",
+        message:
+          row.demoDataset === null
+            ? "Dashboards in these apps use this connection. Delete those apps first."
+            : "Dashboards in these apps use this demo dataset. Delete those apps first.",
+        apps: users,
+      });
+
+    const users = await appsUsing(userId, row.id);
+    if (users.length) return inUse(users);
+
+    try {
+      await db.delete(dataConnections).where(and(eq(dataConnections.id, row.id), eq(dataConnections.userId, userId)));
+    } catch (error) {
+      // An app was added between the check and the delete: the foreign key caught it.
+      if (isForeignKeyViolation(error)) return inUse(await appsUsing(userId, row.id));
+      throw error;
+    }
+    keyCache.delete(row.id);
+    return ok(undefined);
+  }
+
+  const service = {
     async list(userId: string): Promise<ConnectionSummary[]> {
       const rows = await db
         .select({
@@ -140,6 +199,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           credentialHint: dataConnections.credentialHint,
           status: dataConnections.status,
           lastCheckedAt: dataConnections.lastCheckedAt,
+          demoDataset: dataConnections.demoDataset,
         })
         .from(dataConnections)
         .where(eq(dataConnections.userId, userId))
@@ -152,11 +212,90 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         .where(eq(apps.userId, userId))
         .orderBy(asc(apps.name));
 
-      return rows.map(({ config, ...row }) => ({
-        ...row,
-        ...describeConnection(configOf({ config })),
-        apps: appRows.filter((app) => app.connectionId === row.id).map(({ id, name }) => ({ id, name })),
-      }));
+      const summaries: ConnectionSummary[] = [];
+      for (const { config, demoDataset, ...row } of rows) {
+        const used = appRows.filter((app) => app.connectionId === row.id).map(({ id, name }) => ({ id, name }));
+        if (demoDataset === null) {
+          summaries.push({ ...row, ...describeConnection(configOf({ config })), apps: used, demo: null });
+          continue;
+        }
+        // A demo dataset no longer on offer reads as gone, like a deleted connection.
+        const dataset = demoDatasetFor(demoDataset);
+        if (!dataset) continue;
+        summaries.push({
+          ...row,
+          ...describeDemo(dataset),
+          apps: used,
+          demo: { key: dataset.key, description: dataset.description },
+        });
+      }
+      return summaries;
+    },
+
+    /** Every demo dataset on offer, and whether this user has it installed. */
+    async listDemoDatasets(userId: string): Promise<DemoDatasetSummary[]> {
+      const datasets = demoDatasets();
+      if (!datasets.length) return [];
+      const installed = (await service.list(userId)).filter((connection) => connection.demo);
+      return datasets.map((dataset) => {
+        const connection = installed.find((candidate) => candidate.demo?.key === dataset.key);
+        return {
+          key: dataset.key,
+          name: dataset.name,
+          description: dataset.description,
+          prompts: dataset.prompts,
+          connectionId: connection?.id ?? null,
+          apps: connection?.apps ?? [],
+        };
+      });
+    },
+
+    /**
+     * Installs a demo dataset for the user: a connection of theirs that
+     * points at it. Installing one that's already installed returns it.
+     */
+    installDemo(userId: string, input: unknown): Promise<Result<{ id: string }>> {
+      return guard("installDemo", async () => {
+        const parsed = demoRefSchema.safeParse(input);
+        const dataset = parsed.success ? demoDatasetFor(parsed.data.dataset) : undefined;
+        if (!dataset) return fail({ code: "not_found", message: "This demo dataset isn't available." });
+
+        await db
+          .insert(dataConnections)
+          .values({
+            id: randomUUID(),
+            userId,
+            name: dataset.name,
+            type: "postgres",
+            config: { type: "postgres", ...dataset.postgres },
+            secret: null,
+            credentialHint: "shared, read-only",
+            demoDataset: dataset.key,
+            status: "ok",
+            lastCheckedAt: now(),
+          })
+          .onConflictDoNothing();
+        const [row] = await db
+          .select({ id: dataConnections.id })
+          .from(dataConnections)
+          .where(and(eq(dataConnections.userId, userId), eq(dataConnections.demoDataset, dataset.key)))
+          .limit(1);
+        return row ? ok({ id: row.id }) : internalError();
+      });
+    },
+
+    /** Uninstalls a demo dataset no app uses. Uninstalling one that isn't installed succeeds. */
+    uninstallDemo(userId: string, input: unknown): Promise<Result<undefined>> {
+      return guard("uninstallDemo", async () => {
+        const parsed = demoRefSchema.safeParse(input);
+        if (!parsed.success) return fail({ code: "not_found", message: "This demo dataset isn't available." });
+        const [row] = await db
+          .select()
+          .from(dataConnections)
+          .where(and(eq(dataConnections.userId, userId), eq(dataConnections.demoDataset, parsed.data.dataset)))
+          .limit(1);
+        return row ? removeRow(userId, row) : ok(undefined);
+      });
     },
 
     /** Tests the credential against the source and saves the connection only if it works. */
@@ -208,12 +347,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!parsed.success) return notFound();
         const row = await findOwned(userId, parsed.data.id);
         if (!row) return notFound();
+        if (row.demoDataset !== null) return demoReadOnly();
 
         let failure: { error: ConnectionError; status: Exclude<ConnectionStatus, "ok"> } | null = null;
         try {
           const config = configOf(row);
           const credential = await keyCache.get(row.id, () =>
-            deps.secrets().open(row.secret, context(config.type, userId, row.id)),
+            deps.secrets().open(row.secret!, context(config.type, userId, row.id)),
           );
           await check(config, credential);
         } catch (error) {
@@ -241,6 +381,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         }
         const row = await findOwned(userId, parsed.data.id);
         if (!row) return notFound();
+        if (row.demoDataset !== null) return demoReadOnly();
 
         const config = configOf(row);
         const source = deps.sources(config.type);
@@ -277,7 +418,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         const updated = await db
           .update(dataConnections)
           .set({ name: parsed.data.name, updatedAt: now() })
-          .where(and(eq(dataConnections.id, parsed.data.id), eq(dataConnections.userId, userId)))
+          .where(
+            and(
+              eq(dataConnections.id, parsed.data.id),
+              eq(dataConnections.userId, userId),
+              isNull(dataConnections.demoDataset),
+            ),
+          )
           .returning({ id: dataConnections.id });
         return updated.length ? ok(undefined) : notFound();
       });
@@ -290,28 +437,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!parsed.success) return notFound();
         const row = await findOwned(userId, parsed.data.id);
         if (!row) return notFound();
-
-        const inUse = (users: { id: string; name: string }[]) =>
-          fail({
-            code: "in_use",
-            message: "Dashboards in these apps use this connection. Delete those apps first.",
-            apps: users,
-          });
-
-        const users = await appsUsing(userId, row.id);
-        if (users.length) return inUse(users);
-
-        try {
-          await db
-            .delete(dataConnections)
-            .where(and(eq(dataConnections.id, row.id), eq(dataConnections.userId, userId)));
-        } catch (error) {
-          // An app was added between the check and the delete: the foreign key caught it.
-          if (isForeignKeyViolation(error)) return inUse(await appsUsing(userId, row.id));
-          throw error;
-        }
-        keyCache.delete(row.id);
-        return ok(undefined);
+        return removeRow(userId, row);
       });
     },
 
@@ -324,11 +450,19 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       if (!connectionIdSchema(connectionId)) return null;
       const row = await findOwned(userId, connectionId);
       if (!row || row.type !== type) return null;
+      if (row.demoDataset !== null) {
+        // Where it points and the shared read-only password come from config, never the row.
+        const dataset = demoDatasetFor(row.demoDataset);
+        const password = deps.demo?.password();
+        if (!dataset || !password) return null;
+        return { id: row.id, name: row.name, config: { ...dataset.postgres }, credential: password };
+      }
       const { type: _type, ...settings } = configOf(row);
-      const credential = await keyCache.get(row.id, () => deps.secrets().open(row.secret, context(type, userId, row.id)));
+      const credential = await keyCache.get(row.id, () => deps.secrets().open(row.secret!, context(type, userId, row.id)));
       return { id: row.id, name: row.name, config: settings, credential };
     },
   };
+  return service;
 }
 
 export type ConnectionService = ReturnType<typeof createConnectionService>;

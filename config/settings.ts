@@ -9,6 +9,26 @@
 export const ENVIRONMENTS = ["local", "prod"] as const;
 export type Environment = (typeof ENVIRONMENTS)[number];
 
+/**
+ * A sample database Prism offers to users who have no data of their own
+ * yet. Users install it (a connection row of theirs that points here) and
+ * uninstall it. Every demo dataset is a database on Prism's own Neon
+ * project, read through one read-only role whose password is the
+ * DEMO_DATABASE_PASSWORD secret.
+ */
+export type DemoDataset = {
+  /** Stable id, stored on installed connections: "retail". Never reuse one for different data. */
+  key: string;
+  /** "Retail sales". */
+  name: string;
+  /** What's in it, for people (the Connections page) and the agent (list_connections). */
+  description: string;
+  /** Where it lives. Read-only role, Neon's pooler host, TLS verified. */
+  postgres: { host: string; port: number; database: string; user: string; sslMode: "verify-full" | "require" };
+  /** Starting prompts offered on the home page. */
+  prompts: string[];
+};
+
 /** The same in every environment. */
 export type CommonSettings = {
   openui: {
@@ -34,6 +54,8 @@ export type CommonSettings = {
     statementTimeoutMs: number;
     maxRows: { agent: number; dashboard: number };
   };
+  /** Sample datasets users can install to try Prism without data of their own. */
+  demoDatasets: DemoDataset[];
 };
 
 /** Different per environment. */

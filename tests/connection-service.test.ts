@@ -1,6 +1,7 @@
 import { sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { DemoDataset } from "@/config";
 import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
 import { appConnections, apps, dataConnections } from "@/lib/db/schema";
@@ -28,8 +29,21 @@ const VALID = {
 
 const READ_ONLY: PostgresCheck = { serverVersion: "16.4", canWrite: false };
 
+const DEMO: DemoDataset = {
+  key: "retail",
+  name: "Retail sales",
+  description: "A sample retail business.",
+  postgres: { host: "demo.example.com", port: 5432, database: "retail_sales", user: "reader", sslMode: "verify-full" },
+  prompts: ["Revenue by month"],
+};
+
 function makeService(
-  overrides: { secrets?: SecretBox; test?: () => Promise<void>; testPostgres?: () => Promise<PostgresCheck> } = {},
+  overrides: {
+    secrets?: SecretBox;
+    test?: () => Promise<void>;
+    testPostgres?: () => Promise<PostgresCheck>;
+    demo?: { datasets: () => DemoDataset[]; password: () => string | undefined };
+  } = {},
 ) {
   const testConnection = vi.fn(overrides.test ?? (async () => {}));
   const testPostgres = vi.fn(overrides.testPostgres ?? (async () => READ_ONLY));
@@ -54,6 +68,7 @@ function makeService(
     db,
     secrets: () => overrides.secrets ?? plaintextSecretBox,
     sources,
+    demo: overrides.demo ?? { datasets: () => [DEMO], password: () => "demo-password" },
   });
   return { service, testConnection, testPostgres };
 }
@@ -409,5 +424,92 @@ describe("postgres", () => {
     });
     await service.retest("alice", { id });
     expect((await service.list("alice"))[0].status).toBe("unavailable");
+  });
+});
+
+describe("demo datasets", () => {
+  it("installs once per user, with no secret of its own, and opens with config's settings", async () => {
+    const { service } = makeService();
+    const first = await service.installDemo("alice", { dataset: "retail" });
+    const again = await service.installDemo("alice", { dataset: "retail" });
+    expect(first.ok && again.ok && first.data.id === again.data.id).toBe(true);
+    if (!first.ok) return;
+
+    const [row] = await db.select().from(dataConnections);
+    expect(row).toMatchObject({ userId: "alice", demoDataset: "retail", secret: null, type: "postgres" });
+
+    expect(await service.open("alice", first.data.id, "postgres")).toEqual({
+      id: first.data.id,
+      name: "Retail sales",
+      config: DEMO.postgres,
+      credential: "demo-password",
+    });
+    expect(await service.open("bob", first.data.id, "postgres")).toBeNull();
+
+    const [summary] = await service.list("alice");
+    expect(summary).toMatchObject({ source: "Demo dataset", shortSource: "Demo", demo: { key: "retail" } });
+    expect(await service.listDemoDatasets("alice")).toMatchObject([{ key: "retail", connectionId: first.data.id, apps: [] }]);
+    expect(await service.listDemoDatasets("bob")).toMatchObject([{ key: "retail", connectionId: null }]);
+  });
+
+  it("follows config: a changed host applies to installed copies, a removed dataset reads as gone", async () => {
+    let datasets = [DEMO];
+    const { service } = makeService({ demo: { datasets: () => datasets, password: () => "demo-password" } });
+    const installed = await service.installDemo("alice", { dataset: "retail" });
+    if (!installed.ok) throw new Error("install failed");
+
+    datasets = [{ ...DEMO, postgres: { ...DEMO.postgres, host: "moved.example.com" } }];
+    expect((await service.open("alice", installed.data.id, "postgres"))?.config).toMatchObject({ host: "moved.example.com" });
+
+    datasets = [];
+    expect(await service.open("alice", installed.data.id, "postgres")).toBeNull();
+    expect(await service.list("alice")).toEqual([]);
+  });
+
+  it("offers nothing without the shared password", async () => {
+    const { service } = makeService({ demo: { datasets: () => [DEMO], password: () => undefined } });
+    expect(await service.listDemoDatasets("alice")).toEqual([]);
+    expect(await service.installDemo("alice", { dataset: "retail" })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(await service.installDemo("alice", { dataset: "nope" })).toMatchObject({ ok: false });
+  });
+
+  it("can't be edited, and can't be uninstalled while an app uses it", async () => {
+    const { service } = makeService();
+    const installed = await service.installDemo("alice", { dataset: "retail" });
+    if (!installed.ok) throw new Error("install failed");
+    const id = installed.data.id;
+
+    expect(await service.retest("alice", { id })).toMatchObject({ ok: false, error: { code: "demo_dataset" } });
+    expect(await service.replaceCredential("alice", { id, credential: "x" })).toMatchObject({ ok: false, error: { code: "demo_dataset" } });
+    expect(await service.rename("alice", { id, name: "Mine" })).toMatchObject({ ok: false });
+
+    const [app] = await db.insert(apps).values({ userId: "alice", name: "Sales" }).returning();
+    await db.insert(appConnections).values({ appId: app.id, connectionId: id });
+    expect(await service.uninstallDemo("alice", { dataset: "retail" })).toMatchObject({
+      ok: false,
+      error: { code: "in_use", apps: [{ id: app.id, name: "Sales" }] },
+    });
+
+    await db.delete(apps);
+    expect(await service.uninstallDemo("alice", { dataset: "retail" })).toEqual({ ok: true, data: undefined });
+    expect(await service.uninstallDemo("alice", { dataset: "retail" })).toEqual({ ok: true, data: undefined });
+    expect(await service.listDemoDatasets("alice")).toMatchObject([{ connectionId: null }]);
+  });
+
+  it("a connection with a secret can't also be a demo dataset", async () => {
+    await expect(
+      db.insert(dataConnections).values({
+        id: crypto.randomUUID(),
+        userId: "alice",
+        name: "Odd",
+        type: "postgres",
+        config: { type: "postgres", ...DEMO.postgres },
+        secret: { provider: "plaintext", value: "x" } as never,
+        credentialHint: "x",
+        demoDataset: "retail",
+        status: "ok",
+        lastCheckedAt: new Date(),
+      }),
+    ).rejects.toThrow();
   });
 });

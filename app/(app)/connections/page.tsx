@@ -4,12 +4,13 @@ import { Suspense } from "react";
 
 import { AddConnectionButton } from "@/components/connections/add-connection-button";
 import { ConnectionActions } from "@/components/connections/connection-actions";
+import { DemoDatasetSwitch } from "@/components/connections/demo-dataset-switch";
 import type { SecretMode } from "@/components/connections/connection-form-dialog";
 import { SourceTile } from "@/components/connections/source-tile";
 import { EmptyState, PageHeader, SectionLabel } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { requireUser } from "@/lib/auth/user";
-import { getConnectionService, type ConnectionSummary } from "@/lib/connections";
+import { getConnectionService, type ConnectionSummary, type DemoDatasetSummary } from "@/lib/connections";
 import { CATALOGS } from "@/lib/sources/catalog";
 import type { ConnectionStatus } from "@/lib/db/schema";
 import { formatRelative } from "@/lib/format";
@@ -35,7 +36,10 @@ export default function ConnectionsPage() {
 /** Reads the user and their connections, so it streams in behind the boundary. */
 async function ConnectionsContent() {
   const user = await requireUser();
-  const connections = await getConnectionService().list(user.id);
+  const service = getConnectionService();
+  const [all, demos] = await Promise.all([service.list(user.id), service.listDemoDatasets(user.id)]);
+  // Installed demo datasets are listed with their switch below, not here.
+  const connections = all.filter((connection) => !connection.demo);
   const secretMode = getSecretMode();
   const now = new Date();
 
@@ -79,6 +83,20 @@ async function ConnectionsContent() {
         </ul>
       </section>
 
+      {demos.length > 0 && (
+        <section aria-labelledby="demo-datasets" className="mt-10">
+          <SectionLabel id="demo-datasets">Demo datasets</SectionLabel>
+          <p className="-mt-1 mb-3 text-sm text-muted-foreground">
+            Sample data to try Prism with. Install one to use it like any connection.
+          </p>
+          <ul className="divide-y rounded-xl border">
+            {demos.map((demo) => (
+              <DemoRow key={demo.key} demo={demo} />
+            ))}
+          </ul>
+        </section>
+      )}
+
       <StorageNote secretMode={secretMode} />
     </>
   );
@@ -117,6 +135,24 @@ function ConnectionRow({
           apps: connection.apps,
         }}
         secretMode={secretMode}
+      />
+    </li>
+  );
+}
+
+function DemoRow({ demo }: { demo: DemoDatasetSummary }) {
+  return (
+    <li className="flex items-center gap-3 p-3.5">
+      <SourceTile label="DM" />
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{demo.name}</p>
+        <p className="line-clamp-2 text-sm text-muted-foreground">{demo.description}</p>
+      </div>
+      <DemoDatasetSwitch
+        dataset={demo.key}
+        name={demo.name}
+        installed={demo.connectionId !== null}
+        apps={demo.apps}
       />
     </li>
   );
