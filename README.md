@@ -14,7 +14,7 @@ pnpm db:reset     # create the tables from lib/db/schema.ts
 pnpm dev
 ```
 
-Without `SUPABASE_URL`, there's no sign-in and requests act as the dev user in `config/local.ts`, or as
+Without `GATEWAY_SHARED_SECRET`, requests act as the dev user in `config/local.ts`, or as
 whatever `X-User-Id` header a request sends. Without `KMS_KEY_ID`, API keys are stored
 unencrypted. Both fallbacks only work outside production.
 
@@ -30,7 +30,7 @@ The service tests run against the `prism_test` database from `pnpm db:up`.
 
 | Area | Where |
 | --- | --- |
-| Sign-in (Supabase session and allowlist) | `proxy.ts`, `lib/auth/`, `lib/supabase/`, `app/auth/` |
+| Gateway auth (`X-User-Id` + `X-Gateway-Secret`) | `lib/auth/`, `proxy.ts` |
 | Secret storage (`SecretBox`: `plaintext` locally, `kms` in production) | `lib/secrets/` |
 | PostHog client (fixed US/EU hosts, error classification) | `lib/posthog/` |
 | Connection service (validation, ownership, statuses) | `lib/connections/` |

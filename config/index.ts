@@ -48,31 +48,27 @@ export const secrets = {
   databaseUrl: () => process.env.DATABASE_URL,
   /** OpenUI Cloud and Gateway. */
   thesysApiKey: () => process.env.THESYS_API_KEY,
+  /** Proves a request came through the gateway (prod). */
+  gatewaySecret: () => process.env.GATEWAY_SHARED_SECRET,
   /** Seals data-source keys with AWS KMS. */
   kmsKeyId: () => process.env.KMS_KEY_ID,
   /** The AWS role Vercel OIDC assumes to use that key. Not secret, but set per deployment. */
   kmsRoleArn: () => process.env.KMS_ROLE_ARN,
-  /** The Supabase project that signs users in. Not secret, but set per deployment. */
-  supabaseUrl: () => process.env.SUPABASE_URL,
-  supabasePublishableKey: () => process.env.SUPABASE_PUBLISHABLE_KEY,
-  /** Who may use Prism: whole email domains, and single addresses. */
-  allowedDomains: () => parseList(process.env.PRISM_ALLOWED_DOMAINS),
-  allowedEmails: () => parseList(process.env.PRISM_ALLOWED_EMAILS),
 };
 
-function parseList(value: string | undefined): string[] {
-  return (value ?? "").split(",").map((entry) => entry.trim().toLowerCase()).filter(Boolean);
-}
+/** Shortest gateway secret accepted. */
+export const MIN_GATEWAY_SECRET_LENGTH = 32;
 
 /**
  * What can't be true of an environment's settings. Only local may act as a
- * user without signing in, store keys unencrypted, serve the /kit pages or
+ * user without the gateway, store keys unencrypted, serve the /kit pages or
  * change Node's connection defaults.
  */
 export function settingsProblems(name: Environment, settings: Settings): string[] {
   if (name === "local") return [];
   const problems: string[] = [];
-  if (settings.auth.devUserId !== null) problems.push(`${name}: auth.devUserId must be null; only local may skip sign-in`);
+  if (settings.auth.devUserId !== null) problems.push(`${name}: auth.devUserId must be null; only local may skip the gateway`);
+  if (settings.auth.publicHost === null) problems.push(`${name}: auth.publicHost must be set; it sits behind the gateway`);
   if (settings.secrets.allowPlaintext) problems.push(`${name}: secrets.allowPlaintext must be false; keys are never stored unencrypted outside local`);
   if (settings.kitPages) problems.push(`${name}: kitPages must be false; the /kit pages are for local development`);
   if (settings.network.connectAttemptTimeoutMs !== null) {
@@ -86,12 +82,12 @@ export function secretProblems(name: Environment, settings: Settings, env: Env =
   const problems: string[] = [];
   if (!env.DATABASE_URL) problems.push("DATABASE_URL is not set");
   if (!env.THESYS_API_KEY) problems.push("THESYS_API_KEY is not set");
-  if (settings.auth.devUserId === null) {
-    if (!env.SUPABASE_URL) problems.push(`SUPABASE_URL is not set; ${name} has no dev user, so requests must sign in`);
-    if (!env.SUPABASE_PUBLISHABLE_KEY) problems.push("SUPABASE_PUBLISHABLE_KEY is not set");
-    if (!parseList(env.PRISM_ALLOWED_DOMAINS).length && !parseList(env.PRISM_ALLOWED_EMAILS).length) {
-      problems.push("PRISM_ALLOWED_DOMAINS or PRISM_ALLOWED_EMAILS must be set; nobody could sign in");
-    }
+  const gatewaySecret = env.GATEWAY_SHARED_SECRET;
+  if (settings.auth.devUserId === null && !gatewaySecret) {
+    problems.push(`GATEWAY_SHARED_SECRET is not set; ${name} has no dev user, so requests must come through the gateway`);
+  }
+  if (gatewaySecret && gatewaySecret.length < MIN_GATEWAY_SECRET_LENGTH) {
+    problems.push(`GATEWAY_SHARED_SECRET must be at least ${MIN_GATEWAY_SECRET_LENGTH} characters`);
   }
   if (!settings.secrets.allowPlaintext && !env.KMS_KEY_ID) {
     problems.push(`KMS_KEY_ID is not set; ${name} never stores keys unencrypted`);

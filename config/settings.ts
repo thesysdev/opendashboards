@@ -44,10 +44,16 @@ export type CommonSettings = {
 export type EnvironmentSettings = {
   auth: {
     /**
-     * Who requests are for without sign-in (an X-User-Id header can still
-     * override it). null: every request must have a Supabase session. Local only.
+     * Who requests are for when no gateway sits in front of the app (an
+     * X-User-Id header can still override it). null: every request must come
+     * through the gateway, with GATEWAY_SHARED_SECRET. Local only.
      */
     devUserId: string | null;
+    /**
+     * The host people use Prism at, when a gateway sits in front of it.
+     * Cross-site checks accept it alongside the request's own host.
+     */
+    publicHost: string | null;
   };
   secrets: {
     /** Store data-source keys unencrypted when no KMS key is configured. Local only. */

@@ -23,15 +23,14 @@ export function AvatarCircle({ userId, className }: { userId: string; className?
 /** The compact avatar for the mobile top bar. Reads the request, so it renders behind Suspense. */
 export async function UserAvatar() {
   const user = await requireUser();
-  const name = user.email ?? user.id;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span tabIndex={0} aria-label={`Signed in as ${name}`} className="rounded-full">
-          <AvatarCircle userId={name} />
+        <span tabIndex={0} aria-label={`Signed in as ${user.id}`} className="rounded-full">
+          <AvatarCircle userId={user.id} />
         </span>
       </TooltipTrigger>
-      <TooltipContent>Signed in as {name}</TooltipContent>
+      <TooltipContent>Signed in as {user.id}</TooltipContent>
     </Tooltip>
   );
 }

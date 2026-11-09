@@ -1,14 +1,11 @@
 import "server-only";
 
 import { headers } from "next/headers";
-import { connection } from "next/server";
 import { cache } from "react";
 
-import { createClient } from "@/lib/supabase/server";
+import { authenticate, getAuthConfig } from "./gateway";
 
-import { checkClaims, devUser, getAuthConfig } from "./verify";
-
-export type CurrentUser = { id: string; email?: string };
+export type CurrentUser = { id: string };
 
 export class UnauthorizedError extends Error {
   constructor() {
@@ -18,7 +15,7 @@ export class UnauthorizedError extends Error {
 }
 
 /**
- * The signed-in user. Call it in every page, Server
+ * The signed-in user, from the gateway headers. Call it in every page, Server
  * Action and Route Handler that touches user data: `proxy.ts` already rejects
  * unauthenticated requests, and this re-checks close to the data.
  *
@@ -26,13 +23,7 @@ export class UnauthorizedError extends Error {
  * `<Suspense>` boundary when called from a page or layout.
  */
 export const requireUser = cache(async (): Promise<CurrentUser> => {
-  // Checking a token's expiry reads the clock, which only happens at request time.
-  await connection();
-  const auth = getAuthConfig();
-  const result =
-    auth.mode === "dev"
-      ? devUser(await headers(), auth.devUserId)
-      : checkClaims((await (await createClient()).auth.getClaims()).data?.claims, auth.allowlist);
+  const result = authenticate(await headers(), getAuthConfig());
   if (!result.ok) throw new UnauthorizedError();
-  return { id: result.userId, email: result.email };
+  return { id: result.userId };
 });
