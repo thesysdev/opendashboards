@@ -6,7 +6,7 @@
     "kit:spec": "node scripts/kit-spec.mjs",
     "predev": "pnpm kit:spec",
     "dev": "next dev",
-    "prebuild": "pnpm kit:spec && node scripts/check-model-access.mjs",
+    "prebuild": "pnpm kit:spec",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

@@ -31,18 +31,12 @@ The service tests run against the `prism_test` database from `pnpm db:up`.
 | Area | Where |
 | --- | --- |
 | Sign-in (Supabase session, allowlist, JWT passed as a header) | `proxy.ts`, `lib/auth/`, `lib/supabase/`, `app/auth/` |
-| Daily chat limits | `lib/apps/chat-limits.ts` |
 | Secret storage (`SecretBox`: `plaintext` locally, `kms` in production) | `lib/secrets/` |
 | PostHog client (fixed US/EU hosts, error classification) | `lib/posthog/` |
 | Connection service (validation, ownership, statuses) | `lib/connections/` |
 | Apps, connection usage, thread mapping | `lib/apps/`, `app/api/apps/[appId]/threads/` |
 | Schema and migrations | `lib/db/schema.ts`, `db/migrations/` |
 | UI | `app/(app)/`, `components/` |
-
-## Calling a model
-
-Every model call goes through `getGateway()` in `lib/agent`, which requires a turn reserved
-with `getChatLimits().reserve()`. The build fails if a model client is created anywhere else.
 
 ## Schema changes
 

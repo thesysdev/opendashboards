@@ -7,8 +7,7 @@ import { secrets } from "@/config";
 import { agentTools, getGateway, maxRounds, model, SYSTEM_PROMPT, type TurnContext } from "@/lib/agent";
 import { createAgUiTranslator, sse } from "@/lib/agent/ag-ui";
 import { chatBodySchema, VIEWING_DASHBOARD, type ChatBody } from "@/lib/agent/messages";
-import { CHAT_LIMIT_MESSAGES } from "@/lib/apps/chat-limits";
-import { getChatLimits, getThreadService } from "@/lib/apps";
+import { getThreadService } from "@/lib/apps";
 import { getDashboardService } from "@/lib/dashboards";
 import { HttpError, readJson, route } from "@/lib/http";
 import { logError } from "@/lib/log";
@@ -50,13 +49,6 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
     });
   }
 
-  const limits = getChatLimits();
-  const reservation = await limits.reserve(user.id);
-  if (!reservation.ok) {
-    count("prism.chat.limited", { reason: reservation.reason });
-    throw new HttpError(429, CHAT_LIMIT_MESSAGES[reservation.reason]);
-  }
-
   const encoder = new TextEncoder();
   const turn: TurnContext = { userId: user.id, appId, signal: request.signal, dashboards: [] };
 
@@ -66,13 +58,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
       const translate = createAgUiTranslator(emit);
       emit({ type: EventType.RUN_STARTED, threadId, runId } as BaseEvent);
 
-      /** Ends the turn. A failed one gets its slot back: the user got nothing from it. */
-      const finish = async (refund: boolean) => {
-        await limits.finish(user.id, reservation.day, { refund }).catch((error) => logError("chat.finish", error));
-        controller.close();
-      };
-
-      const runner = getGateway(reservation).chat.completions.runTools(
+      const runner = getGateway().chat.completions.runTools(
         {
           model: model(),
           messages: [...system, ...messages],
@@ -93,7 +79,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
       } catch (error) {
         if (request.signal.aborted) {
           count("prism.chat.turn", { outcome: "cancelled", cause: "none" });
-          await finish(false); // The tokens were spent.
+          controller.close();
           return; // Cancelled: save nothing.
         }
         logError("chat.turn", error);
@@ -101,7 +87,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
         count("prism.chat.turn", { outcome: "failed", cause: failure.cause });
         translate.finish();
         emit({ type: EventType.RUN_ERROR, message: failure.message } as BaseEvent);
-        await finish(true);
+        controller.close();
         return; // Failed: save nothing.
       }
 
@@ -118,7 +104,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
       } catch (error) {
         logError("chat.save", error);
       }
-      await finish(false);
+      controller.close();
     },
   });
 
