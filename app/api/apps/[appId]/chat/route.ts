@@ -1,5 +1,6 @@
 import { EventType, type BaseEvent } from "@ag-ui/core";
 import { storeChatCompletionHistory } from "@openuidev/server/openai";
+import { metric } from "@vercel/functions";
 import { APIError } from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
@@ -74,14 +75,18 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
         await runner.done();
         translate.finish();
         emit({ type: EventType.RUN_FINISHED, threadId, runId } as BaseEvent);
+        metric("prism.chat.turn", 1, { outcome: "completed", cause: "none" });
       } catch (error) {
         if (request.signal.aborted) {
+          metric("prism.chat.turn", 1, { outcome: "cancelled", cause: "none" });
           controller.close();
           return; // Cancelled: save nothing.
         }
         logError("chat.turn", error);
+        const failure = turnFailure(error);
+        metric("prism.chat.turn", 1, { outcome: "failed", cause: failure.cause });
         translate.finish();
-        emit({ type: EventType.RUN_ERROR, message: turnFailure(error) } as BaseEvent);
+        emit({ type: EventType.RUN_ERROR, message: failure.message } as BaseEvent);
         controller.close();
         return; // Failed: save nothing.
       }
@@ -108,17 +113,19 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
   });
 });
 
-/** What the chat shows when a turn fails: OpenUI Gateway's refusals by name. */
-function turnFailure(error: unknown): string {
+/** What the chat shows when a turn fails, OpenUI Gateway's refusals by name, and a label for alerts. */
+function turnFailure(error: unknown): { cause: string; message: string } {
   if (error instanceof APIError) {
     // An error Gateway sends inside the stream has no HTTP status; its code carries it ("429").
     const status = error.status ?? (typeof error.code === "string" ? Number(error.code) : undefined);
-    if (status === 429) return "OpenUI Gateway is rate-limiting requests right now. Try again in a minute.";
-    if (status === 401 || status === 403) return "OpenUI Gateway refused Prism's API key.";
-    if (status === 402) return "OpenUI Gateway says this account is out of credits.";
+    if (status === 429) {
+      return { cause: "rate_limited", message: "OpenUI Gateway is rate-limiting requests right now. Try again in a minute." };
+    }
+    if (status === 401 || status === 403) return { cause: "key_refused", message: "OpenUI Gateway refused Prism's API key." };
+    if (status === 402) return { cause: "out_of_credits", message: "OpenUI Gateway says this account is out of credits." };
     if (typeof status === "number" && status >= 500) {
-      return `OpenUI Gateway had an error (HTTP ${status}). Try again.`;
+      return { cause: "upstream_error", message: `OpenUI Gateway had an error (HTTP ${status}). Try again.` };
     }
   }
-  return "The agent stopped unexpectedly. Try again.";
+  return { cause: "other", message: "The agent stopped unexpectedly. Try again." };
 }

@@ -1,4 +1,5 @@
 import { DecryptCommand, EncryptCommand, KMSClient } from "@aws-sdk/client-kms";
+import { metric } from "@vercel/functions";
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 
 import { config } from "@/config";
@@ -29,6 +30,10 @@ function createClient(roleArn: string | undefined): KMSClient {
   });
 }
 
+function countFailure(operation: "encrypt" | "decrypt", cause: unknown) {
+  metric("prism.kms.failure", 1, { operation, error: cause instanceof Error ? cause.name : "unknown" });
+}
+
 /** KMS treats the encryption context as authenticated data: it must match to decrypt. */
 const encryptionContext = ({ purpose, userId, connectionId }: SecretContext) => ({ purpose, userId, connectionId });
 
@@ -55,6 +60,7 @@ export function createKmsSecretBox(keyId: string, options: KmsOptions = {}): Sec
           }),
         ));
       } catch (cause) {
+        countFailure("encrypt", cause);
         throw new SecretStorageUnavailableError("KMS couldn't encrypt the secret", { cause });
       }
       if (!blob) throw new SecretStorageUnavailableError("KMS returned no ciphertext");
@@ -77,6 +83,7 @@ export function createKmsSecretBox(keyId: string, options: KmsOptions = {}): Sec
           }),
         ));
       } catch (cause) {
+        countFailure("decrypt", cause);
         // A wrong context or a damaged value. Anything else may pass on a retry.
         if (cause instanceof Error && cause.name === "InvalidCiphertextException") {
           throw new SecretUnreadableError({ cause });

@@ -1,3 +1,4 @@
+import { metric } from "@vercel/functions";
 import { NextResponse, type NextRequest } from "next/server";
 
 import { authenticate, getAuthConfig, type AuthConfig } from "@/lib/auth/gateway";
@@ -12,12 +13,17 @@ export async function proxy(request: NextRequest) {
   try {
     config = getAuthConfig();
   } catch {
+    metric("prism.auth.rejected", 1, { reason: "misconfigured" });
     return new NextResponse("Service unavailable", { status: 503 });
   }
 
   const result = await authenticate(request.headers, config);
-  if (!result.ok && result.reason === "auth_unavailable") return new NextResponse("Service unavailable", { status: 503 });
-  if (!result.ok) return new NextResponse("Unauthorized", { status: 401 });
+  if (!result.ok) {
+    // Counted only here: requireUser() re-checks every request that passes.
+    metric("prism.auth.rejected", 1, { reason: result.reason });
+    if (result.reason === "auth_unavailable") return new NextResponse("Service unavailable", { status: 503 });
+    return new NextResponse("Unauthorized", { status: 401 });
+  }
   return NextResponse.next();
 }
 
