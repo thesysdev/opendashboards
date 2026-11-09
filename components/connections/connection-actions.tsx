@@ -207,10 +207,25 @@ function DeleteDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
-  const [blockingApps, setBlockingApps] = useState(connection.apps);
+  // The apps come from the page's latest data, never a copy: the page stays
+  // mounted while hidden, so a copy would outlive apps deleted elsewhere. Only
+  // the list the server sends back when it refuses is kept, until next open.
+  const [refusedBy, setRefusedBy] = useState<Connection["apps"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  const blockingApps = refusedBy ?? connection.apps;
   const blocked = blockingApps.length > 0;
+
+  // Opened by the row menu through `open`, which doesn't call onOpenChange.
+  // Reset while rendering when it opens, so the first frame is already fresh.
+  const [wasOpen, setWasOpen] = useState(open);
+  if (open !== wasOpen) {
+    setWasOpen(open);
+    if (open) {
+      setRefusedBy(null);
+      setError(null);
+    }
+  }
 
   function confirm() {
     startTransition(async () => {
@@ -219,7 +234,7 @@ function DeleteDialog({
         toast.success(`${connection.name} deleted`);
         onOpenChange(false);
       } else if (result.error.code === "in_use" && result.error.apps) {
-        setBlockingApps(result.error.apps);
+        setRefusedBy(result.error.apps);
       } else {
         setError(result.error.message);
       }
@@ -231,10 +246,6 @@ function DeleteDialog({
       open={open}
       onOpenChange={(next) => {
         if (pending) return;
-        if (next) {
-          setBlockingApps(connection.apps);
-          setError(null);
-        }
         onOpenChange(next);
       }}
     >
