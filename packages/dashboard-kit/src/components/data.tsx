@@ -362,12 +362,18 @@ export const Heatmap = defineComponent({
     if (!rowLabels.length || !columnLabels.length || !cells.length) return <Empty />;
     const min = Math.min(...cells);
     const max = Math.max(...cells);
+    // The label column fits the longest row label ("Mon", "2026-09-07 · n=1,204")
+    // at about 7px a character plus its padding, from 48px up to 200px; longer
+    // labels end in an ellipsis. A <col> takes plain lengths only: min() or
+    // calc() there is ignored.
+    const longest = Math.max(...rowLabels.map((label) => label.length));
+    const labelWidth = Math.min(Math.max(longest * 7 + 20, 48), 200);
     return (
       <div className="pdk-cohort-wrap">
         <table className="pdk-cohort" style={{ borderSpacing: 2, tableLayout: "fixed" }}>
           {/* Fixed layout keeps every hour or day column the same width. */}
           <colgroup>
-            <col style={{ width: 56 }} />
+            <col style={{ width: labelWidth }} />
             {columnLabels.map((column) => (
               <col key={column} />
             ))}
@@ -376,14 +382,22 @@ export const Heatmap = defineComponent({
             <tr>
               <th />
               {columnLabels.map((column) => (
-                <th key={column} style={{ fontSize: 11 }}>{column}</th>
+                <th key={column} style={{ fontSize: 11, textAlign: "center" }}>
+                  {column}
+                </th>
               ))}
             </tr>
           </thead>
           <tbody>
             {rowLabels.map((row, r) => (
               <tr key={row}>
-                <td className="pdk-cohort-label" style={{ paddingRight: 8 }}>{row}</td>
+                <td
+                  className="pdk-cohort-label"
+                  style={{ paddingRight: 8, overflow: "hidden", textOverflow: "ellipsis" }}
+                  title={row}
+                >
+                  {row}
+                </td>
                 {columnLabels.map((column, c) => {
                   const value = grid[r]?.[c] ?? null;
                   if (value === null) return <td key={column} className="pdk-cohort-empty" />;

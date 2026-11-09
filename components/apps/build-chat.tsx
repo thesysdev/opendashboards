@@ -111,6 +111,8 @@ export function BuildChat({
           <Composer />
         </div>
         <TurnEffects appId={appId} dashboards={dashboards} hasPendingPrompt={hasPendingPrompt} />
+        {/* A new app's first prompt starts its own conversation: nothing to reopen. */}
+        {!hasPendingPrompt && <ReopenLastThread appId={appId} />}
       </ChatProvider>
     </ThemeProvider>
   );
@@ -387,6 +389,41 @@ function Composer() {
       </div>
     </div>
   );
+}
+
+const lastThreadKey = (appId: string) => `prism:build:last-thread:${appId}`;
+
+/**
+ * Opening Build on an app reopens the conversation last open there (in this
+ * browser), or else the most recent one. Remembering it is a convenience,
+ * so storage that's blocked or empty just falls back.
+ */
+function ReopenLastThread({ appId }: { appId: string }) {
+  const threads = useThreadList((s) => s.threads);
+  const selectedId = useThreadList((s) => s.selectedThreadId);
+  const selectThread = useThreadList((s) => s.selectThread);
+  const reopened = useRef(false);
+
+  useEffect(() => {
+    if (reopened.current || !threads.length) return;
+    reopened.current = true;
+    if (selectedId) return; // Already chose one (or sent a message) before the list arrived.
+    let last: string | null = null;
+    try {
+      last = localStorage.getItem(lastThreadKey(appId));
+    } catch {}
+    const thread = threads.find((candidate) => candidate.id === last) ?? threads[0];
+    selectThread(thread.id);
+  }, [appId, threads, selectedId, selectThread]);
+
+  useEffect(() => {
+    if (!selectedId) return;
+    try {
+      localStorage.setItem(lastThreadKey(appId), selectedId);
+    } catch {}
+  }, [appId, selectedId]);
+
+  return null;
 }
 
 /**
