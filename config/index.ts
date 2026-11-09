@@ -48,16 +48,15 @@ export const secrets = {
   databaseUrl: () => process.env.DATABASE_URL,
   /** OpenUI Cloud and Gateway. */
   thesysApiKey: () => process.env.THESYS_API_KEY,
-  /** Proves a request came through the gateway (prod). */
-  gatewaySecret: () => process.env.GATEWAY_SHARED_SECRET,
   /** Seals data-source keys with AWS KMS. */
   kmsKeyId: () => process.env.KMS_KEY_ID,
+  /** The AWS role Vercel OIDC assumes to use that key. Not secret, but set per deployment. */
+  kmsRoleArn: () => process.env.KMS_ROLE_ARN,
+  /** The Supabase project whose JWTs say who a request is for. Not secret, but set per deployment. */
+  supabaseUrl: () => process.env.SUPABASE_URL,
   /** The read-only role every demo dataset is read through. Unset locally: no demo datasets. */
   demoDatabasePassword: () => process.env.DEMO_DATABASE_PASSWORD,
 };
-
-/** Shortest gateway secret accepted. */
-export const MIN_GATEWAY_SECRET_LENGTH = 32;
 
 /**
  * What can't be true of an environment's settings. Only local may act as a
@@ -68,6 +67,7 @@ export function settingsProblems(name: Environment, settings: Settings): string[
   const problems = demoDatasetProblems(settings);
   if (name === "local") return problems;
   if (settings.auth.devUserId !== null) problems.push(`${name}: auth.devUserId must be null; only local may skip the gateway`);
+  if (settings.auth.publicHost === null) problems.push(`${name}: auth.publicHost must be set; it sits behind the gateway`);
   if (settings.secrets.allowPlaintext) problems.push(`${name}: secrets.allowPlaintext must be false; keys are never stored unencrypted outside local`);
   if (settings.kitPages) problems.push(`${name}: kitPages must be false; the /kit pages are for local development`);
   if (settings.network.connectAttemptTimeoutMs !== null) {
@@ -101,15 +101,14 @@ export function secretProblems(name: Environment, settings: Settings, env: Env =
   const problems: string[] = [];
   if (!env.DATABASE_URL) problems.push("DATABASE_URL is not set");
   if (!env.THESYS_API_KEY) problems.push("THESYS_API_KEY is not set");
-  const gatewaySecret = env.GATEWAY_SHARED_SECRET;
-  if (settings.auth.devUserId === null && !gatewaySecret) {
-    problems.push(`GATEWAY_SHARED_SECRET is not set; ${name} has no dev user, so requests must come through the gateway`);
-  }
-  if (gatewaySecret && gatewaySecret.length < MIN_GATEWAY_SECRET_LENGTH) {
-    problems.push(`GATEWAY_SHARED_SECRET must be at least ${MIN_GATEWAY_SECRET_LENGTH} characters`);
+  if (settings.auth.devUserId === null && !env.SUPABASE_URL) {
+    problems.push(`SUPABASE_URL is not set; ${name} has no dev user, so requests must carry a verified token`);
   }
   if (!settings.secrets.allowPlaintext && !env.KMS_KEY_ID) {
     problems.push(`KMS_KEY_ID is not set; ${name} never stores keys unencrypted`);
+  }
+  if (!settings.secrets.allowPlaintext && !env.KMS_ROLE_ARN) {
+    problems.push(`KMS_ROLE_ARN is not set; ${name} reaches KMS through Vercel OIDC`);
   }
   // Locally, demo datasets are optional: without the password they're simply not offered.
   if (name !== "local" && settings.demoDatasets.length && !env.DEMO_DATABASE_PASSWORD) {

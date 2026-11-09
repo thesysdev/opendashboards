@@ -1,9 +1,9 @@
 import type { NextConfig } from "next";
 import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_SERVER } from "next/constants";
 
-import { validateConfig } from "./config";
+import { config, validateConfig } from "./config";
 
-const nextConfig: NextConfig = {
+const baseConfig: NextConfig = {
   async redirects() {
     return [{ source: "/", destination: "/connections", permanent: false }];
   },
@@ -37,7 +37,10 @@ const nextConfig: NextConfig = {
  * (a throw in instrumentation.ts only fails each request). Settings files are
  * checked in every phase; secrets only where a server starts.
  */
-export default function config(phase: string): NextConfig {
+export default function nextConfig(phase: string): NextConfig {
   validateConfig({ withSecrets: phase === PHASE_DEVELOPMENT_SERVER || phase === PHASE_PRODUCTION_SERVER });
-  return nextConfig;
+  // Behind the gateway, Server Actions arrive with the public host as their Origin.
+  const { publicHost } = config().auth;
+  if (!publicHost) return baseConfig;
+  return { ...baseConfig, experimental: { ...baseConfig.experimental, serverActions: { allowedOrigins: [publicHost] } } };
 }

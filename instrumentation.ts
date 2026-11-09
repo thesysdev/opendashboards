@@ -9,10 +9,9 @@ export async function register() {
   if (process.env.NEXT_RUNTIME !== "nodejs") return;
 
   const { configureConnectTimeouts } = await import("@/lib/net/connect-timeouts");
-  const { getAuthConfig } = await import("@/lib/auth/gateway");
-  const { getSecretBox } = await import("@/lib/secrets");
+  const { validateConfig } = await import("@/config");
 
   configureConnectTimeouts();
-  getAuthConfig();
-  getSecretBox();
+  // Vercel never runs `next start`, so next.config.ts doesn't check secrets there.
+  validateConfig({ withSecrets: true });
 }

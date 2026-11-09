@@ -1,5 +1,6 @@
 import "server-only";
 
+import { attachDatabasePool } from "@vercel/functions";
 import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
 import { Pool } from "pg";
 
@@ -20,7 +21,10 @@ export function getDb(): Database {
   if (!globalForDb.prismDb) {
     const url = secrets.databaseUrl();
     if (!url) throw new Error("DATABASE_URL is not set");
-    globalForDb.prismDb = createDatabase(url).db;
+    const { db, pool } = createDatabase(url);
+    // Releases idle connections before a Vercel Function suspends.
+    attachDatabasePool(pool);
+    globalForDb.prismDb = db;
   }
   return globalForDb.prismDb;
 }

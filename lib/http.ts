@@ -1,6 +1,7 @@
 import "server-only";
 
 import { requireUser, UnauthorizedError, type CurrentUser } from "@/lib/auth/user";
+import { config } from "@/config";
 import type { AppErrorCode, AppResult } from "@/lib/apps/errors";
 
 const MAX_JSON_BYTES = 16 * 1024;
@@ -75,5 +76,8 @@ function assertSameOrigin(request: Request) {
   } catch {
     throw new HttpError(403, "Invalid Origin");
   }
-  if (!host || originHost !== host) throw new HttpError(403, "Cross-site request refused");
+  // Behind the gateway the forwarded host may be the gateway's own, not the one in the browser.
+  if (originHost !== config().auth.publicHost && originHost !== host) {
+    throw new HttpError(403, "Cross-site request refused");
+  }
 }

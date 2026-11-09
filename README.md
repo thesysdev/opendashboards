@@ -14,9 +14,9 @@ pnpm db:reset     # create the tables from lib/db/schema.ts
 pnpm dev
 ```
 
-Without `GATEWAY_SHARED_SECRET`, requests act as `DEV_USER_ID`, or as whatever `X-User-Id`
-header a request sends. Without `KMS_KEY_ID`, API keys are stored unencrypted. Both
-fallbacks only work outside production.
+Without `SUPABASE_URL`, requests act as the dev user in `config/local.ts`, or as
+whatever `X-User-Id` header a request sends. Without `KMS_KEY_ID`, API keys are stored
+unencrypted. Both fallbacks only work outside production.
 
 ## Tests
 
@@ -30,14 +30,20 @@ The service tests run against the `prism_test` database from `pnpm db:up`.
 
 | Area | Where |
 | --- | --- |
-| Gateway auth (`X-User-Id` + `X-Gateway-Secret`) | `lib/auth/`, `proxy.ts` |
-| Secret storage (`SecretBox`: `plaintext` now, `kms` stubbed) | `lib/secrets/` |
+| Gateway auth (Supabase JWT) | `lib/auth/`, `proxy.ts` |
+| Secret storage (`SecretBox`: `plaintext` locally, `kms` in production) | `lib/secrets/` |
 | PostHog client (fixed US/EU hosts, error classification) | `lib/posthog/` |
 | Connection service (validation, ownership, statuses) | `lib/connections/` |
 | Apps, connection usage, thread mapping | `lib/apps/`, `app/api/apps/[appId]/threads/` |
 | Schema and migrations | `lib/db/schema.ts`, `db/migrations/` |
 | UI | `app/(app)/`, `components/` |
 
-While Prism is being built there are no migrations. To change the schema, edit
-`lib/db/schema.ts` and run `pnpm db:reset`: it drops all data and recreates the tables (it
-refuses non-local databases). The test suite resets `prism_test` the same way before it runs.
+## Schema changes
+
+Edit `lib/db/schema.ts`, run `pnpm db:generate` to write the migration, then `pnpm db:reset`
+to rebuild your local database from the migrations (it drops all data and refuses non-local
+databases). The test suite resets `prism_test` the same way before it runs.
+
+Every Vercel build runs `pnpm db:migrate` before building, so a migration runs while the
+previous deployment is still serving. Keep migrations additive, and remove old columns in a
+later release.

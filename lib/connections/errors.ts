@@ -2,9 +2,10 @@ import type { z } from "zod";
 
 import type { ConnectionStatus } from "@/lib/db/schema";
 import {
-  NotImplementedError,
   SecretProviderMismatchError,
   SecretStorageNotConfiguredError,
+  SecretStorageUnavailableError,
+  SecretUnreadableError,
 } from "@/lib/secrets";
 import { ALL_SOURCES } from "@/lib/sources";
 import type { SourceError } from "@/lib/sources/types";
@@ -51,7 +52,7 @@ export function fromCheckError(error: unknown): { error: ConnectionError; status
     const known = source.toError(error);
     if (known) return known;
   }
-  if (error instanceof SecretProviderMismatchError) {
+  if (error instanceof SecretProviderMismatchError || error instanceof SecretUnreadableError) {
     return {
       status: "invalid",
       error: {
@@ -60,12 +61,21 @@ export function fromCheckError(error: unknown): { error: ConnectionError; status
       },
     };
   }
-  if (error instanceof NotImplementedError || error instanceof SecretStorageNotConfiguredError) {
+  if (error instanceof SecretStorageNotConfiguredError) {
     return {
       status: "unavailable",
       error: {
         code: "secret_storage_unavailable",
         message: "Secret storage isn't set up on this server yet, so credentials can't be saved or used.",
+      },
+    };
+  }
+  if (error instanceof SecretStorageUnavailableError) {
+    return {
+      status: "unavailable",
+      error: {
+        code: "secret_storage_unavailable",
+        message: "Secret storage is unavailable right now, so credentials can't be saved or used. Try again shortly.",
       },
     };
   }
