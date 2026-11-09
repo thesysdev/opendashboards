@@ -7,12 +7,10 @@ import {
   authenticate,
   createTokenVerifier,
   getAuthConfig,
-  GATEWAY_SECRET_HEADER,
   USER_ID_HEADER,
   type AuthConfig,
 } from "@/lib/auth/gateway";
 
-const SECRET = "s".repeat(40);
 const SUPABASE_URL = "https://project.supabase.co";
 const USER = "6f1c2d3e-0000-4000-8000-000000000001";
 const headers = (values: Record<string, string>) => new Headers(values);
@@ -43,7 +41,7 @@ function sign({ claims, issuer, audience, subject, expires, signWith }: TokenOpt
 }
 
 const request = (token: string) =>
-  headers({ [GATEWAY_SECRET_HEADER]: SECRET, [AUTHORIZATION_HEADER]: `Bearer ${token}` });
+  headers({ [AUTHORIZATION_HEADER]: `Bearer ${token}` });
 
 beforeAll(async () => {
   keys = await generateKeyPair("ES256");
@@ -51,38 +49,28 @@ beforeAll(async () => {
   const jwk: JWK = { ...(await exportJWK(keys.publicKey)), kid: "k1", alg: "ES256", use: "sig" };
   config = {
     mode: "gateway",
-    secret: SECRET,
     verifyToken: createTokenVerifier(SUPABASE_URL, createLocalJWKSet({ keys: [jwk] })),
   };
 });
 
 describe("getAuthConfig", () => {
-  const prod = { environment: "prod" as const, devUserId: null, gatewaySecret: SECRET, supabaseUrl: SUPABASE_URL };
+  const prod = { environment: "prod" as const, devUserId: null, supabaseUrl: SUPABASE_URL };
 
-  it("uses gateway mode when a secret is set", () => {
-    expect(getAuthConfig(prod)).toMatchObject({ mode: "gateway", secret: SECRET });
-    expect(getAuthConfig({ ...prod, environment: "local", devUserId: "dev-user" })).toMatchObject({ mode: "gateway", secret: SECRET });
+  it("uses gateway mode when Supabase is configured", () => {
+    expect(getAuthConfig(prod)).toMatchObject({ mode: "gateway" });
+    expect(getAuthConfig({ ...prod, environment: "local", devUserId: "dev-user" })).toMatchObject({ mode: "gateway" });
   });
 
-  it("refuses prod without a secret", () => {
-    expect(() => getAuthConfig({ ...prod, gatewaySecret: undefined })).toThrow(AuthConfigError);
-  });
-
-  it("refuses gateway mode without Supabase", () => {
+  it("refuses prod without Supabase", () => {
     expect(() => getAuthConfig({ ...prod, supabaseUrl: undefined })).toThrow(AuthConfigError);
   });
 
-  it("refuses a dev user outside local, even with a secret", () => {
-    expect(() => getAuthConfig({ ...prod, devUserId: "dev-user", gatewaySecret: undefined })).toThrow(AuthConfigError);
+  it("refuses a dev user outside local", () => {
     expect(() => getAuthConfig({ ...prod, devUserId: "dev-user" })).toThrow(AuthConfigError);
   });
 
-  it("refuses a short secret", () => {
-    expect(() => getAuthConfig({ ...prod, gatewaySecret: "short" })).toThrow(AuthConfigError);
-  });
-
-  it("uses local's dev user without a secret", () => {
-    expect(getAuthConfig({ environment: "local", devUserId: "alice", gatewaySecret: undefined, supabaseUrl: undefined })).toEqual({
+  it("uses local's dev user without Supabase", () => {
+    expect(getAuthConfig({ environment: "local", devUserId: "alice", supabaseUrl: undefined })).toEqual({
       mode: "dev",
       devUserId: "alice",
     });
@@ -100,28 +88,12 @@ describe("authenticate in gateway mode", () => {
     await expect(authenticate(forged, config)).resolves.toEqual({ ok: true, userId: USER });
   });
 
-  it("rejects a missing or wrong secret, even with a valid token", async () => {
-    const token = await sign();
-    await expect(authenticate(headers({ [AUTHORIZATION_HEADER]: `Bearer ${token}` }), config)).resolves.toEqual({
-      ok: false,
-      reason: "missing_secret",
-    });
-    await expect(
-      authenticate(headers({ [GATEWAY_SECRET_HEADER]: `${SECRET}x`, [AUTHORIZATION_HEADER]: `Bearer ${token}` }), config),
-    ).resolves.toEqual({ ok: false, reason: "bad_secret" });
-  });
-
-  it("rejects a missing token, even with the secret", async () => {
-    await expect(authenticate(headers({ [GATEWAY_SECRET_HEADER]: SECRET }), config)).resolves.toEqual({
+  it("rejects a missing or malformed Authorization header", async () => {
+    await expect(authenticate(headers({}), config)).resolves.toEqual({ ok: false, reason: "missing_token" });
+    await expect(authenticate(headers({ [AUTHORIZATION_HEADER]: "Basic abc" }), config)).resolves.toEqual({
       ok: false,
       reason: "missing_token",
     });
-  });
-
-  it("rejects a malformed Authorization header", async () => {
-    await expect(
-      authenticate(headers({ [GATEWAY_SECRET_HEADER]: SECRET, [AUTHORIZATION_HEADER]: "Basic abc" }), config),
-    ).resolves.toEqual({ ok: false, reason: "missing_token" });
   });
 
   it.each<[string, TokenOptions]>([

@@ -48,8 +48,6 @@ export const secrets = {
   databaseUrl: () => process.env.DATABASE_URL,
   /** OpenUI Cloud and Gateway. */
   thesysApiKey: () => process.env.THESYS_API_KEY,
-  /** Proves a request came through the gateway (prod). */
-  gatewaySecret: () => process.env.GATEWAY_SHARED_SECRET,
   /** Seals data-source keys with AWS KMS. */
   kmsKeyId: () => process.env.KMS_KEY_ID,
   /** The AWS role Vercel OIDC assumes to use that key. Not secret, but set per deployment. */
@@ -57,9 +55,6 @@ export const secrets = {
   /** The Supabase project whose JWTs say who a request is for. Not secret, but set per deployment. */
   supabaseUrl: () => process.env.SUPABASE_URL,
 };
-
-/** Shortest gateway secret accepted. */
-export const MIN_GATEWAY_SECRET_LENGTH = 32;
 
 /**
  * What can't be true of an environment's settings. Only local may act as a
@@ -84,15 +79,8 @@ export function secretProblems(name: Environment, settings: Settings, env: Env =
   const problems: string[] = [];
   if (!env.DATABASE_URL) problems.push("DATABASE_URL is not set");
   if (!env.THESYS_API_KEY) problems.push("THESYS_API_KEY is not set");
-  const gatewaySecret = env.GATEWAY_SHARED_SECRET;
-  if (settings.auth.devUserId === null && !gatewaySecret) {
-    problems.push(`GATEWAY_SHARED_SECRET is not set; ${name} has no dev user, so requests must come through the gateway`);
-  }
-  if (gatewaySecret && !env.SUPABASE_URL) {
-    problems.push("SUPABASE_URL is not set; it's needed to verify the gateway's user tokens");
-  }
-  if (gatewaySecret && gatewaySecret.length < MIN_GATEWAY_SECRET_LENGTH) {
-    problems.push(`GATEWAY_SHARED_SECRET must be at least ${MIN_GATEWAY_SECRET_LENGTH} characters`);
+  if (settings.auth.devUserId === null && !env.SUPABASE_URL) {
+    problems.push(`SUPABASE_URL is not set; ${name} has no dev user, so requests must carry a verified token`);
   }
   if (!settings.secrets.allowPlaintext && !env.KMS_KEY_ID) {
     problems.push(`KMS_KEY_ID is not set; ${name} never stores keys unencrypted`);

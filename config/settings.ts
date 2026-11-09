@@ -46,7 +46,7 @@ export type EnvironmentSettings = {
     /**
      * Who requests are for when no gateway sits in front of the app (an
      * X-User-Id header can still override it). null: every request must come
-     * through the gateway, with GATEWAY_SHARED_SECRET. Local only.
+     * through the gateway, with a verified token. Local only.
      */
     devUserId: string | null;
     /**

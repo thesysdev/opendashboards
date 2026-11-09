@@ -10,12 +10,10 @@ import {
   type Settings,
 } from "@/config";
 
-const SECRET = "s".repeat(40);
 const PROD_SECRETS = {
   NODE_ENV: "production",
   DATABASE_URL: "postgres://db",
   THESYS_API_KEY: "key",
-  GATEWAY_SHARED_SECRET: SECRET,
   KMS_KEY_ID: "kms",
   KMS_ROLE_ARN: "arn:aws:iam::1:role/prism",
   SUPABASE_URL: "https://project.supabase.co",
@@ -80,18 +78,7 @@ describe("secretProblems", () => {
 
   it("names each missing secret prod needs", () => {
     const problems = secretProblems("prod", settingsFor("prod"), { NODE_ENV: "production" });
-    expect(problems.join("\n")).toMatch(/DATABASE_URL[\s\S]*THESYS_API_KEY[\s\S]*GATEWAY_SHARED_SECRET[\s\S]*KMS_KEY_ID[\s\S]*KMS_ROLE_ARN/);
-  });
-
-  it("needs Supabase wherever a gateway secret is set", () => {
-    const { SUPABASE_URL: _unset, ...env } = PROD_SECRETS;
-    expect(secretProblems("prod", settingsFor("prod"), env).join("\n")).toContain("SUPABASE_URL");
-  });
-
-  it("refuses a short gateway secret", () => {
-    expect(secretProblems("prod", settingsFor("prod"), { ...PROD_SECRETS, GATEWAY_SHARED_SECRET: "short" })).toEqual([
-      "GATEWAY_SHARED_SECRET must be at least 32 characters",
-    ]);
+    expect(problems.join("\n")).toMatch(/DATABASE_URL[\s\S]*THESYS_API_KEY[\s\S]*SUPABASE_URL[\s\S]*KMS_KEY_ID[\s\S]*KMS_ROLE_ARN/);
   });
 
   it("needs only the database and OpenUI key locally", () => {
