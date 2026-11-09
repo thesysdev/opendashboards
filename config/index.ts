@@ -54,6 +54,8 @@ export const secrets = {
   kmsKeyId: () => process.env.KMS_KEY_ID,
   /** The AWS role Vercel OIDC assumes to use that key. Not secret, but set per deployment. */
   kmsRoleArn: () => process.env.KMS_ROLE_ARN,
+  /** The Supabase project whose JWTs say who a request is for. Not secret, but set per deployment. */
+  supabaseUrl: () => process.env.SUPABASE_URL,
 };
 
 /** Shortest gateway secret accepted. */
@@ -85,6 +87,9 @@ export function secretProblems(name: Environment, settings: Settings, env: Env =
   const gatewaySecret = env.GATEWAY_SHARED_SECRET;
   if (settings.auth.devUserId === null && !gatewaySecret) {
     problems.push(`GATEWAY_SHARED_SECRET is not set; ${name} has no dev user, so requests must come through the gateway`);
+  }
+  if (gatewaySecret && !env.SUPABASE_URL) {
+    problems.push("SUPABASE_URL is not set; it's needed to verify the gateway's user tokens");
   }
   if (gatewaySecret && gatewaySecret.length < MIN_GATEWAY_SECRET_LENGTH) {
     problems.push(`GATEWAY_SHARED_SECRET must be at least ${MIN_GATEWAY_SECRET_LENGTH} characters`);

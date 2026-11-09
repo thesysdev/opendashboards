@@ -1,6 +1,7 @@
 import "server-only";
 
 import { headers } from "next/headers";
+import { connection } from "next/server";
 import { cache } from "react";
 
 import { authenticate, getAuthConfig } from "./gateway";
@@ -23,7 +24,9 @@ export class UnauthorizedError extends Error {
  * `<Suspense>` boundary when called from a page or layout.
  */
 export const requireUser = cache(async (): Promise<CurrentUser> => {
-  const result = authenticate(await headers(), getAuthConfig());
+  // Checking a token's expiry reads the clock, which only happens at request time.
+  await connection();
+  const result = await authenticate(await headers(), getAuthConfig());
   if (!result.ok) throw new UnauthorizedError();
   return { id: result.userId };
 });

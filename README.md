@@ -30,7 +30,7 @@ The service tests run against the `prism_test` database from `pnpm db:up`.
 
 | Area | Where |
 | --- | --- |
-| Gateway auth (`X-User-Id` + `X-Gateway-Secret`) | `lib/auth/`, `proxy.ts` |
+| Gateway auth (Supabase JWT + `X-Gateway-Secret`) | `lib/auth/`, `proxy.ts` |
 | Secret storage (`SecretBox`: `plaintext` locally, `kms` in production) | `lib/secrets/` |
 | PostHog client (fixed US/EU hosts, error classification) | `lib/posthog/` |
 | Connection service (validation, ownership, statuses) | `lib/connections/` |
