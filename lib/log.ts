@@ -1,4 +1,4 @@
-import { metric } from "@vercel/functions";
+import { count } from "./metrics";
 
 const API_KEY_PATTERN = /ph[a-z]_[A-Za-z0-9_-]+/g;
 const URL_PASSWORD_PATTERN = /(:\/\/[^\s:/@]*):[^\s/@]*@/g;
@@ -30,7 +30,7 @@ export function logError(context: string, error: unknown): void {
     current = current instanceof Error ? current.cause : undefined;
   }
   console.error(`[prism] ${context}: ${redact(parts.join(" ← caused by "))}`);
-  metric("prism.error", 1, { context, cause: causeLabel(rootCause) });
+  count("prism.error", { context, cause: causeLabel(rootCause) });
 }
 
 /** A low-cardinality name for a failure: a code (`ECONNREFUSED`, `23505`) or the error's name. */

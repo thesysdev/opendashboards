@@ -1,6 +1,5 @@
 import { EventType, type BaseEvent } from "@ag-ui/core";
 import { storeChatCompletionHistory } from "@openuidev/server/openai";
-import { metric } from "@vercel/functions";
 import { APIError } from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
@@ -12,6 +11,7 @@ import { getThreadService } from "@/lib/apps";
 import { getDashboardService } from "@/lib/dashboards";
 import { HttpError, readJson, route } from "@/lib/http";
 import { logError } from "@/lib/log";
+import { count } from "@/lib/metrics";
 
 type Ctx = { params: Promise<{ appId: string }> };
 
@@ -75,16 +75,16 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
         await runner.done();
         translate.finish();
         emit({ type: EventType.RUN_FINISHED, threadId, runId } as BaseEvent);
-        metric("prism.chat.turn", 1, { outcome: "completed", cause: "none" });
+        count("prism.chat.turn", { outcome: "completed", cause: "none" });
       } catch (error) {
         if (request.signal.aborted) {
-          metric("prism.chat.turn", 1, { outcome: "cancelled", cause: "none" });
+          count("prism.chat.turn", { outcome: "cancelled", cause: "none" });
           controller.close();
           return; // Cancelled: save nothing.
         }
         logError("chat.turn", error);
         const failure = turnFailure(error);
-        metric("prism.chat.turn", 1, { outcome: "failed", cause: failure.cause });
+        count("prism.chat.turn", { outcome: "failed", cause: failure.cause });
         translate.finish();
         emit({ type: EventType.RUN_ERROR, message: failure.message } as BaseEvent);
         controller.close();

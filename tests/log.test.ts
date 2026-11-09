@@ -35,6 +35,6 @@ describe("logError", () => {
     logError("apps.list", new Error("query failed", { cause: root }));
 
     expect(log.mock.calls[0][0]).not.toContain("secret");
-    expect(metric).toHaveBeenCalledWith("prism.error", 1, { context: "apps.list", cause: "ECONNREFUSED" });
+    expect(metric).toHaveBeenCalledWith("prism.error", 1, { context: "apps.list", cause: "ECONNREFUSED", env: "local" });
   });
 });

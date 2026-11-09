@@ -1,8 +1,8 @@
 import { DecryptCommand, EncryptCommand, KMSClient } from "@aws-sdk/client-kms";
-import { metric } from "@vercel/functions";
 import { awsCredentialsProvider } from "@vercel/oidc-aws-credentials-provider";
 
 import { config } from "@/config";
+import { count } from "@/lib/metrics";
 
 import {
   SecretProviderMismatchError,
@@ -31,7 +31,7 @@ function createClient(roleArn: string | undefined): KMSClient {
 }
 
 function countFailure(operation: "encrypt" | "decrypt", cause: unknown) {
-  metric("prism.kms.failure", 1, { operation, error: cause instanceof Error ? cause.name : "unknown" });
+  count("prism.kms.failure", { operation, error: cause instanceof Error ? cause.name : "unknown" });
 }
 
 /** KMS treats the encryption context as authenticated data: it must match to decrypt. */
