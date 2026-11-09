@@ -1,3 +1,5 @@
+import type { KitProgram } from "@/app/(app)/kit/program";
+
 import { experimentsOverview, mobileAppEngagement, stagingSmokeChecks } from "./programs/engagement-experiments-errors";
 import { onboardingHealth, retentionCohorts, signupFunnel } from "./programs/funnels-and-retention";
 import { growthMetrics, weeklyExecSummary } from "./programs/growth-and-exec";
@@ -7,7 +9,7 @@ import { featureAdoptionSearch, marketingAttribution } from "./programs/marketin
  * Hand-written dashboards with realistic static data, showing how real
  * dashboards built with @prism/dashboard-kit look. Development only (/kit).
  */
-const APPS: { app: string; dashboards: Record<string, string> }[] = [
+const APPS: { app: string; dashboards: Record<string, KitProgram> }[] = [
   { app: "Growth metrics", dashboards: growthMetrics },
   { app: "Weekly exec summary", dashboards: weeklyExecSummary },
   { app: "Signup funnel", dashboards: signupFunnel },
@@ -20,12 +22,12 @@ const APPS: { app: string; dashboards: Record<string, string> }[] = [
   { app: "Staging smoke checks", dashboards: stagingSmokeChecks },
 ];
 
-export type MockDashboard = { slug: string; app: string; title: string; source: string };
+export type MockDashboard = { slug: string; app: string; title: string; program: KitProgram };
 
 const slugify = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
 
 export const MOCK_DASHBOARDS: MockDashboard[] = APPS.flatMap(({ app, dashboards }) =>
-  Object.entries(dashboards).map(([title, source]) => ({ slug: `${slugify(app)}--${slugify(title)}`, app, title, source })),
+  Object.entries(dashboards).map(([title, program]) => ({ slug: `${slugify(app)}--${slugify(title)}`, app, title, program })),
 );
 
 export const MOCK_APPS = APPS.map(({ app }) => ({

@@ -1,12 +1,13 @@
 import "server-only";
 
+import { config, secrets } from "@/config";
 import { getDb } from "@/lib/db";
 import { getSecretBox } from "@/lib/secrets";
 import { sourceFor } from "@/lib/sources";
 
 import { createConnectionService, type ConnectionService } from "./service";
 
-export type { ConnectionSummary, ConnectionWarning } from "./service";
+export type { ConnectionSummary, ConnectionWarning, DemoDatasetSummary } from "./service";
 
 let service: ConnectionService | undefined;
 
@@ -16,6 +17,7 @@ export function getConnectionService(): ConnectionService {
     db: getDb(),
     secrets: () => getSecretBox(),
     sources: sourceFor,
+    demo: { datasets: () => config().demoDatasets, password: secrets.demoDatabasePassword },
   });
   return service;
 }

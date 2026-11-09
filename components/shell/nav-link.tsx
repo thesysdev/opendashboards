@@ -1,6 +1,6 @@
 "use client";
 
-import { DatabaseIcon, LayoutGridIcon } from "lucide-react";
+import { DatabaseIcon, SquarePenIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense } from "react";
@@ -8,7 +8,7 @@ import { Suspense } from "react";
 import { cn } from "@/lib/utils";
 
 /** Icons by name: Server Components can't pass component functions to this Client Component. */
-const ICONS = { apps: LayoutGridIcon, connections: DatabaseIcon };
+const ICONS = { new: SquarePenIcon, connections: DatabaseIcon };
 
 type Props = {
   href: string;
@@ -49,7 +49,7 @@ function NavLinkView({ href, label, icon, nested, active }: Props & { active: bo
       aria-current={active ? "page" : undefined}
       title={nested ? label : undefined}
       className={cn(
-        "flex items-center gap-2.5 rounded-lg px-2.5 text-sm transition-colors",
+        "flex items-center gap-2.5 rounded-lg px-2 text-sm transition-colors",
         "hover:bg-black/[0.04] hover:text-foreground",
         "focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none",
         nested ? "h-8 text-foreground/70" : "h-9 text-foreground/80",

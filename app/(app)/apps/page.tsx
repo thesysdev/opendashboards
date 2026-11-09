@@ -3,6 +3,7 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { DemoPrompts } from "@/components/apps/demo-prompts";
 import { PromptBox } from "@/components/apps/prompt-box";
 import { SectionLabel } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -48,9 +49,17 @@ export default function AppsPage() {
 
 async function Prompt() {
   const user = await requireUser();
-  const connections = await getConnectionService().list(user.id);
+  const service = getConnectionService();
+  const [connections, demos] = await Promise.all([service.list(user.id), service.listDemoDatasets(user.id)]);
+  // Demo prompts are for people without data of their own.
+  const ownData = connections.some((connection) => !connection.demo);
   return (
-    <PromptBox connections={connections.map(({ id, name, shortSource }) => ({ id, name, source: shortSource }))} />
+    <>
+      <PromptBox connections={connections.map(({ id, name, shortSource }) => ({ id, name, source: shortSource }))} />
+      {!ownData && demos.length > 0 && (
+        <DemoPrompts datasets={demos.map(({ key, name, prompts }) => ({ key, name, prompts }))} />
+      )}
+    </>
   );
 }
 

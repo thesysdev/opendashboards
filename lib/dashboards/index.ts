@@ -76,7 +76,10 @@ export async function readDashboard(
   userId: string,
   appId: string,
   artifactId: string,
-): Promise<{ ok: true; title: string; program: string } | { ok: false; reason: "not_found" | "cloud_failed" }> {
+): Promise<
+  | { ok: true; title: string; description: string | null; program: string }
+  | { ok: false; reason: "not_found" | "cloud_failed" }
+> {
   const dashboard = (await getDashboardService().list(userId, appId)).find((row) => row.artifactId === artifactId);
   if (!dashboard) return { ok: false, reason: "not_found" };
   try {
@@ -89,7 +92,7 @@ export async function readDashboard(
     if (!response.ok) throw new Error(`OpenUI Cloud refused to read the dashboard (HTTP ${response.status})`);
     const body = (await response.json()) as { content?: unknown };
     const program = typeof body.content === "string" ? body.content : JSON.stringify(body.content ?? "");
-    return { ok: true, title: dashboard.title, program };
+    return { ok: true, title: dashboard.title, description: dashboard.description, program };
   } catch (error) {
     logError("dashboards.read", error);
     return { ok: false, reason: "cloud_failed" };

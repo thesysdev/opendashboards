@@ -17,6 +17,7 @@ const PROD_SECRETS = {
   KMS_KEY_ID: "kms",
   KMS_ROLE_ARN: "arn:aws:iam::1:role/prism",
   SUPABASE_URL: "https://project.supabase.co",
+  DEMO_DATABASE_PASSWORD: "demo",
 };
 
 /** prod's settings with some changed, as if someone edited prod.ts. */
@@ -81,8 +82,30 @@ describe("secretProblems", () => {
     expect(problems.join("\n")).toMatch(/DATABASE_URL[\s\S]*THESYS_API_KEY[\s\S]*SUPABASE_URL[\s\S]*KMS_KEY_ID[\s\S]*KMS_ROLE_ARN/);
   });
 
+  it("needs the demo password in prod when demo datasets are on offer, but not locally", () => {
+    const { DEMO_DATABASE_PASSWORD: _, ...withoutDemo } = PROD_SECRETS;
+    expect(secretProblems("prod", settingsFor("prod"), withoutDemo)).toEqual([
+      "DEMO_DATABASE_PASSWORD is not set; prod offers demo datasets",
+    ]);
+    expect(secretProblems("prod", editedProd((s) => (s.demoDatasets = [])), withoutDemo)).toEqual([]);
+  });
+
   it("needs only the database and OpenUI key locally", () => {
     expect(secretProblems("local", settingsFor("local"), { DATABASE_URL: "postgres://db", THESYS_API_KEY: "key" })).toEqual([]);
+  });
+});
+
+describe("demo datasets", () => {
+  it("need unique, stable keys and a database to point at", () => {
+    const [retail] = settingsFor("prod").demoDatasets;
+    const broken = editedProd((s) => {
+      s.demoDatasets = [retail, { ...retail, postgres: { ...retail.postgres, host: "" } }, { ...retail, key: "Retail Sales" }];
+    });
+    expect(settingsProblems("prod", broken)).toEqual([
+      "demoDatasets.retail: key is used twice",
+      "demoDatasets.retail: postgres needs a host, database and user",
+      "demoDatasets.Retail Sales: key must be lowercase letters, digits or _ (at most 40)",
+    ]);
   });
 });
 

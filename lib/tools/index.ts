@@ -99,12 +99,21 @@ function fromSource(source: ConnectionSource, tool: SourceTool<Record<string, un
 const listConnections: Tool = {
   name: "list_connections",
   description:
-    "The user's data connections: id, name, type and what each points at. Pass a connection's id to that source's tools.",
+    "The user's data connections: id, name, type and what each points at. Pass a connection's id to that source's tools. " +
+    "A demo dataset is sample data Prism provides; its `about` says what's in it and where to look first.",
   parameters: z.toJSONSchema(z.object({})),
   callers: ["agent"],
   async run(_args, context) {
     const connections = await getConnectionService().list(context.userId);
-    return connections.map(({ id, name, type, source, detail, status }) => ({ id, name, type, source, detail, status }));
+    return connections.map(({ id, name, type, source, detail, status, demo }) => ({
+      id,
+      name,
+      type,
+      source,
+      detail,
+      status,
+      ...(demo ? { demo: true, about: demo.description } : {}),
+    }));
   },
 };
 

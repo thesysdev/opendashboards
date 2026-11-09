@@ -29,6 +29,22 @@ export async function createAppAction(input: unknown): Promise<AppResult<never>>
   redirect(`/apps/${result.data.id}`);
 }
 
+const demoStartSchema = z.object({ dataset: z.string().min(1).max(40), prompt: z.string().trim().min(1).max(4000) }).strict();
+
+/**
+ * Starts an app on a demo dataset in one step: installs the dataset if it
+ * isn't already, then creates the app with the prompt and opens it. Returns
+ * only on failure.
+ */
+export async function startDemoAppAction(input: unknown): Promise<AppResult<never>> {
+  const user = await requireUser();
+  const parsed = demoStartSchema.safeParse(input);
+  if (!parsed.success) return fail({ code: "validation", message: "This demo isn't available." });
+  const installed = await getConnectionService().installDemo(user.id, { dataset: parsed.data.dataset });
+  if (!installed.ok) return fail({ code: installed.error.code === "not_found" ? "not_found" : "internal", message: installed.error.message });
+  return createAppAction({ prompt: parsed.data.prompt, connectionIds: [installed.data.id] });
+}
+
 export async function renameAppAction(input: unknown): Promise<AppResult> {
   const user = await requireUser();
   const result = await getAppService().rename(user.id, input);
@@ -67,6 +83,39 @@ export async function takePendingPromptAction(appId: string): Promise<string | n
   if (!connections.length) return pending.prompt;
   const names = connections.map((connection) => `${connection.name} (${connection.id})`).join(", ");
   return `${pending.prompt}\n\nUse these data sources: ${names}`;
+}
+
+const updateDashboardSchema = z
+  .object({
+    appId: z.uuid(),
+    dashboardId: z.uuid(),
+    title: z.string().trim().min(1, "Enter a name.").max(120, "Keep the name under 120 characters.").optional(),
+    // Empty clears it.
+    description: z.string().trim().max(300, "Keep the description under 300 characters.").optional(),
+  })
+  .strict();
+
+/** Renames one of an app's dashboards, or changes its description. */
+export async function updateDashboardAction(input: unknown): Promise<AppResult> {
+  const user = await requireUser();
+  const parsed = updateDashboardSchema.safeParse(input);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = issue?.path[0];
+    return field === "title" || field === "description"
+      ? fail({ code: "validation", message: issue!.message, field })
+      : fail({ code: "not_found", message: "This dashboard doesn't exist or was deleted." });
+  }
+  const { appId, dashboardId, title, description } = parsed.data;
+  const changes = {
+    ...(title !== undefined ? { title } : {}),
+    ...(description !== undefined ? { description: description || null } : {}),
+  };
+  if (!(await getDashboardService().update(user.id, appId, dashboardId, changes))) {
+    return fail({ code: "not_found", message: "This dashboard doesn't exist or was deleted." });
+  }
+  revalidateShell();
+  return { ok: true, data: undefined };
 }
 
 const deleteDashboardSchema = z.object({ appId: z.uuid(), dashboardId: z.uuid() }).strict();

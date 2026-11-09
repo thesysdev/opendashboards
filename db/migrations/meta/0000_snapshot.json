@@ -1,5 +1,5 @@
 {
-  "id": "a481b126-63d5-4d06-a99a-8f2274595ed6",
+  "id": "281b539a-5b58-4a54-8c9b-e476bc58ae0e",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -289,6 +289,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "description": {
+          "name": "description",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "position": {
           "name": "position",
           "type": "integer",
@@ -394,13 +400,19 @@
           "name": "secret",
           "type": "jsonb",
           "primaryKey": false,
-          "notNull": true
+          "notNull": false
         },
         "credential_hint": {
           "name": "credential_hint",
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "demo_dataset": {
+          "name": "demo_dataset",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
         },
         "status": {
           "name": "status",
@@ -445,13 +457,39 @@
           "concurrently": false,
           "method": "btree",
           "with": {}
+        },
+        "data_connections_user_demo_idx": {
+          "name": "data_connections_user_demo_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "demo_dataset",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
         }
       },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "data_connections_secret_or_demo": {
+          "name": "data_connections_secret_or_demo",
+          "value": "(\"data_connections\".\"demo_dataset\" IS NULL) = (\"data_connections\".\"secret\" IS NOT NULL)"
+        }
+      },
       "isRLSEnabled": false
     }
   },

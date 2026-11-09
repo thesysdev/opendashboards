@@ -1,4 +1,6 @@
+import { sql } from "drizzle-orm";
 import {
+  check,
   index,
   integer,
   jsonb,
@@ -7,6 +9,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
 } from "drizzle-orm/pg-core";
 
@@ -38,16 +41,28 @@ export const dataConnections = pgTable(
      * Fixed after creation: pointing elsewhere means a new connection.
      */
     config: jsonb("config").$type<ConnectionConfig>().notNull(),
-    /** The API key or password, sealed by a SecretBox. Never sent to the browser. */
-    secret: jsonb("secret").$type<SealedSecret>().notNull(),
+    /** The API key or password, sealed by a SecretBox. Never sent to the browser. Null for a demo dataset. */
+    secret: jsonb("secret").$type<SealedSecret>(),
     /** e.g. "phx_…a1b2", so the UI never needs the credential itself. */
     credentialHint: text("credential_hint").notNull(),
+    /**
+     * Set when this is an installed demo dataset: its key in config's
+     * demoDatasets. Where it points and its (shared, read-only) credential
+     * then come from config, never from this row, so it has no secret.
+     */
+    demoDataset: text("demo_dataset"),
     status: connectionStatusEnum("status").notNull(),
     lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (table) => [index("data_connections_user_id_idx").on(table.userId)],
+  (table) => [
+    index("data_connections_user_id_idx").on(table.userId),
+    // Each demo dataset is installed at most once per user.
+    uniqueIndex("data_connections_user_demo_idx").on(table.userId, table.demoDataset),
+    // A demo dataset has no secret of its own; every other connection has one.
+    check("data_connections_secret_or_demo", sql`(${table.demoDataset} IS NULL) = (${table.secret} IS NOT NULL)`),
+  ],
 );
 
 /**
@@ -107,7 +122,13 @@ export const dashboards = pgTable(
     userId: text("user_id").notNull(),
     /** OpenUI Cloud's artifact id (art_…). */
     artifactId: text("artifact_id").notNull().unique(),
+    /**
+     * The dashboard's title and one-line description, drawn above it. Prism
+     * keeps them, not the program in Cloud: the agent sets them when it
+     * creates the dashboard, and only people change them afterwards.
+     */
     title: text("title").notNull(),
+    description: text("description"),
     position: integer("position").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

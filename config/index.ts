@@ -3,7 +3,7 @@ import { local } from "./local";
 import { prod } from "./prod";
 import type { Environment, EnvironmentSettings, Settings } from "./settings";
 
-export { ENVIRONMENTS, type Environment, type Settings } from "./settings";
+export { ENVIRONMENTS, type DemoDataset, type Environment, type Settings } from "./settings";
 
 /**
  * Prism's configuration, in one place. The environment follows Next.js's
@@ -54,6 +54,8 @@ export const secrets = {
   kmsRoleArn: () => process.env.KMS_ROLE_ARN,
   /** The Supabase project whose JWTs say who a request is for. Not secret, but set per deployment. */
   supabaseUrl: () => process.env.SUPABASE_URL,
+  /** The read-only role every demo dataset is read through. Unset locally: no demo datasets. */
+  demoDatabasePassword: () => process.env.DEMO_DATABASE_PASSWORD,
 };
 
 /**
@@ -62,14 +64,34 @@ export const secrets = {
  * change Node's connection defaults.
  */
 export function settingsProblems(name: Environment, settings: Settings): string[] {
-  if (name === "local") return [];
-  const problems: string[] = [];
+  const problems = demoDatasetProblems(settings);
+  if (name === "local") return problems;
   if (settings.auth.devUserId !== null) problems.push(`${name}: auth.devUserId must be null; only local may skip the gateway`);
   if (settings.auth.publicHost === null) problems.push(`${name}: auth.publicHost must be set; it sits behind the gateway`);
   if (settings.secrets.allowPlaintext) problems.push(`${name}: secrets.allowPlaintext must be false; keys are never stored unencrypted outside local`);
   if (settings.kitPages) problems.push(`${name}: kitPages must be false; the /kit pages are for local development`);
   if (settings.network.connectAttemptTimeoutMs !== null) {
     problems.push(`${name}: network.connectAttemptTimeoutMs must be null; only local changes Node's connection defaults`);
+  }
+  return problems;
+}
+
+const DEMO_KEY = /^[a-z][a-z0-9_]{0,39}$/;
+
+/** Demo datasets need unique, stable keys and somewhere sensible to point. */
+function demoDatasetProblems(settings: Settings): string[] {
+  const problems: string[] = [];
+  const seen = new Set<string>();
+  for (const dataset of settings.demoDatasets) {
+    const label = `demoDatasets.${dataset.key || "?"}`;
+    if (!DEMO_KEY.test(dataset.key)) problems.push(`${label}: key must be lowercase letters, digits or _ (at most 40)`);
+    if (seen.has(dataset.key)) problems.push(`${label}: key is used twice`);
+    seen.add(dataset.key);
+    if (!dataset.name.trim()) problems.push(`${label}: name is empty`);
+    if (!dataset.description.trim()) problems.push(`${label}: description is empty`);
+    const { host, port, database, user } = dataset.postgres;
+    if (!host.trim() || !database.trim() || !user.trim()) problems.push(`${label}: postgres needs a host, database and user`);
+    if (!Number.isInteger(port) || port < 1 || port > 65535) problems.push(`${label}: postgres.port must be 1–65535`);
   }
   return problems;
 }
@@ -87,6 +109,10 @@ export function secretProblems(name: Environment, settings: Settings, env: Env =
   }
   if (!settings.secrets.allowPlaintext && !env.KMS_ROLE_ARN) {
     problems.push(`KMS_ROLE_ARN is not set; ${name} reaches KMS through Vercel OIDC`);
+  }
+  // Locally, demo datasets are optional: without the password they're simply not offered.
+  if (name !== "local" && settings.demoDatasets.length && !env.DEMO_DATABASE_PASSWORD) {
+    problems.push(`DEMO_DATABASE_PASSWORD is not set; ${name} offers demo datasets`);
   }
   return problems;
 }

@@ -1,6 +1,5 @@
 /** Degenerate data for every dashboard-kit component (too many, too few, outliers, gaps, nulls), for visual review on /kit/edge-cases. */
-export const EDGE_CASES = String.raw`root = Dashboard([header, filters, s0, s1, s2, s3, s4, s5, s6, s7])
-header = DashboardHeader("Edge cases", "Every component with degenerate data: too many, too few, outliers, gaps and nulls.", ["Rendering test"])
+export const EDGE_CASES = { title: "Edge cases", description: "Every component with degenerate data: too many, too few, outliers, gaps and nulls.", source: String.raw`root = Dashboard([filters, s0, s1, s2, s3, s4, s5, s6, s7])
 filters = FilterBar([DateRangeFilter("range", $range), MultiSelectFilter("segments", "Segment", [{"value":"s0","label":"Segment with a long name 1"},{"value":"s1","label":"Segment with a long name 2"},{"value":"s2","label":"Segment with a long name 3"},{"value":"s3","label":"Segment with a long name 4"},{"value":"s4","label":"Segment with a long name 5"},{"value":"s5","label":"Segment with a long name 6"},{"value":"s6","label":"Segment with a long name 7"},{"value":"s7","label":"Segment with a long name 8"},{"value":"s8","label":"Segment with a long name 9"},{"value":"s9","label":"Segment with a long name 10"},{"value":"s10","label":"Segment with a long name 11"},{"value":"s11","label":"Segment with a long name 12"},{"value":"s12","label":"Segment with a long name 13"},{"value":"s13","label":"Segment with a long name 14"}], $segments), SearchFilter("q", "Search workspaces", $q), CompareToggle("Previous period", true)])
 $range = "2026-10-01..2026-10-31"
 $segments = []
@@ -73,11 +72,13 @@ s6r0 = Row([c30, c31])
 s6r1 = Row([c32])
 s6r2 = Row([c33, c34, c35])
 s6r3 = Row([c36, c37])
-s6 = Section("Tables, lists and goals", [s6r0, s6r1, s6r2, s6r3], "No rows, one row, a hundred rows, nulls and very long text; lists with one item and fifty; goals at zero and far over target.")
+c42 = Card("Heatmap with long row labels", [Heatmap(["2026-09-07 · n=1,204", "2026-09-14 · n=987", "2026-09-21 · n=1,056", "A cohort label far too long to fit the label column at all"], ["W1", "W2", "W3", "W4", "W5", "W6", "W7"], [[12.3, 3, 3.4, 2.1, 2.1, 1.7, 0.9], [8.9, 4, 4.3, 3.1, 3.4, 0.9, 1.5], [8.5, 3.7, 2.6, 1.6, 0.5, 0.5, null], [6.2, 1.8, 1.8, 1.3, null, null, null]], "percent", true)], "full", "")
+s6r4 = Row([c42])
+s6 = Section("Tables, lists and goals", [s6r0, s6r1, s6r2, s6r3, s6r4], "No rows, one row, a hundred rows, nulls and very long text; lists with one item and fifty; goals at zero and far over target; heatmap row labels of any length.")
 c38 = Card("One change", [Waterfall(["Start", "New"], [398200, 18400], "currency-compact", "End")], "third", "")
 c39 = Card("Twelve changes, one outlier", [Waterfall(["Start","Change 1","Change 2","Change 3","Change 4","Change 5","Change 6","Change 7","Change 8","Change 9","Change 10","Change 11","Change 12"], [400000,-2153,6718,5762,5761,5042,-180000,-3224,962,3098,5522,-700,6014], "currency-compact", "End")], "two-thirds", "")
 c40 = Card("One interval", [Intervals(["Variant B"], [2.1], [-0.4], [4.6], "percent")], "half", "")
 c41 = Card("One huge interval", [Intervals(["Big test", "Tiny test", "Underpowered"], [3.2, 1.1, 8.0], [2.1, 0.4, -41.0], [4.3, 1.8, 57.0], "percent")], "half", "")
 s7r0 = Row([c38, c39])
 s7r1 = Row([c40, c41])
-s7 = Section("Waterfall and intervals", [s7r0, s7r1], "One change, many changes with an outlier; one interval, a huge interval.")`;
+s7 = Section("Waterfall and intervals", [s7r0, s7r1], "One change, many changes with an outlier; one interval, a huge interval.")` };

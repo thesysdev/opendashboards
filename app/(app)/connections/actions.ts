@@ -45,3 +45,13 @@ export async function renameConnectionAction(input: unknown) {
 export async function deleteConnectionAction(input: unknown) {
   return run((userId) => getConnectionService().remove(userId, input));
 }
+
+/** Installs a demo dataset: a connection of the user's that points at it. */
+export async function installDemoAction(input: unknown) {
+  return run((userId) => getConnectionService().installDemo(userId, input));
+}
+
+/** Uninstalls a demo dataset, unless an app uses it. */
+export async function uninstallDemoAction(input: unknown) {
+  return run((userId) => getConnectionService().uninstallDemo(userId, input));
+}
