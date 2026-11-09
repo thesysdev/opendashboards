@@ -49,6 +49,12 @@ export type EnvironmentSettings = {
      */
     devUserId: string | null;
   };
+  limits: {
+    /** Chat turns one user may start per UTC day. */
+    chatTurnsPerUserPerDay: number;
+    /** Chat turns across all users per UTC day: the spending backstop. 0 turns chat off. */
+    chatTurnsPerDay: number;
+  };
   secrets: {
     /** Store data-source keys unencrypted when no KMS key is configured. Local only. */
     allowPlaintext: boolean;

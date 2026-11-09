@@ -5,6 +5,7 @@ import type { RunnableToolFunctionWithContext } from "openai/lib/RunnableFunctio
 import { z } from "zod";
 
 import { config, secrets } from "@/config";
+import type { ReservedTurn } from "@/lib/apps/chat-limits";
 import {
   artifactOf,
   deleteDashboard,
@@ -38,8 +39,12 @@ export const SYSTEM_PROMPT = `You are Prism's dashboard builder. The user is bui
 
 let gateway: OpenAI | undefined;
 
-/** OpenUI Gateway, as configured: its URL and the THESYS_API_KEY secret. */
-export function getGateway(): OpenAI {
+/**
+ * OpenUI Gateway, as configured: its URL and the THESYS_API_KEY secret. Takes a
+ * reserved turn so model calls can't be made without passing the chat limits.
+ * `scripts/check-model-access.mjs` fails the build if a client is made elsewhere.
+ */
+export function getGateway(_turn: ReservedTurn): OpenAI {
   gateway ??= new OpenAI({ baseURL: config().openui.gatewayUrl, apiKey: secrets.thesysApiKey() });
   return gateway;
 }
