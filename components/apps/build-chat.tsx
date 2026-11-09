@@ -69,6 +69,9 @@ export function BuildChat({
   dashboards: Dashboard[];
   hasPendingPrompt: boolean;
 }) {
+  // Taken once: sending the first prompt refreshes the page, which turns
+  // hasPendingPrompt off mid-send, and reopening a thread then would abort it.
+  const [startedWithPrompt] = useState(hasPendingPrompt);
   const cloud = useOpenuiCloudStorage({ token: "/api/frontend-token" });
   const storage = useMemo(() => scopeStorageToApp(cloud, appId), [cloud, appId]);
   // The dashboard on screen: the one in the URL, or the app's first on its home.
@@ -112,7 +115,7 @@ export function BuildChat({
         </div>
         <TurnEffects appId={appId} dashboards={dashboards} hasPendingPrompt={hasPendingPrompt} />
         {/* A new app's first prompt starts its own conversation: nothing to reopen. */}
-        {!hasPendingPrompt && <ReopenLastThread appId={appId} />}
+        {!startedWithPrompt && <ReopenLastThread appId={appId} />}
       </ChatProvider>
     </ThemeProvider>
   );

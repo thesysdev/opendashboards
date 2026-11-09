@@ -29,7 +29,10 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   secretMode: SecretMode;
-} & ({ mode: "create" } | { mode: "replace"; connection: ExistingConnection });
+} & (
+  | { mode: "create"; /** Called with the new connection's id once it's saved. */ onCreated?: (id: string) => void }
+  | { mode: "replace"; connection: ExistingConnection }
+);
 
 type Values = { name: string; hostKind: HostKind; projectId: string; apiKey: string };
 
@@ -73,6 +76,9 @@ export function PostHogFormDialog(props: Props) {
         toast.success(replacing ? "Key replaced" : `Connected to ${values.name.trim()}`);
         onOpenChange(false);
         reset();
+        if (props.mode === "create" && result.data && "id" in result.data && typeof result.data.id === "string") {
+          props.onCreated?.(result.data.id);
+        }
         return;
       }
       if (result.error.field) {

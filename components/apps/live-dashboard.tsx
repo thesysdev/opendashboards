@@ -35,7 +35,7 @@ export function LiveDashboard({
           library={library}
           interpreter={interpreter}
           onError={(errors) => {
-            if (errors.length) console.error("[dashboard]", errors);
+            if (errors.length) console.error("[dashboard]", JSON.stringify(errors));
           }}
         />
     </div>

@@ -27,7 +27,10 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   secretMode: SecretMode;
-} & ({ mode: "create" } | { mode: "replace"; connection: { id: string; name: string } });
+} & (
+  | { mode: "create"; /** Called with the new connection's id once it's saved. */ onCreated?: (id: string) => void }
+  | { mode: "replace"; connection: { id: string; name: string } }
+);
 
 type Values = {
   name: string;
@@ -131,6 +134,9 @@ export function PostgresFormDialog(props: Props) {
         showConnectionWarnings(result.data?.warnings);
         onOpenChange(false);
         reset();
+        if (props.mode === "create" && result.data && "id" in result.data && typeof result.data.id === "string") {
+          props.onCreated?.(result.data.id);
+        }
         return;
       }
       if (result.error.field) {

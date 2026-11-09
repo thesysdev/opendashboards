@@ -10,14 +10,30 @@ import { cn } from "@/lib/utils";
 import { DataSourcePicker, type PickerConnection } from "./data-source-picker";
 
 /**
- * The home page's "What do you want to build?" composer. Sending creates an
- * app with the prompt and the chosen data sources, then opens it.
+ * The "What do you want to build?" composer. Sending creates an app with the
+ * prompt and the chosen data sources, then opens it.
  */
-export function PromptBox({ connections }: { connections: PickerConnection[] }) {
+export function PromptBox({
+  connections,
+  initiallySelected,
+  autoFocus,
+}: {
+  connections: PickerConnection[];
+  /** The sources ticked at first; all of them when left out. */
+  initiallySelected?: string[];
+  autoFocus?: boolean;
+}) {
   const [prompt, setPrompt] = useState("");
   // Track what was unticked rather than what's ticked, so a newly added
   // source starts out selected.
-  const [unticked, setUnticked] = useState<Set<string>>(() => new Set());
+  const [unticked, setUnticked] = useState<Set<string>>(
+    () =>
+      new Set(
+        initiallySelected
+          ? connections.filter((c) => !initiallySelected.includes(c.id)).map((c) => c.id)
+          : [],
+      ),
+  );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
@@ -81,6 +97,7 @@ export function PromptBox({ connections }: { connections: PickerConnection[] }) 
           }}
           placeholder="Ask Prism to build a dashboard of weekly signups by plan…"
           disabled={pending}
+          autoFocus={autoFocus}
           maxLength={4000}
           rows={3}
           className="block max-h-72 min-h-28 w-full resize-none bg-transparent px-4 pt-4 text-[0.9375rem] leading-relaxed outline-none [field-sizing:content] placeholder:text-muted-foreground/70"

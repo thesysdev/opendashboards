@@ -3,14 +3,16 @@ import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
-import { DemoPrompts } from "@/components/apps/demo-prompts";
 import { PromptBox } from "@/components/apps/prompt-box";
+import { Onboarding } from "@/components/onboarding/onboarding";
 import { SectionLabel } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getAppService, type AppSummary } from "@/lib/apps";
 import { requireUser } from "@/lib/auth/user";
 import { getConnectionService } from "@/lib/connections";
 import { formatRelative } from "@/lib/format";
+import { getSecretMode } from "@/lib/secrets";
+import { CATALOGS } from "@/lib/sources/catalog";
 
 export const metadata: Metadata = { title: "Apps" };
 
@@ -22,6 +24,49 @@ export default function AppsPage() {
         aria-hidden
         className="pointer-events-none absolute inset-x-0 top-0 h-[28rem] bg-[radial-gradient(60%_60%_at_50%_0%,oklch(0.95_0.03_265)_0%,transparent_70%)]"
       />
+      <Suspense fallback={<HomeSkeleton />}>
+        <Home />
+      </Suspense>
+    </div>
+  );
+}
+
+/** With no apps yet, onboarding takes the whole page; otherwise the composer and the apps. */
+async function Home() {
+  const user = await requireUser();
+  const connectionService = getConnectionService();
+  const [apps, connections] = await Promise.all([
+    getAppService().list(user.id),
+    connectionService.list(user.id),
+  ]);
+
+  if (!apps.length) {
+    const demos = await connectionService.listDemoDatasets(user.id);
+    return (
+      <Onboarding
+        connections={connections.map(({ id, name, shortSource, tile, demo }) => ({
+          id,
+          name,
+          source: shortSource,
+          tile,
+          demo: demo?.key ?? null,
+        }))}
+        sources={CATALOGS.map(({ type, label, blurb, tile }) => ({ type, label, blurb, tile }))}
+        demos={demos.map(({ key, name, description, prompts, connectionId }) => ({
+          key,
+          name,
+          description,
+          prompts,
+          connectionId,
+        }))}
+        secretMode={getSecretMode()}
+      />
+    );
+  }
+
+  const now = new Date();
+  return (
+    <>
       <div className="relative mx-auto w-full max-w-3xl px-6 pt-20 sm:pt-28">
         <h1 className="text-center text-3xl font-bold tracking-tight sm:text-[2.5rem] sm:leading-tight">
           What do you want to build?
@@ -29,71 +74,23 @@ export default function AppsPage() {
         <p className="mx-auto mt-3 max-w-md text-center text-[0.9375rem] text-muted-foreground">
           Describe a dashboard. Prism builds it from your data connections.
         </p>
-
         <div className="mt-10">
-          <Suspense fallback={<Skeleton className="h-[9.5rem] w-full rounded-2xl" />}>
-            <Prompt />
-          </Suspense>
+          <PromptBox connections={connections.map(({ id, name, shortSource }) => ({ id, name, source: shortSource }))} />
         </div>
       </div>
 
       {/* The grid gets more width than the composer: 3–4 apps per row on wide screens. */}
-      <div className="relative mx-auto w-full max-w-7xl px-6 pb-16">
-        <Suspense fallback={<AppGridSkeleton />}>
-          <YourApps />
-        </Suspense>
-      </div>
-    </div>
-  );
-}
-
-async function Prompt() {
-  const user = await requireUser();
-  const service = getConnectionService();
-  const [connections, demos] = await Promise.all([service.list(user.id), service.listDemoDatasets(user.id)]);
-  // Demo prompts are for people without data of their own.
-  const ownData = connections.some((connection) => !connection.demo);
-  return (
-    <>
-      <PromptBox connections={connections.map(({ id, name, shortSource }) => ({ id, name, source: shortSource }))} />
-      {!ownData && demos.length > 0 && (
-        <DemoPrompts datasets={demos.map(({ key, name, prompts }) => ({ key, name, prompts }))} />
-      )}
-    </>
-  );
-}
-
-async function YourApps() {
-  const user = await requireUser();
-  const apps = await getAppService().list(user.id);
-  const now = new Date();
-
-  if (!apps.length) {
-    return (
-      <section aria-labelledby="your-apps" className="mx-auto mt-20 max-w-3xl">
+      <section aria-labelledby="your-apps" className="relative mx-auto mt-20 w-full max-w-7xl px-6 pb-16">
         <SectionLabel id="your-apps">Your apps</SectionLabel>
-        <div className="flex flex-col items-center rounded-xl border border-dashed px-6 py-8 text-center">
-          <LayoutDashboardIcon className="mb-3 size-5 text-muted-foreground" aria-hidden />
-          <p className="text-sm font-medium">No apps yet</p>
-          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
-            Describe what you want to see above. Each app keeps its dashboards and the conversation that built them.
-          </p>
-        </div>
+        <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
+          {apps.map((app) => (
+            <li key={app.id}>
+              <AppCard app={app} now={now} />
+            </li>
+          ))}
+        </ul>
       </section>
-    );
-  }
-
-  return (
-    <section aria-labelledby="your-apps" className="mt-20">
-      <SectionLabel id="your-apps">Your apps</SectionLabel>
-      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4">
-        {apps.map((app) => (
-          <li key={app.id}>
-            <AppCard app={app} now={now} />
-          </li>
-        ))}
-      </ul>
-    </section>
+    </>
   );
 }
 
@@ -133,12 +130,12 @@ function AppCard({ app, now }: { app: AppSummary; now: Date }) {
   );
 }
 
-function AppGridSkeleton() {
+function HomeSkeleton() {
   return (
-    <div className="mt-20 grid gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4" aria-hidden>
-      <Skeleton className="h-[6rem] rounded-xl" />
-      <Skeleton className="h-[6rem] rounded-xl" />
-      <Skeleton className="hidden h-[6rem] rounded-xl lg:block" />
+    <div aria-hidden className="relative mx-auto w-full max-w-3xl px-6 pt-20 sm:pt-28">
+      <Skeleton className="mx-auto h-10 w-80" />
+      <Skeleton className="mx-auto mt-4 h-4 w-64" />
+      <Skeleton className="mt-10 h-[9.5rem] w-full rounded-2xl" />
     </div>
   );
 }

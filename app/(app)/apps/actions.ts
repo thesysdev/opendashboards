@@ -29,22 +29,6 @@ export async function createAppAction(input: unknown): Promise<AppResult<never>>
   redirect(`/apps/${result.data.id}`);
 }
 
-const demoStartSchema = z.object({ dataset: z.string().min(1).max(40), prompt: z.string().trim().min(1).max(4000) }).strict();
-
-/**
- * Starts an app on a demo dataset in one step: installs the dataset if it
- * isn't already, then creates the app with the prompt and opens it. Returns
- * only on failure.
- */
-export async function startDemoAppAction(input: unknown): Promise<AppResult<never>> {
-  const user = await requireUser();
-  const parsed = demoStartSchema.safeParse(input);
-  if (!parsed.success) return fail({ code: "validation", message: "This demo isn't available." });
-  const installed = await getConnectionService().installDemo(user.id, { dataset: parsed.data.dataset });
-  if (!installed.ok) return fail({ code: installed.error.code === "not_found" ? "not_found" : "internal", message: installed.error.message });
-  return createAppAction({ prompt: parsed.data.prompt, connectionIds: [installed.data.id] });
-}
-
 export async function renameAppAction(input: unknown): Promise<AppResult> {
   const user = await requireUser();
   const result = await getAppService().rename(user.id, input);
