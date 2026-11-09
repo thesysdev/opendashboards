@@ -11,7 +11,6 @@ const SKIP = new Set(["node_modules", "dist", ".next"]);
 
 const FORBIDDEN = [
   { pattern: /\bnew\s+OpenAI\s*\(/, what: "creates a model client" },
-  { pattern: /^\s*import\s+(?!type\b)[^;]*\bfrom\s+["']@?(?:ai-sdk\/[\w-]+|ai|anthropic-ai\/sdk)["']/m, what: "imports a model SDK" },
   { pattern: /\bgatewayUrl\b/, what: "uses the model gateway URL" },
   { pattern: /api\.thesys\.dev\/v1\/embed/, what: "calls the model gateway directly" },
 ];

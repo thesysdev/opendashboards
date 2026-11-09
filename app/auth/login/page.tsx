@@ -14,7 +14,9 @@ async function SignInOptions({ searchParams }: { searchParams: PageProps<"/auth/
     <>
       {params.error && (
         <p role="alert" className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700">
-          We couldn&apos;t sign you in with that account. Try again, or use another option.
+          {params.error === "denied"
+            ? "Prism is invite-only for now. Sign in with an invited account."
+            : "We couldn't sign you in with that account. Try again, or use another option."}
         </p>
       )}
       {SIGN_IN_PROVIDERS.map((provider) => (

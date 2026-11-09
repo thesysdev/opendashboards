@@ -12,9 +12,6 @@ const requestSchema = z.object({
   version: z.string().max(200).optional(),
 });
 
-/** The dashboard interpreter's budget for one data call. */
-export const maxDuration = 60;
-
 /**
  * Runs a live dashboard's data calls. The dashboard must be this user's, and
  * the app its tools record usage against comes from Prism's own record of

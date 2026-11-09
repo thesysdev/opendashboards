@@ -128,7 +128,7 @@ describe("create", () => {
   });
 
   it("reports missing secret storage without calling PostHog", async () => {
-    const { service, testConnection } = makeService({ secrets: createKmsSecretBox("arn:test") });
+    const { service, testConnection } = makeService({ secrets: createKmsSecretBox("arn:test", { roleArn: "role" }) });
     const result = await service.create("alice", VALID);
     expect(result).toMatchObject({ ok: false, error: { code: "secret_storage_unavailable" } });
     expect(testConnection).not.toHaveBeenCalled();
@@ -194,7 +194,7 @@ describe("retest", () => {
 
   it("marks a plaintext row invalid under KMS instead of using it", async () => {
     const id = await createOk("alice");
-    const { service, testConnection } = makeService({ secrets: createKmsSecretBox("arn:test") });
+    const { service, testConnection } = makeService({ secrets: createKmsSecretBox("arn:test", { roleArn: "role" }) });
 
     expect(await service.retest("alice", { id })).toMatchObject({
       ok: false,

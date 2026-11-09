@@ -28,7 +28,7 @@ const plaintextAllowed = (settings: SecretSettings) => settings.allowPlaintext &
  * KMS throws: secrets are never stored unencrypted there.
  */
 export function getSecretBox(settings: SecretSettings = current()): SecretBox {
-  if (settings.kmsKeyId) return createKmsSecretBox(settings.kmsKeyId, { roleArn: settings.kmsRoleArn });
+  if (settings.kmsKeyId && settings.kmsRoleArn) return createKmsSecretBox(settings.kmsKeyId, { roleArn: settings.kmsRoleArn });
   if (!plaintextAllowed(settings)) throw new SecretStorageNotConfiguredError();
   warnPlaintextOnce();
   return plaintextSecretBox;
@@ -36,7 +36,7 @@ export function getSecretBox(settings: SecretSettings = current()): SecretBox {
 
 /** For the UI: which provider is in use, without throwing. */
 export function getSecretMode(settings: SecretSettings = current()): SecretProvider | "unconfigured" {
-  if (settings.kmsKeyId) return "kms";
+  if (settings.kmsKeyId && settings.kmsRoleArn) return "kms";
   return plaintextAllowed(settings) ? "plaintext" : "unconfigured";
 }
 

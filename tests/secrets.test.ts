@@ -17,8 +17,8 @@ const context: SecretContext = { purpose: "posthog-api-key", userId: "u1", conne
 
 describe("getSecretBox", () => {
   it("uses KMS when a KMS key is configured, in any environment", () => {
-    expect(getSecretBox({ environment: "prod", kmsKeyId: "key", allowPlaintext: false }).provider).toBe("kms");
-    expect(getSecretBox({ environment: "local", kmsKeyId: "key", allowPlaintext: true }).provider).toBe("kms");
+    expect(getSecretBox({ environment: "prod", kmsKeyId: "key", kmsRoleArn: "role", allowPlaintext: false }).provider).toBe("kms");
+    expect(getSecretBox({ environment: "local", kmsKeyId: "key", kmsRoleArn: "role", allowPlaintext: true }).provider).toBe("kms");
   });
 
   it("uses plaintext locally where the settings allow it", () => {
@@ -77,7 +77,7 @@ describe("KMS provider", () => {
 
   it("round-trips a key, binding it to the user and connection", async () => {
     const { client, calls } = fakeKms();
-    const kms = createKmsSecretBox(KEY, { client });
+    const kms = createKmsSecretBox(KEY, { client, roleArn: "role" });
     const sealed = await kms.seal("phx_secret", context);
     expect(sealed).toMatchObject({ v: 1, provider: "kms", keyId: KEY });
     expect(JSON.stringify(sealed)).not.toContain("phx_secret\"");
@@ -88,14 +88,14 @@ describe("KMS provider", () => {
 
   it("opens with the key the secret was sealed with", async () => {
     const { client, calls } = fakeKms();
-    const sealed = await createKmsSecretBox("old-key", { client }).seal("phx_secret", context);
-    await createKmsSecretBox("new-key", { client }).open(sealed, context);
+    const sealed = await createKmsSecretBox("old-key", { client, roleArn: "role" }).seal("phx_secret", context);
+    await createKmsSecretBox("new-key", { client, roleArn: "role" }).open(sealed, context);
     expect(calls[1].input.KeyId).toBe("old-key");
   });
 
   it("won't open a secret copied to another connection", async () => {
     const { client } = fakeKms();
-    const kms = createKmsSecretBox(KEY, { client });
+    const kms = createKmsSecretBox(KEY, { client, roleArn: "role" });
     const sealed = await kms.seal("phx_secret", context);
     await expect(kms.open(sealed, { ...context, connectionId: "c2" })).rejects.toBeInstanceOf(SecretUnreadableError);
   });
@@ -103,7 +103,7 @@ describe("KMS provider", () => {
   it("reports other KMS failures as temporary", async () => {
     const denied = Object.assign(new Error("denied"), { name: "AccessDeniedException" });
     const client: KmsClient = { send: (async () => { throw denied; }) as unknown as KmsClient["send"] };
-    const kms = createKmsSecretBox(KEY, { client });
+    const kms = createKmsSecretBox(KEY, { client, roleArn: "role" });
     await expect(kms.seal("phx_secret", context)).rejects.toBeInstanceOf(SecretStorageUnavailableError);
     await expect(kms.open({ v: 1, provider: "kms", keyId: KEY, ciphertext: "eA==" }, context)).rejects.toBeInstanceOf(
       SecretStorageUnavailableError,
@@ -113,7 +113,7 @@ describe("KMS provider", () => {
   it("refuses plaintext rows before calling KMS", async () => {
     const { client, calls } = fakeKms();
     await expect(
-      createKmsSecretBox(KEY, { client }).open({ v: 1, provider: "plaintext", value: "phx_secret" }, context),
+      createKmsSecretBox(KEY, { client, roleArn: "role" }).open({ v: 1, provider: "plaintext", value: "phx_secret" }, context),
     ).rejects.toBeInstanceOf(SecretProviderMismatchError);
     expect(calls).toEqual([]);
   });

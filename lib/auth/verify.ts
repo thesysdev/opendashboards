@@ -98,17 +98,8 @@ export function createTokenVerifier(supabaseUrl: string, keys: JWTVerifyGetKey, 
   };
 }
 
-// One key set per project, so the fetched public keys are reused between requests.
-const keySets = new Map<string, JWTVerifyGetKey>();
-
-function keysFor(supabaseUrl: string): JWTVerifyGetKey {
-  let keys = keySets.get(supabaseUrl);
-  if (!keys) {
-    keys = createRemoteJWKSet(new URL(`${supabaseUrl.replace(/\/+$/, "")}/auth/v1/.well-known/jwks.json`));
-    keySets.set(supabaseUrl, keys);
-  }
-  return keys;
-}
+// Kept between requests, so the fetched public keys are reused.
+let keys: JWTVerifyGetKey | undefined;
 
 /**
  * Decides how requests are authenticated. Fails closed: outside local there
@@ -126,7 +117,8 @@ export function getAuthConfig(settings: AuthSettings = currentAuthSettings()): A
     if (!settings.allowlist.domains.length && !settings.allowlist.emails.length) {
       throw new AuthConfigError("PRISM_ALLOWED_DOMAINS or PRISM_ALLOWED_EMAILS must be set");
     }
-    return { mode: "session", verifyToken: createTokenVerifier(settings.supabaseUrl, keysFor(settings.supabaseUrl), settings.allowlist) };
+    keys ??= createRemoteJWKSet(new URL(`${settings.supabaseUrl.replace(/\/+$/, "")}/auth/v1/.well-known/jwks.json`));
+    return { mode: "session", verifyToken: createTokenVerifier(settings.supabaseUrl, keys, settings.allowlist) };
   }
   if (settings.devUserId === null) {
     throw new AuthConfigError("SUPABASE_URL must be set outside local");

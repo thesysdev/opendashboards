@@ -17,17 +17,14 @@ import {
 export type KmsClient = Pick<KMSClient, "send">;
 
 export type KmsOptions = {
-  /** The role to assume through Vercel OIDC. Without one, the AWS SDK's own credentials are used. */
-  roleArn?: string;
+  /** The role to assume through Vercel OIDC. */
+  roleArn: string;
   /** Replaces the real client in tests. */
   client?: KmsClient;
 };
 
-function createClient(roleArn: string | undefined): KMSClient {
-  return new KMSClient({
-    region: config().kms.region,
-    ...(roleArn ? { credentials: awsCredentialsProvider({ roleArn }) } : {}),
-  });
+function createClient(roleArn: string): KMSClient {
+  return new KMSClient({ region: config().kms.region, credentials: awsCredentialsProvider({ roleArn }) });
 }
 
 function countFailure(operation: "encrypt" | "decrypt", cause: unknown) {
@@ -42,7 +39,7 @@ const encryptionContext = ({ purpose, userId, connectionId }: SecretContext) => 
  * context, so a sealed secret only opens for the same user and connection.
  * Credentials are far below KMS's 4 KB limit, so they're encrypted directly.
  */
-export function createKmsSecretBox(keyId: string, options: KmsOptions = {}): SecretBox {
+export function createKmsSecretBox(keyId: string, options: KmsOptions): SecretBox {
   let client = options.client;
   const kms = () => (client ??= createClient(options.roleArn));
 
