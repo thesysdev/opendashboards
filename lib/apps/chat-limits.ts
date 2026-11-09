@@ -11,7 +11,11 @@ const ACTIVE_TURN_MS = 15 * 60 * 1000;
 
 export type ChatLimitSettings = { perUserPerDay: number; perDay: number };
 export type ChatLimitRefusal = "user_limit" | "busy" | "global_limit";
-export type ChatReservation = { ok: true; day: string } | { ok: false; reason: ChatLimitRefusal };
+
+declare const reserved: unique symbol;
+/** A turn holding a slot. Only `reserve()` can make one, and the model client requires one. */
+export type ReservedTurn = { ok: true; day: string; readonly [reserved]: true };
+export type ChatReservation = ReservedTurn | { ok: false; reason: ChatLimitRefusal };
 
 export const CHAT_LIMIT_MESSAGES: Record<ChatLimitRefusal, string> = {
   user_limit: "You've reached today's chat limit. It resets at midnight UTC.",
@@ -74,7 +78,7 @@ export function createChatLimits({ db, limits, now = () => new Date() }: { db: D
         if (error instanceof Refused) return { ok: false, reason: error.reason };
         throw error;
       }
-      return { ok: true, day };
+      return { ok: true, day } as ReservedTurn;
     },
 
     /** Ends a turn. `refund` gives its slot back when the user got nothing for it. */

@@ -39,6 +39,11 @@ The service tests run against the `prism_test` database from `pnpm db:up`.
 | Schema and migrations | `lib/db/schema.ts`, `db/migrations/` |
 | UI | `app/(app)/`, `components/` |
 
+## Calling a model
+
+Every model call goes through `getGateway()` in `lib/agent`, which requires a turn reserved
+with `getChatLimits().reserve()`. The build fails if a model client is created anywhere else.
+
 ## Schema changes
 
 Edit `lib/db/schema.ts`, run `pnpm db:generate` to write the migration, then `pnpm db:reset`

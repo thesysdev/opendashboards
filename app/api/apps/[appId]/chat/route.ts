@@ -69,7 +69,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
         const translate = createAgUiTranslator(emit);
         emit({ type: EventType.RUN_STARTED, threadId, runId } as BaseEvent);
 
-        const runner = getGateway().chat.completions.runTools(
+        const runner = getGateway(reservation).chat.completions.runTools(
           {
             model: model(),
             messages: [...system, ...messages],
