@@ -17,9 +17,6 @@ type Ctx = { params: Promise<{ appId: string }> };
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
-/** A turn runs up to `maxAgentRounds` model calls, each with its own tool calls. */
-export const maxDuration = 800;
-
 /**
  * One turn of the Build chat. Runs the agent's tool loop over OpenUI Gateway
  * and streams it as AG-UI events (text, tool calls and their results) for
