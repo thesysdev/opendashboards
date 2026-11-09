@@ -1,4 +1,5 @@
 import {
+  date,
   index,
   integer,
   jsonb,
@@ -137,3 +138,16 @@ export const appThreads = pgTable(
 
 export type DataConnectionRow = typeof dataConnections.$inferSelect;
 export type ConnectionStatus = (typeof connectionStatusEnum.enumValues)[number];
+
+/** Chat turns per UTC day, per user, plus one row (`user_id` "*") for the total. */
+export const chatUsage = pgTable(
+  "chat_usage",
+  {
+    day: date("day").notNull(),
+    userId: text("user_id").notNull(),
+    turns: integer("turns").notNull().default(0),
+    /** Set while a turn runs, so a user runs one at a time. Expires if the turn crashes. */
+    activeUntil: timestamp("active_until", { withTimezone: true }),
+  },
+  (table) => [primaryKey({ columns: [table.day, table.userId] })],
+);

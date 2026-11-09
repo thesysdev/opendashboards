@@ -7,7 +7,8 @@ import { secrets } from "@/config";
 import { agentTools, getGateway, maxRounds, model, SYSTEM_PROMPT, type TurnContext } from "@/lib/agent";
 import { createAgUiTranslator, sse } from "@/lib/agent/ag-ui";
 import { chatBodySchema, VIEWING_DASHBOARD, type ChatBody } from "@/lib/agent/messages";
-import { getThreadService } from "@/lib/apps";
+import { CHAT_LIMIT_MESSAGES } from "@/lib/apps/chat-limits";
+import { getChatLimits, getThreadService } from "@/lib/apps";
 import { getDashboardService } from "@/lib/dashboards";
 import { HttpError, readJson, route } from "@/lib/http";
 import { logError } from "@/lib/log";
@@ -49,62 +50,83 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
     });
   }
 
+  const limits = getChatLimits();
+  const reservation = await limits.reserve(user.id);
+  if (!reservation.ok) {
+    count("prism.chat.limited", { reason: reservation.reason });
+    throw new HttpError(429, CHAT_LIMIT_MESSAGES[reservation.reason]);
+  }
+
   const encoder = new TextEncoder();
   const turn: TurnContext = { userId: user.id, appId, signal: request.signal, dashboards: [] };
 
   const body = new ReadableStream({
     async start(controller) {
-      const emit = (event: BaseEvent) => controller.enqueue(encoder.encode(sse(event)));
-      const translate = createAgUiTranslator(emit);
-      emit({ type: EventType.RUN_STARTED, threadId, runId } as BaseEvent);
-
-      const runner = getGateway().chat.completions.runTools(
-        {
-          model: model(),
-          messages: [...system, ...messages],
-          tools: agentTools(),
-          toolContext: turn,
-          stream: true,
-        },
-        { signal: request.signal, maxChatCompletions: maxRounds() },
-      );
-      runner.on("chunk", (chunk) => translate.chunk(chunk));
-      runner.on("message", (message) => translate.message(message));
-
+      // Given back unless the turn ran: the user got nothing from a failed one.
+      let refund = true;
       try {
-        await runner.done();
-        translate.finish();
-        emit({ type: EventType.RUN_FINISHED, threadId, runId } as BaseEvent);
-        count("prism.chat.turn", { outcome: "completed", cause: "none" });
-      } catch (error) {
-        if (request.signal.aborted) {
-          count("prism.chat.turn", { outcome: "cancelled", cause: "none" });
-          controller.close();
-          return; // Cancelled: save nothing.
+        const emit = (event: BaseEvent) => controller.enqueue(encoder.encode(sse(event)));
+        const translate = createAgUiTranslator(emit);
+        emit({ type: EventType.RUN_STARTED, threadId, runId } as BaseEvent);
+
+        const runner = getGateway().chat.completions.runTools(
+          {
+            model: model(),
+            messages: [...system, ...messages],
+            tools: agentTools(),
+            toolContext: turn,
+            stream: true,
+          },
+          { signal: request.signal, maxChatCompletions: maxRounds() },
+        );
+        runner.on("chunk", (chunk) => translate.chunk(chunk));
+        runner.on("message", (message) => translate.message(message));
+
+        try {
+          await runner.done();
+          translate.finish();
+          emit({ type: EventType.RUN_FINISHED, threadId, runId } as BaseEvent);
+          count("prism.chat.turn", { outcome: "completed", cause: "none" });
+          refund = false;
+        } catch (error) {
+          if (request.signal.aborted) {
+            count("prism.chat.turn", { outcome: "cancelled", cause: "none" });
+            refund = false; // The tokens were spent.
+            return; // Cancelled: save nothing.
+          }
+          logError("chat.turn", error);
+          const failure = turnFailure(error);
+          count("prism.chat.turn", { outcome: "failed", cause: failure.cause });
+          translate.finish();
+          emit({ type: EventType.RUN_ERROR, message: failure.message } as BaseEvent);
+          return; // Failed: save nothing.
         }
-        logError("chat.turn", error);
-        const failure = turnFailure(error);
-        count("prism.chat.turn", { outcome: "failed", cause: failure.cause });
-        translate.finish();
-        emit({ type: EventType.RUN_ERROR, message: failure.message } as BaseEvent);
-        controller.close();
-        return; // Failed: save nothing.
-      }
 
-      // Saved before the stream closes: a Vercel Function can stop once its response ends.
-      // The new turn: the user's message, then every message the loop added.
-      const turnMessages = runner.messages.slice(system.length - 1 + messages.length) as ChatCompletionMessageParam[];
-      try {
-        await storeChatCompletionHistory({
-          apiKey: secrets.thesysApiKey() ?? "",
-          conversationId: threadId,
-          messages: turnMessages,
-        });
-        await threads.touch(user.id, appId, threadId);
-      } catch (error) {
-        logError("chat.save", error);
+        // Saved before the stream closes: a Vercel Function can stop once its response ends.
+        // The new turn: the user's message, then every message the loop added.
+        const turnMessages = runner.messages.slice(system.length - 1 + messages.length) as ChatCompletionMessageParam[];
+        try {
+          await storeChatCompletionHistory({
+            apiKey: secrets.thesysApiKey() ?? "",
+            conversationId: threadId,
+            messages: turnMessages,
+          });
+          await threads.touch(user.id, appId, threadId);
+        } catch (error) {
+          logError("chat.save", error);
+        }
+      } finally {
+        try {
+          await limits.finish(user.id, reservation.day, { refund });
+        } catch (error) {
+          logError("chat.finish", error);
+        }
+        try {
+          controller.close();
+        } catch {
+          // The browser already went away.
+        }
       }
-      controller.close();
     },
   });
 
