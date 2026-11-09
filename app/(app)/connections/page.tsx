@@ -7,6 +7,7 @@ import { ConnectionActions } from "@/components/connections/connection-actions";
 import { DemoDatasetSwitch } from "@/components/connections/demo-dataset-switch";
 import type { SecretMode } from "@/components/connections/connection-form-dialog";
 import { SourceTile } from "@/components/connections/source-tile";
+import { UsedBy } from "@/components/connections/used-by";
 import { EmptyState, PageHeader, SectionLabel } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { requireUser } from "@/lib/auth/user";
@@ -125,6 +126,7 @@ function ConnectionRow({
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{connection.name}</p>
         <p className="truncate text-sm text-muted-foreground">{details.join(" · ")}</p>
+        <UsedBy apps={connection.apps} />
       </div>
       <StatusBadge status={connection.status} />
       <ConnectionActions
@@ -147,6 +149,7 @@ function DemoRow({ demo }: { demo: DemoDatasetSummary }) {
       <div className="min-w-0 flex-1">
         <p className="truncate text-sm font-medium">{demo.name}</p>
         <p className="line-clamp-2 text-sm text-muted-foreground">{demo.description}</p>
+        <UsedBy apps={demo.apps} />
       </div>
       <DemoDatasetSwitch
         dataset={demo.key}
