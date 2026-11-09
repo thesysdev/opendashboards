@@ -145,42 +145,10 @@ export const Section = defineComponent({
   ),
 });
 
-/* ---------- Header ---------- */
-
-const headerSchema = z.object({
-  title: z.string(),
-  description: z.string().optional(),
-  meta: z.array(z.string()).optional(),
-});
-
-export const DashboardHeader = defineComponent({
-  name: "DashboardHeader",
-  props: headerSchema,
-  description:
-    "Title, one-line description, and meta chips for sources and freshness, e.g. [\"PostHog\", \"Stripe\", \"Updated 5 min ago\"].",
-  component: ({ props }: ComponentRenderProps<z.infer<typeof headerSchema>>) => (
-    <header className="pdk-header">
-      <div>
-        <h1 className="pdk-header-title">{props.title}</h1>
-        {props.description ? <p className="pdk-header-description">{props.description}</p> : null}
-      </div>
-      {props.meta?.length ? (
-        <div className="pdk-header-meta">
-          {props.meta.map((item) => (
-            <span key={item} className="pdk-meta-chip">
-              {item}
-            </span>
-          ))}
-        </div>
-      ) : null}
-    </header>
-  ),
-});
-
 /* ---------- Dashboard (root) ---------- */
 
 const dashboardSchema = z.object({
-  children: z.array(z.union([DashboardHeader.ref, FilterBar.ref, Section.ref])),
+  children: z.array(z.union([FilterBar.ref, Section.ref])),
 });
 
 export const Dashboard = defineComponent({

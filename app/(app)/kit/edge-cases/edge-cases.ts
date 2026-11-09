@@ -1,6 +1,5 @@
 /** Degenerate data for every dashboard-kit component (too many, too few, outliers, gaps, nulls), for visual review on /kit/edge-cases. */
-export const EDGE_CASES = String.raw`root = Dashboard([header, filters, s0, s1, s2, s3, s4, s5, s6, s7])
-header = DashboardHeader("Edge cases", "Every component with degenerate data: too many, too few, outliers, gaps and nulls.", ["Rendering test"])
+export const EDGE_CASES = { title: "Edge cases", description: "Every component with degenerate data: too many, too few, outliers, gaps and nulls.", source: String.raw`root = Dashboard([filters, s0, s1, s2, s3, s4, s5, s6, s7])
 filters = FilterBar([DateRangeFilter("range", $range), MultiSelectFilter("segments", "Segment", [{"value":"s0","label":"Segment with a long name 1"},{"value":"s1","label":"Segment with a long name 2"},{"value":"s2","label":"Segment with a long name 3"},{"value":"s3","label":"Segment with a long name 4"},{"value":"s4","label":"Segment with a long name 5"},{"value":"s5","label":"Segment with a long name 6"},{"value":"s6","label":"Segment with a long name 7"},{"value":"s7","label":"Segment with a long name 8"},{"value":"s8","label":"Segment with a long name 9"},{"value":"s9","label":"Segment with a long name 10"},{"value":"s10","label":"Segment with a long name 11"},{"value":"s11","label":"Segment with a long name 12"},{"value":"s12","label":"Segment with a long name 13"},{"value":"s13","label":"Segment with a long name 14"}], $segments), SearchFilter("q", "Search workspaces", $q), CompareToggle("Previous period", true)])
 $range = "2026-10-01..2026-10-31"
 $segments = []
@@ -82,4 +81,4 @@ c40 = Card("One interval", [Intervals(["Variant B"], [2.1], [-0.4], [4.6], "perc
 c41 = Card("One huge interval", [Intervals(["Big test", "Tiny test", "Underpowered"], [3.2, 1.1, 8.0], [2.1, 0.4, -41.0], [4.3, 1.8, 57.0], "percent")], "half", "")
 s7r0 = Row([c38, c39])
 s7r1 = Row([c40, c41])
-s7 = Section("Waterfall and intervals", [s7r0, s7r1], "One change, many changes with an outlier; one interval, a huge interval.")`;
+s7 = Section("Waterfall and intervals", [s7r0, s7r1], "One change, many changes with an outlier; one interval, a huge interval.")` };

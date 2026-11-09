@@ -36,5 +36,5 @@ async function Dashboard({ params }: { params: Params }) {
   const dashboard = app.dashboards.find((candidate) => candidate.id === dashboardId);
   if (!dashboard) redirect(appPath(app.id));
 
-  return <LiveDashboard key={dashboard.id} artifactId={dashboard.artifactId} />;
+  return <LiveDashboard key={dashboard.id} appId={app.id} dashboard={dashboard} />;
 }

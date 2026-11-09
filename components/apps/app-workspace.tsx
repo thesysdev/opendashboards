@@ -6,6 +6,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, use, useCallback, useMemo, useState } from "react";
 
+import { renameAppAction } from "@/app/(app)/apps/actions";
+import { InlineRename } from "@/components/inline-rename";
 import { Button } from "@/components/ui/button";
 import { appPath, dashboardPath, parseAppPath } from "@/lib/apps/paths";
 import { cn } from "@/lib/utils";
@@ -41,11 +43,70 @@ export function usePublishDashboardResponse() {
   return useDashboardResponses().publish;
 }
 
+const RenameAppContext = createContext<(() => void) | null>(null);
+
+/** Starts renaming the app in place, in the header: for the app's menu. */
+export function useRenameApp() {
+  const context = use(RenameAppContext);
+  if (!context) throw new Error("useRenameApp must be used inside AppWorkspace");
+  return context;
+}
+
 /** The Build panel's open state, for content inside the workspace. */
 export function useBuildPanel() {
   const context = use(BuildPanelContext);
   if (!context) throw new Error("useBuildPanel must be used inside AppWorkspace");
   return context;
+}
+
+/**
+ * The app's name in the header. Clicking it (or Rename in the app's menu)
+ * edits it in place; the new name shows straight away.
+ */
+function AppTitle({
+  appId,
+  name,
+  renaming,
+  onRenamingChange,
+}: {
+  appId: string;
+  name: string;
+  renaming: boolean;
+  onRenamingChange: (renaming: boolean) => void;
+}) {
+  // A saved name shows until the server's copy catches up.
+  const [saved, setSaved] = useState<{ from: string; to: string } | null>(null);
+  const shown = saved && saved.from === name ? saved.to : name;
+
+  if (renaming) {
+    return (
+      <h1 className="min-w-0 flex-1 sm:max-w-sm">
+        <InlineRename
+          value={shown}
+          label="App name"
+          maxLength={80}
+          onSave={(next) => renameAppAction({ id: appId, name: next })}
+          onDone={(next) => {
+            setSaved(next === name ? null : { from: name, to: next });
+            onRenamingChange(false);
+          }}
+          className="h-7 w-full text-sm font-semibold"
+        />
+      </h1>
+    );
+  }
+  return (
+    <h1 className="min-w-0">
+      <button
+        type="button"
+        onClick={() => onRenamingChange(true)}
+        title="Rename"
+        className="block max-w-full cursor-text truncate rounded-md px-1.5 py-1 text-left text-sm font-semibold transition-colors hover:bg-neutral-100 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+      >
+        {shown}
+      </button>
+    </h1>
+  );
 }
 
 /**
@@ -82,6 +143,8 @@ export function AppWorkspace({
     [],
   );
   const dashboardResponses = useMemo(() => ({ responses, publish }), [responses, publish]);
+  const [renaming, setRenaming] = useState(false);
+  const startRename = useCallback(() => setRenaming(true), []);
 
   return (
     // One Cloud connection for the workspace: the chat and the dashboard
@@ -89,6 +152,7 @@ export function AppWorkspace({
     <OpenUICloudProvider token="/api/frontend-token">
     <DashboardResponsesContext value={dashboardResponses}>
     <BuildPanelContext value={{ open, setOpen }}>
+    <RenameAppContext value={startRename}>
       <div className="flex h-full flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b px-2">
           <Link
@@ -98,7 +162,7 @@ export function AppWorkspace({
           >
             <ChevronLeftIcon className="size-4" aria-hidden />
           </Link>
-          <h1 className="min-w-0 truncate text-sm font-semibold">{name}</h1>
+          <AppTitle appId={appId} name={name} renaming={renaming} onRenamingChange={setRenaming} />
           <div className="ml-1 hidden min-w-0 flex-1 items-center gap-1.5 overflow-hidden sm:flex">{badges}</div>
           <div className="ml-auto flex shrink-0 items-center gap-1">
             <Button
@@ -149,6 +213,7 @@ export function AppWorkspace({
           </aside>
         </div>
       </div>
+    </RenameAppContext>
     </BuildPanelContext>
     </DashboardResponsesContext>
     </OpenUICloudProvider>

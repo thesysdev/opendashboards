@@ -1,8 +1,8 @@
 "use client";
 
-import { EllipsisIcon, Loader2Icon, Trash2Icon } from "lucide-react";
+import { EllipsisIcon, Loader2Icon, PencilIcon, Trash2Icon } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { deleteDashboardAction } from "@/app/(app)/apps/actions";
@@ -20,22 +20,28 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { appPath, parseAppPath } from "@/lib/apps/paths";
 import { cn } from "@/lib/utils";
 
-/** A dashboard's actions in the sidebar: for now, deleting it. */
+/** A dashboard's actions in the sidebar: renaming it in place, and deleting it. */
 export function DashboardMenu({
   appId,
   dashboard,
+  onRename,
   className,
 }: {
   appId: string;
   dashboard: { id: string; title: string };
+  onRename: () => void;
   className?: string;
 }) {
   const [confirming, setConfirming] = useState(false);
+  // Rename starts once the menu has closed: while open, it holds focus and
+  // would pull it straight back out of the name being edited.
+  const renameOnClose = useRef(false);
 
   return (
     <>
@@ -50,7 +56,22 @@ export function DashboardMenu({
         >
           <EllipsisIcon className="size-3.5" aria-hidden />
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" side="right" className="min-w-44">
+        <DropdownMenuContent
+          align="start"
+          side="right"
+          className="min-w-44"
+          onCloseAutoFocus={(event) => {
+            if (!renameOnClose.current) return;
+            renameOnClose.current = false;
+            event.preventDefault();
+            onRename();
+          }}
+        >
+          <DropdownMenuItem onSelect={() => (renameOnClose.current = true)}>
+            <PencilIcon aria-hidden />
+            Rename
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
           <DropdownMenuItem variant="destructive" onSelect={() => setConfirming(true)}>
             <Trash2Icon aria-hidden />
             Delete dashboard

@@ -5,6 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { Suspense, useState } from "react";
 
+import { renameAppAction, updateDashboardAction } from "@/app/(app)/apps/actions";
+import { InlineRename } from "@/components/inline-rename";
 import type { AppTreeNode } from "@/lib/apps";
 import { appPath, dashboardPath, parseAppPath } from "@/lib/apps/paths";
 import { cn } from "@/lib/utils";
@@ -39,6 +41,16 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
     if (activeAppId && !expanded.has(activeAppId)) setExpanded(new Set(expanded).add(activeAppId));
   }
 
+  // Renaming in place: which row is being edited, and names saved but not yet
+  // back from the server (keyed by id, with the name they replace).
+  const [editing, setEditing] = useState<string | null>(null);
+  const [saved, setSaved] = useState<Record<string, { from: string; to: string }>>({});
+  const shown = (id: string, name: string) => (saved[id]?.from === name ? saved[id].to : name);
+  const done = (id: string, name: string) => (next: string) => {
+    setSaved((current) => ({ ...current, [id]: { from: name, to: next } }));
+    setEditing(null);
+  };
+
   function toggle(id: string) {
     const next = new Set(expanded);
     if (next.has(id)) next.delete(id);
@@ -61,8 +73,24 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
               after it, so as much of the width as possible goes to them.
             */}
             <div className="group relative">
+              {editing === app.id ? (
+                <div className="flex h-8 items-center pr-1 pl-[1.375rem]">
+                  <InlineRename
+                    value={shown(app.id, app.name)}
+                    label="App name"
+                    maxLength={80}
+                    onSave={(name) => renameAppAction({ id: app.id, name })}
+                    onDone={done(app.id, app.name)}
+                    className="h-7 w-full text-sm"
+                  />
+                </div>
+              ) : (
               <Link
                 href={appPath(app.id)}
+                onDoubleClick={(event) => {
+                  event.preventDefault();
+                  setEditing(app.id);
+                }}
                 aria-current={isActiveApp && !app.dashboards.length ? "page" : undefined}
                 title={app.name}
                 className={cn(
@@ -73,8 +101,9 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                   isActiveApp && !app.dashboards.length && "bg-black/[0.06]",
                 )}
               >
-                <span className="truncate">{app.name}</span>
+                <span className="truncate">{shown(app.id, app.name)}</span>
               </Link>
+              )}
               {app.dashboards.length > 0 && (
                 <button
                   type="button"
@@ -101,7 +130,24 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                   const active = dashboard.id === activeDashboardId;
                   return (
                     <li key={dashboard.id} className="group/dashboard relative">
+                      {editing === dashboard.id ? (
+                        <div className="flex h-8 items-center pr-1 pl-[1.375rem]">
+                          <InlineRename
+                            value={shown(dashboard.id, dashboard.title)}
+                            label="Dashboard name"
+                            maxLength={120}
+                            onSave={(title) => updateDashboardAction({ appId: app.id, dashboardId: dashboard.id, title })}
+                            onDone={done(dashboard.id, dashboard.title)}
+                            className="h-7 w-full text-[0.8125rem]"
+                          />
+                        </div>
+                      ) : (
+                      <>
                       <Link
+                        onDoubleClick={(event) => {
+                          event.preventDefault();
+                          setEditing(dashboard.id);
+                        }}
                         href={dashboardPath(app.id, dashboard.id)}
                         aria-current={active ? "page" : undefined}
                         title={dashboard.title}
@@ -112,13 +158,16 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                           active && "bg-black/[0.06] font-medium text-foreground",
                         )}
                       >
-                        <span className="truncate">{dashboard.title}</span>
+                        <span className="truncate">{shown(dashboard.id, dashboard.title)}</span>
                       </Link>
                       <DashboardMenu
                         appId={app.id}
-                        dashboard={dashboard}
-                        className="absolute top-1 right-1 opacity-0 group-hover/dashboard:opacity-100 focus-visible:opacity-100"
+                        dashboard={{ id: dashboard.id, title: shown(dashboard.id, dashboard.title) }}
+                        onRename={() => setEditing(dashboard.id)}
+                        className="absolute top-1.5 right-1.5 opacity-0 group-hover/dashboard:opacity-100 focus-visible:opacity-100"
                       />
+                      </>
+                      )}
                     </li>
                   );
                 })}

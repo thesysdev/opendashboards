@@ -149,6 +149,11 @@
   padding: 28px 32px 48px;
 }
 
+/* The host's heading above a dashboard: the dashboard's own top padding is the gap below it. */
+.pdk-dashboard-heading {
+  padding-bottom: 0;
+}
+
 .pdk-header {
   display: flex;
   flex-wrap: wrap;
@@ -169,32 +174,6 @@
   font-size: 13.5px;
   line-height: 1.5;
   color: var(--pdk-ink-secondary);
-}
-.pdk-header-meta {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-}
-.pdk-meta-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  height: 24px;
-  padding: 0 9px;
-  border: 1px solid var(--pdk-border);
-  border-radius: 999px;
-  background: var(--pdk-surface);
-  font-size: 12px;
-  color: var(--pdk-ink-secondary);
-  white-space: nowrap;
-}
-.pdk-meta-chip::before {
-  content: "";
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--pdk-accent);
-  opacity: 0.8;
 }
 
 .pdk-section {

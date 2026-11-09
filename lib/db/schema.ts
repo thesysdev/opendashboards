@@ -122,7 +122,13 @@ export const dashboards = pgTable(
     userId: text("user_id").notNull(),
     /** OpenUI Cloud's artifact id (art_…). */
     artifactId: text("artifact_id").notNull().unique(),
+    /**
+     * The dashboard's title and one-line description, drawn above it. Prism
+     * keeps them, not the program in Cloud: the agent sets them when it
+     * creates the dashboard, and only people change them afterwards.
+     */
     title: text("title").notNull(),
+    description: text("description"),
     position: integer("position").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

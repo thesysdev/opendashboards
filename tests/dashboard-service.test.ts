@@ -73,3 +73,22 @@ describe("remove", () => {
     expect(await titles("alice", appId)).toEqual(["A"]);
   });
 });
+
+describe("update", () => {
+  it("renames the user's own dashboard in its app, and nothing else", async () => {
+    const appId = await createApp("alice");
+    const other = await createApp("alice");
+    const recorded = await dashboards.record("alice", appId, { artifactId: "art_a", title: "Overview" });
+    if (!recorded) throw new Error("record failed");
+
+    expect(await dashboards.update("bob", appId, recorded.id, { title: "Mine" })).toBe(false);
+    expect(await dashboards.update("alice", other, recorded.id, { title: "Moved" })).toBe(false);
+    expect(await dashboards.update("alice", appId, recorded.id, { title: "Monthly KPIs" })).toBe(true);
+    expect(await titles("alice", appId)).toEqual(["Monthly KPIs"]);
+
+    await dashboards.update("alice", appId, recorded.id, { description: "Revenue by month." });
+    expect((await dashboards.list("alice", appId))[0]).toMatchObject({ title: "Monthly KPIs", description: "Revenue by month." });
+    await dashboards.update("alice", appId, recorded.id, { description: null });
+    expect((await dashboards.list("alice", appId))[0]?.description).toBeNull();
+  });
+});

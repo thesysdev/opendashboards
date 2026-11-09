@@ -21,7 +21,7 @@ describe("mock dashboards (/kit/dashboards)", () => {
     expect(new Set(slugs).size).toBe(slugs.length);
   });
 
-  for (const { app, title, source } of MOCK_DASHBOARDS) {
-    it(`${app} / ${title} parses cleanly against the dashboard kit`, () => expectClean(source));
+  for (const { app, title, program } of MOCK_DASHBOARDS) {
+    it(`${app} / ${title} parses cleanly against the dashboard kit`, () => expectClean(program.source));
   }
 });

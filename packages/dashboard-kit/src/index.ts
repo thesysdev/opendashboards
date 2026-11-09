@@ -9,5 +9,6 @@
  *   const systemPrompt = library.prompt();
  */
 export { componentGroups, components, library } from "./library";
+export { DashboardHeading } from "./components/heading";
 export { computeDelta, formatValue, FORMAT_PRESETS, type ValueFormat } from "./format";
 export { SERIES_COLORS } from "./theme";

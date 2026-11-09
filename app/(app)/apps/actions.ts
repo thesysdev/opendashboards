@@ -85,6 +85,39 @@ export async function takePendingPromptAction(appId: string): Promise<string | n
   return `${pending.prompt}\n\nUse these data sources: ${names}`;
 }
 
+const updateDashboardSchema = z
+  .object({
+    appId: z.uuid(),
+    dashboardId: z.uuid(),
+    title: z.string().trim().min(1, "Enter a name.").max(120, "Keep the name under 120 characters.").optional(),
+    // Empty clears it.
+    description: z.string().trim().max(300, "Keep the description under 300 characters.").optional(),
+  })
+  .strict();
+
+/** Renames one of an app's dashboards, or changes its description. */
+export async function updateDashboardAction(input: unknown): Promise<AppResult> {
+  const user = await requireUser();
+  const parsed = updateDashboardSchema.safeParse(input);
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0];
+    const field = issue?.path[0];
+    return field === "title" || field === "description"
+      ? fail({ code: "validation", message: issue!.message, field })
+      : fail({ code: "not_found", message: "This dashboard doesn't exist or was deleted." });
+  }
+  const { appId, dashboardId, title, description } = parsed.data;
+  const changes = {
+    ...(title !== undefined ? { title } : {}),
+    ...(description !== undefined ? { description: description || null } : {}),
+  };
+  if (!(await getDashboardService().update(user.id, appId, dashboardId, changes))) {
+    return fail({ code: "not_found", message: "This dashboard doesn't exist or was deleted." });
+  }
+  revalidateShell();
+  return { ok: true, data: undefined };
+}
+
 const deleteDashboardSchema = z.object({ appId: z.uuid(), dashboardId: z.uuid() }).strict();
 
 /** Deletes one dashboard of an app, in OpenUI Cloud and in the sidebar. */

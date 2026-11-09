@@ -34,7 +34,7 @@ export type AppDetail = {
   pendingConnections: AppConnectionBadge[];
   createdAt: Date;
   updatedAt: Date;
-  dashboards: { id: string; title: string; artifactId: string; position: number }[];
+  dashboards: { id: string; title: string; description: string | null; artifactId: string; position: number }[];
   connections: (AppConnectionBadge & { type: ConnectionType; status: ConnectionStatus })[];
 };
 
@@ -146,6 +146,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         .select({
           id: dashboards.id,
           title: dashboards.title,
+          description: dashboards.description,
           artifactId: dashboards.artifactId,
           position: dashboards.position,
         })

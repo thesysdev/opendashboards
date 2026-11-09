@@ -1,10 +1,11 @@
 "use client";
 
 import { EllipsisIcon, Loader2Icon, PencilIcon, Trash2Icon } from "lucide-react";
-import { useId, useState, useTransition } from "react";
+import { useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { deleteAppAction, renameAppAction } from "@/app/(app)/apps/actions";
+import { deleteAppAction } from "@/app/(app)/apps/actions";
+import { useRenameApp } from "@/components/apps/app-workspace";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -16,28 +17,21 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
-import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Field, FieldError, FieldLabel } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 
 type App = { id: string; name: string; dashboardCount: number };
 
 export function AppMenu({ app }: { app: App }) {
-  const [dialog, setDialog] = useState<"rename" | "delete" | null>(null);
-  const close = (open: boolean) => !open && setDialog(null);
+  const [deleting, setDeleting] = useState(false);
+  const rename = useRenameApp();
+  // Rename starts once the menu has closed: while open, it holds focus and
+  // would pull it straight back out of the name being edited.
+  const renameOnClose = useRef(false);
 
   return (
     <>
@@ -47,98 +41,30 @@ export function AppMenu({ app }: { app: App }) {
             <EllipsisIcon aria-hidden />
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="end" className="w-40">
-          <DropdownMenuItem onSelect={() => setDialog("rename")}>
+        <DropdownMenuContent
+          align="end"
+          className="w-40"
+          onCloseAutoFocus={(event) => {
+            if (!renameOnClose.current) return;
+            renameOnClose.current = false;
+            event.preventDefault();
+            rename();
+          }}
+        >
+          <DropdownMenuItem onSelect={() => (renameOnClose.current = true)}>
             <PencilIcon aria-hidden />
             Rename
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={() => setDialog("delete")}>
+          <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
             <Trash2Icon aria-hidden />
             Delete app
           </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
-      <RenameDialog app={app} open={dialog === "rename"} onOpenChange={close} />
-      <DeleteDialog app={app} open={dialog === "delete"} onOpenChange={close} />
+      <DeleteDialog app={app} open={deleting} onOpenChange={setDeleting} />
     </>
-  );
-}
-
-function RenameDialog({
-  app,
-  open,
-  onOpenChange,
-}: {
-  app: App;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-}) {
-  const [name, setName] = useState(app.name);
-  const [error, setError] = useState<string | null>(null);
-  const [pending, startTransition] = useTransition();
-  const id = useId();
-
-  function submit(event: React.FormEvent) {
-    event.preventDefault();
-    startTransition(async () => {
-      const result = await renameAppAction({ id: app.id, name });
-      if (result.ok) {
-        toast.success("App renamed");
-        onOpenChange(false);
-      } else {
-        setError(result.error.message);
-      }
-    });
-  }
-
-  return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (pending) return;
-        if (next) {
-          setName(app.name);
-          setError(null);
-        }
-        onOpenChange(next);
-      }}
-    >
-      <DialogContent className="sm:max-w-sm">
-        <form onSubmit={submit} noValidate>
-          <DialogHeader>
-            <DialogTitle>Rename app</DialogTitle>
-            <DialogDescription>The dashboards and build history stay as they are.</DialogDescription>
-          </DialogHeader>
-          <Field className="my-6" data-invalid={!!error || undefined}>
-            <FieldLabel htmlFor={id}>Name</FieldLabel>
-            <Input
-              id={id}
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-                setError(null);
-              }}
-              maxLength={80}
-              autoComplete="off"
-              aria-invalid={!!error || undefined}
-              autoFocus
-            />
-            <FieldError>{error}</FieldError>
-          </Field>
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)} disabled={pending}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending}>
-              {pending && <Loader2Icon className="animate-spin" aria-hidden />}
-              Save
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
   );
 }
 

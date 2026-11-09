@@ -136,6 +136,7 @@ const readDashboardTool = define(
     return {
       dashboard: args.dashboard,
       title: result.title,
+      description: result.description,
       program: truncated ? result.program.slice(0, MAX_PROGRAM_CHARS) : result.program,
       ...(truncated ? { truncated: true } : {}),
       // What each kit component it uses draws, e.g. that GeoMap is a map with a ranked list.
@@ -145,41 +146,45 @@ const readDashboardTool = define(
 );
 
 const createArgs = z.object({
-  title: z.string().trim().min(1).max(120).describe("The dashboard's title."),
+  title: z.string().trim().min(1).max(120).describe("The dashboard's title, shown above it and in the sidebar."),
+  description: z
+    .string()
+    .trim()
+    .min(1)
+    .max(300)
+    .describe("One sentence under the title: what the dashboard shows, over what period or data."),
   prompt: z
     .string()
     .trim()
     .min(1)
     .max(20_000)
-    .describe("What the dashboard shows, and which tool calls (with the connection id) load each part."),
+    .describe(
+      "What the dashboard shows, and which tool calls (with the connection id) load each part. " +
+        "Leave out its title and description: Prism draws those above it.",
+    ),
 });
 
 const createDashboard = define(
   "create_dashboard",
-  "Creates a live dashboard in this app. It opens for the user when the turn ends.",
+  "Creates a live dashboard in this app, with its title and description. It opens for the user when the turn ends.",
   z.toJSONSchema(createArgs),
   async (input, turn) => {
     const args = parseArgs(createArgs, input);
-    const response = await getDashboards().create(args, turn, { signal: turn.signal });
-    return remember(response, args.title, turn);
+    const response = await getDashboards().create({ title: args.title, prompt: args.prompt }, turn, {
+      signal: turn.signal,
+    });
+    return remember(response, { title: args.title, description: args.description }, turn);
   },
 );
 
 const editArgs = z.object({
   dashboard: z.string().min(1).max(200).describe("The dashboard's id, from list_dashboards or create_dashboard."),
   prompt: z.string().trim().min(1).max(20_000).describe("What to change."),
-  title: z
-    .string()
-    .trim()
-    .min(1)
-    .max(120)
-    .optional()
-    .describe("A new title, when the change renames the dashboard. Leave it out to keep the current one."),
 });
 
 const editDashboard = define(
   "edit_dashboard",
-  "Changes a dashboard in this app, in place. Pass a title too when it should be renamed.",
+  "Changes what a dashboard in this app shows, in place. Its title and description stay as they are: the user renames dashboards.",
   z.toJSONSchema(editArgs),
   async (input, turn) => {
     const args = parseArgs(editArgs, input);
@@ -190,7 +195,7 @@ const editDashboard = define(
     const response = await getDashboards().edit({ id: args.dashboard, prompt: args.prompt }, turn, {
       signal: turn.signal,
     });
-    return remember(response, args.title, turn);
+    return remember(response, null, turn);
   },
 );
 
@@ -215,21 +220,24 @@ const deleteDashboardTool = define(
 );
 
 /**
- * Records the dashboard against the app (or its new title), then returns OpenUI Cloud's
- * response unchanged as the tool result: it names the dashboard (its
- * `artifact_id`) for the model, and the Build chat hands it to the open
- * dashboard's renderer, which follows the new version as it's built.
+ * Records a new dashboard against the app with its title and description,
+ * then returns OpenUI Cloud's response unchanged as the tool result: it names
+ * the dashboard (its `artifact_id`) for the model, and the Build chat hands
+ * it to the open dashboard's renderer, which follows the new version as it's
+ * built. An edit records nothing: the dashboard keeps its title.
  */
-async function remember(response: string, title: string | undefined, turn: TurnContext) {
+async function remember(
+  response: string,
+  created: { title: string; description: string } | null,
+  turn: TurnContext,
+) {
   const artifact = artifactOf(response);
   if (!artifact) {
     logError("agent.dashboard", new Error("OpenUI Cloud's response names no artifact"));
     throw new ToolError("no_artifact", "OpenUI Cloud didn't return a dashboard.");
   }
-  // Only a title the agent gave: Cloud's response keeps the name the
-  // dashboard was created with, so falling back to it would undo a rename.
-  if (title) {
-    const recorded = await getDashboardService().record(turn.userId, turn.appId, { artifactId: artifact.id, title });
+  if (created) {
+    const recorded = await getDashboardService().record(turn.userId, turn.appId, { artifactId: artifact.id, ...created });
     if (!recorded) throw new ToolError("not_found", "This app no longer exists.");
   }
   turn.dashboards.push(artifact.id);

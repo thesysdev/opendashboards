@@ -40,7 +40,7 @@ async function MockDashboardView({ params }: { params: Params }) {
         <ChevronRight aria-hidden className="size-3.5" />
         <span className="text-foreground">{dashboard.title}</span>
       </nav>
-      <KitDashboard key={dashboard.slug} source={dashboard.source} />
+      <KitDashboard key={dashboard.slug} program={dashboard.program} />
     </div>
   );
 }

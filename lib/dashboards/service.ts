@@ -12,13 +12,14 @@ import { apps, dashboards } from "@/lib/db/schema";
 export function createDashboardService({ db }: { db: Database }) {
   return {
     /**
-     * Records a dashboard the agent created in this app, or retitles it if it
-     * exists. Returns null if the app isn't this user's.
+     * Records a dashboard the agent created in this app, with its title and
+     * description (or sets them again if it's already recorded). Returns null
+     * if the app isn't this user's.
      */
     async record(
       userId: string,
       appId: string,
-      { artifactId, title }: { artifactId: string; title: string },
+      { artifactId, title, description = null }: { artifactId: string; title: string; description?: string | null },
     ): Promise<{ id: string } | null> {
       const [app] = await db
         .select({ id: apps.id })
@@ -34,7 +35,7 @@ export function createDashboardService({ db }: { db: Database }) {
         .limit(1);
       if (existing) {
         if (existing.appId !== appId) return null;
-        await db.update(dashboards).set({ title }).where(eq(dashboards.id, existing.id));
+        await db.update(dashboards).set({ title, description }).where(eq(dashboards.id, existing.id));
         return { id: existing.id };
       }
 
@@ -44,7 +45,7 @@ export function createDashboardService({ db }: { db: Database }) {
         .where(eq(dashboards.appId, appId));
       const [created] = await db
         .insert(dashboards)
-        .values({ appId, userId, artifactId, title, position })
+        .values({ appId, userId, artifactId, title, description, position })
         .returning({ id: dashboards.id });
       return created;
     },
@@ -70,10 +71,37 @@ export function createDashboardService({ db }: { db: Database }) {
       });
     },
 
+    /**
+     * Changes a dashboard's title or description, as the user asked. A null
+     * description clears it. Returns false if it isn't this user's dashboard
+     * in that app.
+     */
+    async update(
+      userId: string,
+      appId: string,
+      dashboardId: string,
+      changes: { title?: string; description?: string | null },
+    ): Promise<boolean> {
+      const renamed = await db
+        .update(dashboards)
+        .set(changes)
+        .where(and(eq(dashboards.id, dashboardId), eq(dashboards.appId, appId), eq(dashboards.userId, userId)))
+        .returning({ id: dashboards.id });
+      return renamed.length > 0;
+    },
+
     /** The app's dashboards, in sidebar order, if the app is this user's. */
-    async list(userId: string, appId: string): Promise<{ id: string; artifactId: string; title: string }[]> {
+    async list(
+      userId: string,
+      appId: string,
+    ): Promise<{ id: string; artifactId: string; title: string; description: string | null }[]> {
       return db
-        .select({ id: dashboards.id, artifactId: dashboards.artifactId, title: dashboards.title })
+        .select({
+          id: dashboards.id,
+          artifactId: dashboards.artifactId,
+          title: dashboards.title,
+          description: dashboards.description,
+        })
         .from(dashboards)
         .where(and(eq(dashboards.appId, appId), eq(dashboards.userId, userId)))
         .orderBy(asc(dashboards.position));
