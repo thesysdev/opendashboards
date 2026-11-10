@@ -40,6 +40,7 @@ import type { ConnectionType } from "@/lib/sources/catalog";
 
 import { PostHogFormDialog, type SecretMode } from "./connection-form-dialog";
 import { PostgresFormDialog } from "./postgres-form-dialog";
+import { SourceFormDialog } from "./source-form-dialog";
 
 type Connection = {
   id: string;
@@ -85,7 +86,7 @@ export function ConnectionActions({
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setDialog("replace")}>
             <KeyRoundIcon aria-hidden />
-            {connection.type === "postgres" ? "Change password" : "Replace key"}
+            {connection.type === "posthog" || connection.type === "bigquery" ? "Replace key" : "Change password"}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setDialog("rename")}>
             <PencilIcon aria-hidden />
@@ -107,8 +108,17 @@ export function ConnectionActions({
           onOpenChange={close}
           secretMode={secretMode}
         />
-      ) : (
+      ) : connection.type === "posthog" ? (
         <PostHogFormDialog
+          mode="replace"
+          connection={connection}
+          open={dialog === "replace"}
+          onOpenChange={close}
+          secretMode={secretMode}
+        />
+      ) : (
+        <SourceFormDialog
+          type={connection.type}
           mode="replace"
           connection={connection}
           open={dialog === "replace"}

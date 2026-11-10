@@ -58,6 +58,31 @@ export type CommonSettings = {
     statementTimeoutMs: number;
     maxRows: { agent: number; dashboard: number };
   };
+  mysql: {
+    connectTimeoutMs: number;
+    statementTimeoutMs: number;
+    maxRows: { agent: number; dashboard: number };
+  };
+  clickhouse: {
+    /** A dashboard or agent query, end to end. */
+    queryTimeoutMs: number;
+    /** Checking a connection when it's added or retested. */
+    checkTimeoutMs: number;
+    maxRows: { agent: number; dashboard: number };
+    /** The largest response Prism will read from a ClickHouse server. */
+    maxResponseBytes: number;
+  };
+  bigquery: {
+    /** A dashboard or agent query, end to end (BigQuery jobs keep running server side; this is how long we wait). */
+    queryTimeoutMs: number;
+    checkTimeoutMs: number;
+    maxRows: { agent: number; dashboard: number };
+    /**
+     * Bytes one query may scan. BigQuery bills by bytes scanned, so this caps
+     * what a single query can cost the user. Queries over it fail before running.
+     */
+    maxBytesBilled: number;
+  };
   /** Sample datasets users can install to try Prism without data of their own. */
   demoDatasets: DemoDataset[];
 };

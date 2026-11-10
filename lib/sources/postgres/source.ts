@@ -4,6 +4,7 @@ import { z } from "zod";
 
 import { config as appConfig } from "@/config";
 
+import { passwordHint } from "../password-hint";
 import type { ConnectionSource, SourceTool } from "../types";
 
 import { passwordSchema, postgresCatalog, type PostgresConfig } from "./catalog";
@@ -60,8 +61,7 @@ export const postgresSource: ConnectionSource<PostgresConfig> = {
     field: "password",
     schema: passwordSchema,
     purpose: "postgres-password",
-    // Nothing of a password, ever.
-    hint: () => "password ••••",
+    hint: passwordHint,
   },
   async test(config, credential) {
     const check = await testPostgresConnection({ ...config, password: credential });

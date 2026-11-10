@@ -7,6 +7,7 @@ import type { Database } from "@/lib/db";
 import { appConnections, apps, dataConnections, type ConnectionStatus, type DataConnectionRow } from "@/lib/db/schema";
 import { logError } from "@/lib/log";
 import type { SecretBox, SecretContext } from "@/lib/secrets";
+import type { SealedSecret } from "@/lib/secrets/types";
 import {
   CONNECTION_TYPES,
   connectionConfigSchema,
@@ -105,6 +106,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     userId,
     connectionId,
   });
+
+  /** An empty credential (a server with no password) is recorded as "none": nothing to encrypt. */
+  const sealCredential = (credential: string, ctx: SecretContext): Promise<SealedSecret> =>
+    credential === "" ? Promise.resolve({ v: 1, provider: "none" }) : deps.secrets().seal(credential, ctx);
+
+  const openCredential = (sealed: SealedSecret | null, ctx: SecretContext): Promise<string> =>
+    sealed?.provider === "none" ? Promise.resolve("") : deps.secrets().open(sealed!, ctx);
 
   /** The source's own check, with the settings stripped of their type tag. */
   function check(config: ConnectionConfig, credential: string): Promise<ConnectionWarning[]> {
@@ -320,7 +328,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         let warnings: ConnectionWarning[];
         try {
           // Sealed first: no point testing a credential we can't store.
-          const secret = await deps.secrets().seal(credential.data, context(type, userId, id));
+          const secret = await sealCredential(credential.data, context(type, userId, id));
           warnings = await check(config, credential.data);
           await db.insert(dataConnections).values({
             id,
@@ -353,7 +361,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         try {
           const config = configOf(row);
           const credential = await keyCache.get(row.id, () =>
-            deps.secrets().open(row.secret!, context(config.type, userId, row.id)),
+            openCredential(row.secret, context(config.type, userId, row.id)),
           );
           await check(config, credential);
         } catch (error) {
@@ -390,7 +398,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 
         let warnings: ConnectionWarning[];
         try {
-          const secret = await deps.secrets().seal(credential.data, context(config.type, userId, row.id));
+          const secret = await sealCredential(credential.data, context(config.type, userId, row.id));
           warnings = await check(config, credential.data);
           await db
             .update(dataConnections)
@@ -458,7 +466,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         return { id: row.id, name: row.name, config: { ...dataset.postgres }, credential: password };
       }
       const { type: _type, ...settings } = configOf(row);
-      const credential = await keyCache.get(row.id, () => deps.secrets().open(row.secret!, context(type, userId, row.id)));
+      const credential = await keyCache.get(row.id, () => openCredential(row.secret, context(type, userId, row.id)));
       return { id: row.id, name: row.name, config: settings, credential };
     },
   };

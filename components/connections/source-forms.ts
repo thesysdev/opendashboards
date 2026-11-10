@@ -1,0 +1,140 @@
+import { CLICKHOUSE_DEFAULT_PORT } from "@/lib/sources/clickhouse/catalog";
+import { projectIdOfKey } from "@/lib/sources/bigquery/credential";
+import { MYSQL_DEFAULT_PORT, parseMysqlUrl } from "@/lib/sources/mysql/catalog";
+
+/**
+ * What the generic connection form asks for, per source. Client-safe. The
+ * server validates everything again with the source's own schemas.
+ */
+
+export type FieldSpec = {
+  name: string;
+  label: string;
+  kind: "text" | "password" | "number" | "textarea" | "ssl";
+  placeholder?: string;
+  description?: string;
+  optional?: boolean;
+  initial?: string;
+  /** Half width, side by side with the next half-width field. */
+  half?: boolean;
+  /** A file input that fills this field (e.g. a JSON key). */
+  fileAccept?: string;
+};
+
+export type FormSpec = {
+  title: string;
+  description: string;
+  fields: FieldSpec[];
+  /** The secret: a password or a key. The only field shown when replacing it. */
+  credential: FieldSpec;
+  replaceTitle: string;
+  replaceAction: string;
+  /** A connection URL people may paste instead of filling in the fields. */
+  paste?: { label: string; placeholder: string; parse: (text: string) => Record<string, string | number> | null };
+  /** Derives other fields when one changes, e.g. the project from a pasted key. */
+  derive?: (name: string, value: string, values: Record<string, string>) => Record<string, string>;
+  help?: { summary: string; intro: string; code?: string; steps?: string[] };
+  /** What "plaintext" storage mode warns about. */
+  secretNoun: string;
+};
+
+/** A password a public, read-only server may not need. */
+const NO_PASSWORD_OK: FieldSpec = {
+  name: "password",
+  label: "Password",
+  kind: "password",
+  optional: true,
+  description: "Leave empty for a server that doesn't need one.",
+};
+
+export const SOURCE_FORMS: Record<"mysql" | "clickhouse" | "bigquery", FormSpec> = {
+  mysql: {
+    title: "Connect MySQL",
+    description: "Prism runs read-only queries against your MySQL or MariaDB database to build dashboards.",
+    fields: [
+      { name: "name", label: "Name", kind: "text", placeholder: "Production MySQL" },
+      { name: "host", label: "Host", kind: "text", placeholder: "db.example.com" },
+      { name: "port", label: "Port", kind: "number", initial: String(MYSQL_DEFAULT_PORT), half: true },
+      { name: "database", label: "Database", kind: "text", placeholder: "shop", half: true },
+      { name: "user", label: "User", kind: "text", placeholder: "prism_reader" },
+      { name: "sslMode", label: "SSL", kind: "ssl", initial: "verify-full" },
+    ],
+    credential: NO_PASSWORD_OK,
+    replaceTitle: "Change password",
+    replaceAction: "Test & change",
+    paste: {
+      label: "Connection string (optional)",
+      placeholder: "mysql://user:password@host:3306/database",
+      parse: (text) => parseMysqlUrl(text) as Record<string, string | number> | null,
+    },
+    help: {
+      summary: "Use a read-only user (recommended)",
+      intro: "Prism only reads, but a user that can't write is safer. Run this as an admin, then connect as prism_reader:",
+      code: `CREATE USER 'prism_reader'@'%' IDENTIFIED BY '…' REQUIRE SSL;
+GRANT SELECT, SHOW VIEW ON your_db.* TO 'prism_reader'@'%';`,
+    },
+    secretNoun: "passwords",
+  },
+  clickhouse: {
+    title: "Connect ClickHouse",
+    description: "Prism runs read-only queries against ClickHouse over HTTPS to build dashboards.",
+    fields: [
+      { name: "name", label: "Name", kind: "text", placeholder: "Events warehouse" },
+      { name: "host", label: "Host", kind: "text", placeholder: "abc123.us-east-1.aws.clickhouse.cloud" },
+      {
+        name: "port",
+        label: "HTTPS port",
+        kind: "number",
+        initial: String(CLICKHOUSE_DEFAULT_PORT),
+        half: true,
+      },
+      { name: "database", label: "Database", kind: "text", initial: "default", half: true },
+      { name: "user", label: "User", kind: "text", placeholder: "prism_reader" },
+      { name: "sslMode", label: "SSL", kind: "ssl", initial: "verify-full" },
+    ],
+    credential: NO_PASSWORD_OK,
+    replaceTitle: "Change password",
+    replaceAction: "Test & change",
+    help: {
+      summary: "Use a read-only user (recommended)",
+      intro:
+        "Prism runs every query read-only with its own time and row limits, but a user that can only SELECT is safer. Run this as an admin (no readonly profile setting: Prism sets it per query):",
+      code: `CREATE USER prism_reader IDENTIFIED BY '…';
+GRANT SELECT ON your_db.* TO prism_reader;`,
+    },
+    secretNoun: "passwords",
+  },
+  bigquery: {
+    title: "Connect BigQuery",
+    description: "Prism runs read-only queries in your Google Cloud project to build dashboards. Queries are billed to that project.",
+    fields: [
+      { name: "name", label: "Name", kind: "text", placeholder: "Analytics warehouse" },
+      { name: "projectId", label: "Project ID", kind: "text", placeholder: "my-project-123", half: true, description: "Runs and pays for the queries." },
+      { name: "location", label: "Location", kind: "text", placeholder: "US", optional: true, half: true, description: "Optional. US, EU, us-central1…" },
+    ],
+    credential: {
+      name: "serviceAccountKey",
+      label: "Service account key (JSON)",
+      kind: "textarea",
+      placeholder: '{ "type": "service_account", "client_email": "…", "private_key": "…" }',
+      fileAccept: "application/json,.json",
+      description: "Only the account's email and private key are kept, encrypted.",
+    },
+    replaceTitle: "Replace key",
+    replaceAction: "Test & replace",
+    derive: (name, value, values): Record<string, string> => {
+      const projectId = name === "serviceAccountKey" && !values.projectId ? projectIdOfKey(value) : null;
+      return projectId ? { projectId } : {};
+    },
+    help: {
+      summary: "How to create a read-only service account",
+      intro: "In the Google Cloud console:",
+      steps: [
+        "IAM & Admin → Service accounts → Create service account, e.g. prism-reader.",
+        "Grant it BigQuery Job User (to run queries) and BigQuery Data Viewer (to read data), on the project or only on the datasets Prism should see.",
+        "Open the account → Keys → Add key → Create new key → JSON, and paste or upload the file here.",
+      ],
+    },
+    secretNoun: "keys",
+  },
+};

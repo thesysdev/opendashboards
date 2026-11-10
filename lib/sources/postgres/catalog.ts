@@ -1,5 +1,6 @@
 import { z } from "zod";
 
+import { hostSchemaFor, portSchema, sslModeSchema, type SslMode } from "../host";
 import type { SourceCatalog } from "../types";
 
 /**
@@ -8,35 +9,16 @@ import type { SourceCatalog } from "../types";
  * saved; pointing elsewhere means a new connection.
  */
 
-/** verify-full: encrypted, certificate checked (default). require: encrypted only. Never unencrypted. */
-export const SSL_MODES = ["verify-full", "require"] as const;
-export type SslMode = (typeof SSL_MODES)[number];
+export { portSchema, SSL_MODES, sslModeSchema, type SslMode } from "../host";
 
 export const DEFAULT_PORT = 5432;
 
-/** A DNS name or an IP literal. No scheme, path, user info or socket path. */
-const HOSTNAME = /^(?=.{1,253}$)(?:[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.)*[A-Za-z0-9](?:[A-Za-z0-9-]{0,61}[A-Za-z0-9])?\.?$/;
-const IPV6_LITERAL = /^[0-9A-Fa-f:.]{2,45}$/;
-
-export const hostSchema = z
-  .string()
-  .trim()
-  .min(1, "Enter the host.")
-  .refine(
-    (host) => HOSTNAME.test(host) || (host.includes(":") && IPV6_LITERAL.test(host)),
-    "Enter a host name or IP address, without postgres:// or a port.",
-  );
-
-export const portSchema = z.coerce
-  .number({ error: "Enter a port number." })
-  .int("Enter a port number.")
-  .min(1, "Ports run from 1 to 65535.")
-  .max(65535, "Ports run from 1 to 65535.");
+export const hostSchema = hostSchemaFor("postgres");
 
 export const databaseSchema = z.string().trim().min(1, "Enter the database name.").max(63, "Postgres names are at most 63 characters.");
 export const userSchema = z.string().trim().min(1, "Enter the user name.").max(63, "Postgres names are at most 63 characters.");
-export const passwordSchema = z.string().min(1, "Enter the password.").max(1024, "That password is too long.");
-export const sslModeSchema = z.enum(SSL_MODES, { error: "Choose an SSL mode." });
+/** Empty for a server that needs no password, such as a public read-only one. */
+export const passwordSchema = z.string().max(1024, "That password is too long.");
 
 export const postgresConfigSchema = z
   .object({
@@ -84,6 +66,63 @@ export function parseConnectionString(input: string): ParsedConnectionString | n
   return fields;
 }
 
+/**
+ * Hosted services that are Postgres underneath. They're stored as ordinary
+ * Postgres connections; the flavor only changes how the form guides you and
+ * how the connection is labelled, which is read back from its host.
+ */
+export const POSTGRES_FLAVORS = {
+  supabase: {
+    label: "Supabase",
+    tile: "SB",
+    blurb: "Your Supabase project's Postgres database",
+    hostSuffixes: ["supabase.com", "supabase.co"],
+    // Supabase signs with its own certificate authority, which no system trusts.
+    sslMode: "require",
+    hostPlaceholder: "aws-0-us-east-1.pooler.supabase.com",
+    databasePlaceholder: "postgres",
+    userPlaceholder: "prism_reader.your-project-ref",
+    tip: "In Supabase, open Connect and copy the Session pooler string: the direct host only answers over IPv6. Supabase uses its own certificate authority, so the connection is encrypted but its certificate isn't checked.",
+  },
+  neon: {
+    label: "Neon",
+    tile: "NE",
+    blurb: "Your Neon project's Postgres database",
+    hostSuffixes: ["neon.tech"],
+    sslMode: "verify-full",
+    hostPlaceholder: "ep-example-123456.us-east-2.aws.neon.tech",
+    databasePlaceholder: "neondb",
+    userPlaceholder: "prism_reader",
+    tip: "In Neon, open Connect, pick the branch and database, and copy the connection string.",
+  },
+} as const satisfies Record<
+  string,
+  {
+    label: string;
+    tile: string;
+    blurb: string;
+    hostSuffixes: readonly string[];
+    sslMode: SslMode;
+    hostPlaceholder: string;
+    databasePlaceholder: string;
+    userPlaceholder: string;
+    tip: string;
+  }
+>;
+
+export type PostgresFlavor = keyof typeof POSTGRES_FLAVORS;
+export const POSTGRES_FLAVOR_KEYS = Object.keys(POSTGRES_FLAVORS) as PostgresFlavor[];
+
+/** Which hosted service a host belongs to, if any. */
+export function flavorOf(host: string): PostgresFlavor | null {
+  const name = host.toLowerCase().replace(/\.$/, "");
+  return (
+    POSTGRES_FLAVOR_KEYS.find((key) =>
+      POSTGRES_FLAVORS[key].hostSuffixes.some((suffix) => name === suffix || name.endsWith(`.${suffix}`)),
+    ) ?? null
+  );
+}
+
 /** `analyst@db.example.com:5432/app`, for lists. */
 export function postgresAddress(config: Pick<PostgresConfig, "host" | "port" | "database" | "user">): string {
   const host = config.host.includes(":") ? `[${config.host}]` : config.host;
@@ -96,5 +135,9 @@ export const postgresCatalog: SourceCatalog<PostgresConfig, "postgres"> = {
   blurb: "Any database reachable on the public internet",
   tile: "PG",
   configSchema: postgresConfigSchema,
-  describe: (config) => ({ source: "Postgres", shortSource: "Postgres", detail: postgresAddress(config), tile: "PG" }),
+  describe: (config) => {
+    const flavor = flavorOf(config.host);
+    const { label, tile } = flavor ? POSTGRES_FLAVORS[flavor] : { label: "Postgres", tile: "PG" };
+    return { source: label, shortSource: label, detail: postgresAddress(config), tile };
+  },
 };

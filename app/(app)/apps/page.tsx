@@ -12,7 +12,7 @@ import { requireUser } from "@/lib/auth/user";
 import { getConnectionService } from "@/lib/connections";
 import { formatRelative } from "@/lib/format";
 import { getSecretMode } from "@/lib/secrets";
-import { CATALOGS } from "@/lib/sources/catalog";
+import { SOURCE_OPTIONS } from "@/lib/sources/catalog";
 
 export const metadata: Metadata = { title: "Apps" };
 
@@ -51,7 +51,7 @@ async function Home() {
           tile,
           demo: demo?.key ?? null,
         }))}
-        sources={CATALOGS.map(({ type, label, blurb, tile }) => ({ type, label, blurb, tile }))}
+        sources={SOURCE_OPTIONS}
         demos={demos.map(({ key, name, description, prompts, connectionId }) => ({
           key,
           name,

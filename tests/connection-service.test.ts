@@ -382,7 +382,7 @@ describe("postgres", () => {
       [{ ...PG, host: "db.example.com:5432" }, "host"],
       [{ ...PG, port: 70000 }, "port"],
       [{ ...PG, sslMode: "prefer" }, "sslMode"],
-      [{ ...PG, password: "" }, "password"],
+      [{ ...PG, password: "x".repeat(1025) }, "password"],
     ] as const) {
       const result = await service.create("alice", input);
       expect(result).toMatchObject({ ok: false, error: { code: "validation" } });
@@ -404,7 +404,7 @@ describe("postgres", () => {
     });
     expect(await rejecting.service.replaceCredential("alice", { id, credential: "" })).toMatchObject({
       ok: false,
-      error: { code: "validation", field: "password" },
+      error: { code: "auth_failed", field: "password" },
     });
 
     const { service, testPostgres } = makeService();
@@ -413,6 +413,45 @@ describe("postgres", () => {
     expect(testPostgres).toHaveBeenLastCalledWith(
       expect.objectContaining({ host: "db.example.com", database: "app", password: "new-Passw0rd" }),
     );
+  });
+
+  it("saves a server with no password without touching secret storage", async () => {
+    const unavailable: SecretBox = {
+      provider: "kms",
+      seal: vi.fn(async () => {
+        throw new Error("KMS must not be called");
+      }),
+      open: vi.fn(async () => {
+        throw new Error("KMS must not be called");
+      }),
+    };
+    const { service, testPostgres } = makeService({ secrets: unavailable });
+    const created = await service.create("alice", { ...PG, password: "" });
+    expect(created).toMatchObject({ ok: true });
+    expect(testPostgres).toHaveBeenCalledWith(expect.objectContaining({ password: "" }));
+    expect(unavailable.seal).not.toHaveBeenCalled();
+
+    const [row] = await db.select().from(dataConnections);
+    expect(row.secret).toEqual({ v: 1, provider: "none" });
+    expect((await service.list("alice"))[0].credentialHint).toBe("no password");
+
+    // Opening it for a tool, and retesting it, give the empty password back without KMS.
+    expect(await service.open("alice", row.id, "postgres")).toMatchObject({ credential: "" });
+    expect(await service.retest("alice", { id: row.id })).toMatchObject({ ok: true });
+    expect(unavailable.open).not.toHaveBeenCalled();
+  });
+
+  it("switches between a password and none", async () => {
+    const id = await createOk("alice", { ...PG, password: "" });
+    const { service } = makeService();
+    expect(await service.replaceCredential("alice", { id, credential: "s3cret-pw" })).toMatchObject({ ok: true });
+    expect((await db.select().from(dataConnections))[0].secret).toEqual({ v: 1, provider: "plaintext", value: "s3cret-pw" });
+    expect(await service.open("alice", id, "postgres")).toMatchObject({ credential: "s3cret-pw" });
+    expect((await service.list("alice"))[0].credentialHint).toBe("password ••••");
+
+    expect(await service.replaceCredential("alice", { id, credential: "" })).toMatchObject({ ok: true });
+    expect((await db.select().from(dataConnections))[0].secret).toEqual({ v: 1, provider: "none" });
+    expect(await service.open("alice", id, "postgres")).toMatchObject({ credential: "" });
   });
 
   it("records an unreachable server as unavailable, not invalid", async () => {

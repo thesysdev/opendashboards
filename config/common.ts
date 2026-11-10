@@ -11,6 +11,20 @@ export const common: CommonSettings = {
   posthog: { queryTimeoutMs: 50_000, checkTimeoutMs: 15_000, maxRows: { agent: 200, dashboard: 10_000 } },
   kms: { region: "us-east-1" },
   postgres: { connectTimeoutMs: 5_000, statementTimeoutMs: 15_000, maxRows: { agent: 200, dashboard: 10_000 } },
+  mysql: { connectTimeoutMs: 5_000, statementTimeoutMs: 15_000, maxRows: { agent: 200, dashboard: 10_000 } },
+  clickhouse: {
+    queryTimeoutMs: 30_000,
+    checkTimeoutMs: 10_000,
+    maxRows: { agent: 200, dashboard: 10_000 },
+    maxResponseBytes: 20 * 1024 * 1024,
+  },
+  bigquery: {
+    queryTimeoutMs: 45_000,
+    checkTimeoutMs: 15_000,
+    maxRows: { agent: 200, dashboard: 10_000 },
+    // 10 GiB: about six US cents at on-demand prices.
+    maxBytesBilled: 10 * 1024 ** 3,
+  },
   demoDatasets: [
     {
       key: "retail",

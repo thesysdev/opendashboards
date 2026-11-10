@@ -8,9 +8,10 @@ import { installDemoAction } from "@/app/(app)/connections/actions";
 import { PromptBox } from "@/components/apps/prompt-box";
 import { PostHogFormDialog, type SecretMode } from "@/components/connections/connection-form-dialog";
 import { PostgresFormDialog } from "@/components/connections/postgres-form-dialog";
+import { SourceFormDialog } from "@/components/connections/source-form-dialog";
 import { SourceTile } from "@/components/connections/source-tile";
 import { Button } from "@/components/ui/button";
-import type { ConnectionType } from "@/lib/sources/catalog";
+import type { SourceOption } from "@/lib/sources/catalog";
 import { cn } from "@/lib/utils";
 
 import { DISCOVERY_PROMPT } from "./discovery-prompt";
@@ -25,7 +26,7 @@ export type OnboardingConnection = {
   demo: string | null;
 };
 
-export type OnboardingSource = { type: ConnectionType; label: string; blurb: string; tile: string };
+export type OnboardingSource = SourceOption;
 
 export type OnboardingDemo = {
   key: string;
@@ -170,7 +171,9 @@ function DataStep({
   onContinue: () => void;
   onPickOnly: (id: string) => void;
 }) {
-  const [adding, setAdding] = useState<ConnectionType | null>(null);
+  const [adding, setAdding] = useState<OnboardingSource | null>(null);
+  // Kept after closing, so the dialog doesn't remount mid-animation.
+  const [postgresFlavor, setPostgresFlavor] = useState<OnboardingSource["flavor"]>(null);
   const [installing, setInstalling] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
@@ -252,10 +255,13 @@ function DataStep({
         <Label>{hasData ? "Or connect another source" : "Connect a source"}</Label>
         <ul className="grid gap-3 sm:grid-cols-2">
           {sources.map((source) => (
-            <li key={source.type}>
+            <li key={source.key}>
               <button
                 type="button"
-                onClick={() => setAdding(source.type)}
+                onClick={() => {
+                  setAdding(source);
+                  if (source.type === "postgres") setPostgresFlavor(source.flavor);
+                }}
                 className={cn(card, "flex h-full w-full items-start gap-3 p-3.5 text-left")}
               >
                 <SourceTile label={source.tile} className="size-9" />
@@ -317,8 +323,17 @@ function DataStep({
         </p>
       )}
 
-      <PostHogFormDialog {...dialog} open={adding === "posthog"} />
-      <PostgresFormDialog {...dialog} open={adding === "postgres"} />
+      <PostHogFormDialog {...dialog} open={adding?.type === "posthog"} />
+      <SourceFormDialog {...dialog} type="mysql" open={adding?.type === "mysql"} />
+      <SourceFormDialog {...dialog} type="clickhouse" open={adding?.type === "clickhouse"} />
+      <SourceFormDialog {...dialog} type="bigquery" open={adding?.type === "bigquery"} />
+      {/* Keyed by flavor so each opens with its own defaults. */}
+      <PostgresFormDialog
+        key={postgresFlavor ?? "postgres"}
+        {...dialog}
+        flavor={postgresFlavor}
+        open={adding?.type === "postgres"}
+      />
     </>
   );
 }

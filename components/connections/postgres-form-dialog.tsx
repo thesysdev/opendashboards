@@ -18,7 +18,14 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { ConnectionField } from "@/lib/connections/errors";
-import { DEFAULT_PORT, parseConnectionString, SSL_MODES, type SslMode } from "@/lib/sources/postgres/catalog";
+import {
+  DEFAULT_PORT,
+  parseConnectionString,
+  POSTGRES_FLAVORS,
+  SSL_MODES,
+  type PostgresFlavor,
+  type SslMode,
+} from "@/lib/sources/postgres/catalog";
 
 import { showConnectionWarnings } from "./connection-feedback";
 import type { SecretMode } from "./connection-form-dialog";
@@ -28,7 +35,13 @@ type Props = {
   onOpenChange: (open: boolean) => void;
   secretMode: SecretMode;
 } & (
-  | { mode: "create"; /** Called with the new connection's id once it's saved. */ onCreated?: (id: string) => void }
+  | {
+      mode: "create";
+      /** A hosted service that's Postgres underneath: tailors the title, hints and SSL default. */
+      flavor?: PostgresFlavor | null;
+      /** Called with the new connection's id once it's saved. */
+      onCreated?: (id: string) => void;
+    }
   | { mode: "replace"; connection: { id: string; name: string } }
 );
 
@@ -68,8 +81,10 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 export function PostgresFormDialog(props: Props) {
   const { open, onOpenChange, secretMode } = props;
   const replacing = props.mode === "replace";
+  const flavor = props.mode === "create" && props.flavor ? POSTGRES_FLAVORS[props.flavor] : null;
+  const initial: Values = flavor ? { ...EMPTY, sslMode: flavor.sslMode } : EMPTY;
 
-  const [values, setValues] = useState<Values>(EMPTY);
+  const [values, setValues] = useState<Values>(initial);
   const [connectionString, setConnectionString] = useState("");
   const [pasteNote, setPasteNote] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<ConnectionField, string>>>({});
@@ -89,7 +104,7 @@ export function PostgresFormDialog(props: Props) {
   const storageMissing = secretMode === "unconfigured";
 
   function reset() {
-    setValues(EMPTY);
+    setValues(initial);
     setConnectionString("");
     setPasteNote(null);
     setFieldErrors({});
@@ -182,18 +197,23 @@ export function PostgresFormDialog(props: Props) {
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
         <form onSubmit={submit} noValidate>
           <DialogHeader>
-            <DialogTitle>{replacing ? "Change password" : "Connect Postgres"}</DialogTitle>
+            <DialogTitle>{replacing ? "Change password" : `Connect ${flavor?.label ?? "Postgres"}`}</DialogTitle>
             <DialogDescription>
               {replacing
                 ? `Enter the new password for ${props.connection.name}. The host, database and user stay the same.`
                 : "Prism runs read-only queries against your database to build dashboards."}
             </DialogDescription>
+            {flavor && <p className="text-sm text-muted-foreground">{flavor.tip}</p>}
           </DialogHeader>
 
           <FieldGroup className="my-6 gap-5">
             {!replacing && (
               <>
-                {textField("name", "Name", "Production database", { maxLength: 80, autoFocus: true, spellCheck: undefined })}
+                {textField("name", "Name", flavor ? `${flavor.label} database` : "Production database", {
+                  maxLength: 80,
+                  autoFocus: true,
+                  spellCheck: undefined,
+                })}
 
                 <Field>
                   <FieldLabel htmlFor={ids.url}>Connection string (optional)</FieldLabel>
@@ -209,7 +229,7 @@ export function PostgresFormDialog(props: Props) {
                 </Field>
 
                 <div className="grid grid-cols-[1fr_6rem] gap-3">
-                  {textField("host", "Host", "db.example.com")}
+                  {textField("host", "Host", flavor?.hostPlaceholder ?? "db.example.com")}
                   <Field data-invalid={!!fieldErrors.port || undefined}>
                     <FieldLabel htmlFor={ids.port}>Port</FieldLabel>
                     <Input
@@ -226,8 +246,8 @@ export function PostgresFormDialog(props: Props) {
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
-                  {textField("database", "Database", "app")}
-                  {textField("user", "User", "prism_reader")}
+                  {textField("database", "Database", flavor?.databasePlaceholder ?? "app")}
+                  {textField("user", "User", flavor?.userPlaceholder ?? "prism_reader")}
                 </div>
               </>
             )}
@@ -241,9 +261,9 @@ export function PostgresFormDialog(props: Props) {
                 onChange={(e) => update("password", e.target.value)}
                 autoComplete="off"
                 aria-invalid={!!fieldErrors.password || undefined}
-                required
                 autoFocus={replacing}
               />
+              <FieldDescription>Leave empty for a server that doesn&apos;t need one.</FieldDescription>
               <FieldError>{fieldErrors.password}</FieldError>
             </Field>
 

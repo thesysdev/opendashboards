@@ -10,12 +10,17 @@ export type SecretContext = {
   connectionId: string;
 };
 
-/** A secret as stored. `provider` and `v` say how to open it. */
+/**
+ * A secret as stored. `provider` and `v` say how to open it. "none" records
+ * that there is no secret: a server that needs no password. It holds nothing,
+ * so there is nothing to encrypt.
+ */
 export type SealedSecret =
   | { v: 1; provider: "plaintext"; value: string }
-  | { v: 1; provider: "kms"; keyId: string; ciphertext: string };
+  | { v: 1; provider: "kms"; keyId: string; ciphertext: string }
+  | { v: 1; provider: "none" };
 
-export type SecretProvider = SealedSecret["provider"];
+export type SecretProvider = Exclude<SealedSecret["provider"], "none">;
 
 export interface SecretBox {
   readonly provider: SecretProvider;
