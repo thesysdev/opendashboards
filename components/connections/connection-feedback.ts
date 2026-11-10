@@ -6,7 +6,7 @@ import type { ConnectionWarning } from "@/lib/connections";
 export function showConnectionWarnings(warnings: ConnectionWarning[] | undefined) {
   if (warnings?.includes("can_write")) {
     toast.warning("This user can change data", {
-      description: "Prism only runs read-only queries, but a read-only user is safer. Consider switching to one.",
+      description: "OpenDashboards only runs read-only queries, but a read-only user is safer. Consider switching to one.",
     });
   }
 }

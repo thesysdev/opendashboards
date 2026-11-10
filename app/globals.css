@@ -137,6 +137,6 @@
  * even when the list doesn't overflow, which swallows wheel scrolling over
  * it. Let the scroll pass to the Build chat. Delete once react-ui fixes it.
  */
-.prism-build-chat .openui-behind-the-scenes__items {
+.dashboards-build-chat .openui-behind-the-scenes__items {
   overscroll-behavior: auto;
 }

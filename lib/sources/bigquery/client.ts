@@ -218,7 +218,7 @@ export async function queryBigquery(
       maxResults: maxRows + 1,
       timeoutMs: Math.min(timeoutMs, 10_000),
       requestId: randomUUID(),
-      labels: { client: "prism" },
+      labels: { client: "opendashboards" },
     },
     signal,
   );

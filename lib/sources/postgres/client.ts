@@ -55,7 +55,7 @@ async function withReadOnly<T>(target: PostgresTarget, fn: (client: pg.Client) =
     connectionTimeoutMillis: appConfig().postgres.connectTimeoutMs,
     statement_timeout: appConfig().postgres.statementTimeoutMs,
     query_timeout: appConfig().postgres.statementTimeoutMs + 2_000,
-    application_name: "prism",
+    application_name: "opendashboards",
   });
   // A dropped connection emits 'error' on the client; without a listener it would crash the process.
   client.on("error", () => {});
@@ -103,8 +103,8 @@ export function queryPostgres(
   const statement = sql.trim().replace(/;\s*$/, "");
   return withReadOnly(target, async (client) => {
     // The extended protocol (forced by passing values) refuses multiple statements.
-    await client.query({ text: `DECLARE prism_cursor NO SCROLL CURSOR FOR ${statement}`, values: [...params], queryMode: "extended" } as pg.QueryConfig);
-    const fetched = await client.query(`FETCH ${maxRows + 1} FROM prism_cursor`);
+    await client.query({ text: `DECLARE dashboards_cursor NO SCROLL CURSOR FOR ${statement}`, values: [...params], queryMode: "extended" } as pg.QueryConfig);
+    const fetched = await client.query(`FETCH ${maxRows + 1} FROM dashboards_cursor`);
     const numeric = new Set(fetched.fields.filter((field) => NUMERIC_TYPE_IDS.has(field.dataTypeID)).map((field) => field.name));
     const rows = fetched.rows.slice(0, maxRows).map((row: Record<string, unknown>) => {
       for (const name of numeric) {

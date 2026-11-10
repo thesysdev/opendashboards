@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * A service account key, as Google's JSON key file. Only the two fields
- * Prism needs are kept: the account's email and its private key. Everything
+ * OpenDashboards needs are kept: the account's email and its private key. Everything
  * else is dropped, on purpose:
  *
  * - Other credential types (external_account, authorized_user, impersonated…)

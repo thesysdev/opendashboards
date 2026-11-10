@@ -15,16 +15,16 @@ export function createDatabase(connectionString: string): { db: Database; pool: 
 }
 
 // One pool per process. In development, keep it across hot reloads.
-const globalForDb = globalThis as unknown as { prismDb?: Database };
+const globalForDb = globalThis as unknown as { appDb?: Database };
 
 export function getDb(): Database {
-  if (!globalForDb.prismDb) {
+  if (!globalForDb.appDb) {
     const url = secrets.databaseUrl();
     if (!url) throw new Error("DATABASE_URL is not set");
     const { db, pool } = createDatabase(url);
     // Releases idle connections before a Vercel Function suspends.
     attachDatabasePool(pool);
-    globalForDb.prismDb = db;
+    globalForDb.appDb = db;
   }
-  return globalForDb.prismDb;
+  return globalForDb.appDb;
 }

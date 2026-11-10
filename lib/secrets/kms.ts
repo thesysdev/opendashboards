@@ -28,7 +28,7 @@ function createClient(roleArn: string): KMSClient {
 }
 
 function countFailure(operation: "encrypt" | "decrypt", cause: unknown) {
-  count("prism.kms.failure", { operation, error: cause instanceof Error ? cause.name : "unknown" });
+  count("opendashboards.kms.failure", { operation, error: cause instanceof Error ? cause.name : "unknown" });
 }
 
 /** KMS treats the encryption context as authenticated data: it must match to decrypt. */

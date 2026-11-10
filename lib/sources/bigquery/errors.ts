@@ -7,7 +7,7 @@ export type BigqueryErrorCode =
   | "not_found"
   /** The BigQuery API isn't enabled on the project, or billing isn't set up for what was asked. */
   | "not_enabled"
-  /** The query would scan more than Prism allows for one query. */
+  /** The query would scan more than OpenDashboards allows for one query. */
   | "too_expensive"
   /** The query tried to change something, or isn't a single SELECT. */
   | "read_only"

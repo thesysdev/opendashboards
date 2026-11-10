@@ -13,7 +13,7 @@ const keyFile = (overrides: Record<string, unknown> = {}) =>
     project_id: "acme-analytics",
     private_key_id: "abc",
     private_key: privateKey,
-    client_email: "prism-reader@acme-analytics.iam.gserviceaccount.com",
+    client_email: "dashboards-reader@acme-analytics.iam.gserviceaccount.com",
     client_id: "123",
     token_uri: "https://oauth2.googleapis.com/token",
     ...overrides,
@@ -28,7 +28,7 @@ describe("service account key", () => {
   it("keeps only the email and private key", () => {
     const parsed = serviceAccountKeySchema.parse(keyFile());
     expect(Object.keys(JSON.parse(parsed)).sort()).toEqual(["client_email", "private_key"]);
-    expect(readServiceAccountKey(parsed).client_email).toBe("prism-reader@acme-analytics.iam.gserviceaccount.com");
+    expect(readServiceAccountKey(parsed).client_email).toBe("dashboards-reader@acme-analytics.iam.gserviceaccount.com");
   });
 
   it("drops a doctored token_uri: tokens only ever go to Google", () => {
@@ -52,7 +52,7 @@ describe("service account key", () => {
 
   it("shows the account, never the key, as the hint", () => {
     const hint = bigquerySource.credential.hint(serviceAccountKeySchema.parse(keyFile()));
-    expect(hint).toBe("prism-reader@acme-analytics.iam.gserviceaccount.com");
+    expect(hint).toBe("dashboards-reader@acme-analytics.iam.gserviceaccount.com");
   });
 });
 

@@ -2,7 +2,7 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "prism-dev",
+      "name": "opendashboards-dev",
       "runtimeExecutable": "bash",
       "runtimeArgs": [
         "-c",

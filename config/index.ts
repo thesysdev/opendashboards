@@ -6,7 +6,7 @@ import type { Environment, EnvironmentSettings, Settings } from "./settings";
 export { ENVIRONMENTS, type DemoDataset, type Environment, type Settings } from "./settings";
 
 /**
- * Prism's configuration, in one place. The environment follows Next.js's
+ * OpenDashboards' configuration, in one place. The environment follows Next.js's
  * mode: production builds and `next start` run as prod, `next dev` and tests
  * as local. Settings come from common.ts plus that environment's file.
  *
@@ -44,7 +44,7 @@ export function config(): Settings & { env: Environment } {
 
 /** Secrets, from environment variables only. Never logged, never in settings files. */
 export const secrets = {
-  /** Prism's own database. */
+  /** OpenDashboards' own database. */
   databaseUrl: () => process.env.DATABASE_URL,
   /** OpenUI Cloud and Gateway. */
   thesysApiKey: () => process.env.THESYS_API_KEY,

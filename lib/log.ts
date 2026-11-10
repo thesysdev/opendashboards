@@ -18,7 +18,7 @@ export function redact(text: string): string {
  * Logs an error by name, message and the same for each `cause` behind it
  * (a network failure's code, say), plus a `detail` an API gave. Whole error
  * objects can carry request bodies or headers, so they're never logged as is.
- * Each one also counts toward the `prism.error` metric, which Vercel alerts on.
+ * Each one also counts toward the `opendashboards.error` metric, which Vercel alerts on.
  */
 export function logError(context: string, error: unknown): void {
   const parts: string[] = [];
@@ -29,8 +29,8 @@ export function logError(context: string, error: unknown): void {
     rootCause = current;
     current = current instanceof Error ? current.cause : undefined;
   }
-  console.error(`[prism] ${context}: ${redact(parts.join(" ← caused by "))}`);
-  count("prism.error", { context, cause: causeLabel(rootCause) });
+  console.error(`[opendashboards] ${context}: ${redact(parts.join(" ← caused by "))}`);
+  count("opendashboards.error", { context, cause: causeLabel(rootCause) });
 }
 
 /** A low-cardinality name for a failure: a code (`ECONNREFUSED`, `23505`) or the error's name. */

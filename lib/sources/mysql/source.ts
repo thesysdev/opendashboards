@@ -75,7 +75,7 @@ export const mysqlSource: ConnectionSource<MysqlConfig> = {
         return invalid({
           code: "auth_failed",
           field: "password",
-          message: "MySQL didn't accept this user and password. If they're right, the user may not be allowed to log in from Prism's address (check its host part, e.g. 'prism_reader'@'%').",
+          message: "MySQL didn't accept this user and password. If they're right, the user may not be allowed to log in from OpenDashboards' address (check its host part, e.g. 'dashboards_reader'@'%').",
         });
       case "database_not_found":
         return invalid({ code: "database_not_found", field: "database", message: "There's no database with this name on the server." });
@@ -85,7 +85,7 @@ export const mysqlSource: ConnectionSource<MysqlConfig> = {
         return invalid({
           code: "host_blocked",
           field: "host",
-          message: "This host points to a private or reserved address. Prism only connects to databases reachable on the public internet.",
+          message: "This host points to a private or reserved address. OpenDashboards only connects to databases reachable on the public internet.",
         });
       case "host_not_found":
         return invalid({ code: "host_not_found", field: "host", message: "This host name doesn't resolve. Check it for typos." });
@@ -93,13 +93,13 @@ export const mysqlSource: ConnectionSource<MysqlConfig> = {
         return unavailable({
           code: "unreachable",
           field: "host",
-          message: "Couldn't reach the server, or it has no free connections. Check the host and port, and that it accepts connections from Prism.",
+          message: "Couldn't reach the server, or it has no free connections. Check the host and port, and that it accepts connections from OpenDashboards.",
         });
       case "connect_timeout":
         return unavailable({
           code: "connect_timeout",
           field: "host",
-          message: "The server didn't answer in time. Check the host and port, or allowlist Prism's address in your firewall.",
+          message: "The server didn't answer in time. Check the host and port, or allowlist OpenDashboards' address in your firewall.",
         });
       case "query_timeout":
         return unavailable({
@@ -110,7 +110,7 @@ export const mysqlSource: ConnectionSource<MysqlConfig> = {
         return invalid({
           code: "tls_failed",
           field: "sslMode",
-          message: "Couldn't set up an encrypted connection. Prism only connects over TLS. If the server's certificate can't be verified, choose \"Encrypt only\".",
+          message: "Couldn't set up an encrypted connection. OpenDashboards only connects over TLS. If the server's certificate can't be verified, choose \"Encrypt only\".",
         });
       case "read_only":
         return unavailable({ code: "read_only", message: `Queries are read-only. ${error.detail ?? "Only SELECT is allowed."}` });

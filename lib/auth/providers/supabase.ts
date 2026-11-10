@@ -3,17 +3,17 @@ import { createRemoteJWKSet, errors, jwtVerify, type JWTVerifyGetKey } from "jos
 import type { AuthProvider } from "../provider";
 
 /**
- * A gateway in front of Prism signs users in with Supabase and forwards their
+ * A gateway in front of OpenDashboards signs users in with Supabase and forwards their
  * access token. The token is verified against Supabase's public keys, so
  * identity is never taken from an unsigned header. Only Deployment Protection
- * keeps requests from reaching Prism without the gateway.
+ * keeps requests from reaching OpenDashboards without the gateway.
  */
 
 export const AUTHORIZATION_HEADER = "authorization";
 
 const BEARER_PATTERN = /^Bearer ([^\s]+)$/i;
 
-/** Asymmetric only: Prism must never hold anything that can mint a token. */
+/** Asymmetric only: OpenDashboards must never hold anything that can mint a token. */
 const TOKEN_ALGORITHMS = ["ES256", "RS256"];
 
 const authBase = (supabaseUrl: string) => `${supabaseUrl.replace(/\/+$/, "")}/auth/v1`;
@@ -32,7 +32,7 @@ export function supabaseProvider(supabaseUrl: string, keys: JWTVerifyGetKey = sh
         const { payload } = await jwtVerify(token, keys, { issuer, audience: "authenticated", algorithms: TOKEN_ALGORITHMS });
         if (payload.role !== "authenticated" || payload.is_anonymous === true) return { ok: false, reason: "invalid" };
         if (typeof payload.sub !== "string" || !payload.sub) return { ok: false, reason: "invalid" };
-        // Every Prism user has an email; a token without one (a phone-only sign-in, say) isn't accepted.
+        // Every OpenDashboards user has an email; a token without one (a phone-only sign-in, say) isn't accepted.
         if (typeof payload.email !== "string" || !payload.email) return { ok: false, reason: "invalid" };
         return { ok: true, user: { id: payload.sub, email: payload.email } };
       } catch (error) {

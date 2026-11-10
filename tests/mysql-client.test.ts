@@ -71,8 +71,8 @@ describe("toMysqlError", () => {
 
 /*
  * Against real servers, when they're running locally:
- *   docker run -d --name prism-mysql-test -e MYSQL_ROOT_PASSWORD=rootpw -e MYSQL_DATABASE=shop -p 127.0.0.1:33306:3306 mysql:8.4
- *   docker run -d --name prism-mariadb-test -e MARIADB_ROOT_PASSWORD=rootpw -e MARIADB_DATABASE=shop -p 127.0.0.1:33307:3306 mariadb:11.4 --ssl=ON
+ *   docker run -d --name opendashboards-mysql-test -e MYSQL_ROOT_PASSWORD=rootpw -e MYSQL_DATABASE=shop -p 127.0.0.1:33306:3306 mysql:8.4
+ *   docker run -d --name opendashboards-mariadb-test -e MARIADB_ROOT_PASSWORD=rootpw -e MARIADB_DATABASE=shop -p 127.0.0.1:33307:3306 mariadb:11.4 --ssl=ON
  *   MYSQL_TEST_PORTS=33306,33307 pnpm test tests/mysql-client.test.ts
  * They connect directly: the address guard would (rightly) refuse localhost.
  */

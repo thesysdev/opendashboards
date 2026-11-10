@@ -20,7 +20,7 @@ const queryTool: SourceTool<BigqueryConfig, { sql: string; params?: BigqueryPara
   description:
     "Run one read-only SELECT in BigQuery (GoogleSQL: backtick-quoted `project.dataset.table`, DATE_TRUNC, " +
     "TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 30 DAY), APPROX_COUNT_DISTINCT). Pass filter values as params and " +
-    "reference them as @name. BigQuery bills by bytes scanned and Prism refuses queries over a per-query limit: " +
+    "reference them as @name. BigQuery bills by bytes scanned and OpenDashboards refuses queries over a per-query limit: " +
     "select only the columns you need and filter on partition columns (often a date). " +
     "Returns { columns, rows: [{ column: value }], truncated }.",
   parameters: z.object({

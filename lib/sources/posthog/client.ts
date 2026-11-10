@@ -61,7 +61,7 @@ export async function runHogQLQuery(
           Authorization: `Bearer ${target.apiKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ query: { kind: "HogQLQuery", query }, name: "prism" }),
+        body: JSON.stringify({ query: { kind: "HogQLQuery", query }, name: "opendashboards" }),
         redirect: "error",
         cache: "no-store",
         signal,

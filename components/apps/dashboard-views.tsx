@@ -17,7 +17,7 @@ export function NoDashboards({ hasPendingPrompt }: { hasPendingPrompt: boolean }
       <p className="text-sm font-semibold">Build your first dashboard</p>
       <p className="max-w-sm text-sm text-muted-foreground">
         {hasPendingPrompt
-          ? "Prism is working on your prompt in the Build panel. The dashboards it builds show up here, and you can keep refining them."
+          ? "OpenDashboards is working on your prompt in the Build panel. The dashboards it builds show up here, and you can keep refining them."
           : "Describe what you want to see in the Build panel. Dashboards show up here, and you can keep refining them by asking."}
       </p>
       {!buildPanel.open && (

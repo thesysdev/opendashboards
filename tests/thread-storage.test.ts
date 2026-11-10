@@ -25,7 +25,7 @@ function fakeFetch(status = 200, body: unknown = {}) {
 }
 
 describe("scopeStorageToApp", () => {
-  it("lists threads from Prism, not from Cloud's flat list", async () => {
+  it("lists threads from OpenDashboards, not from Cloud's flat list", async () => {
     const cloud = fakeCloud();
     const fetchImpl = fakeFetch(200, { threads: [], nextCursor: "abc" });
     const storage = scopeStorageToApp(cloud, APP, { fetch: fetchImpl });

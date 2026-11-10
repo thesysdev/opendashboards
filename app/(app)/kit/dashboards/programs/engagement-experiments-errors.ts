@@ -1,5 +1,5 @@
 // Mock dashboards (static OpenUI Lang) for the mobile engagement, experiments
-// and staging smoke-check apps, written against @prism/dashboard-kit.
+// and staging smoke-check apps, written against @opendashboards/dashboard-kit.
 // Static data; "today" is Fri Nov 6, 2026.
 
 import type { KitProgram } from "@/app/(app)/kit/program";

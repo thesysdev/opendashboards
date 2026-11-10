@@ -76,7 +76,7 @@ export const postgresSource: ConnectionSource<PostgresConfig> = {
           error: {
             code: "auth_failed",
             field: "password",
-            message: "Postgres didn't accept this user and password. If they're right, the server may not allow logins from Prism's address.",
+            message: "Postgres didn't accept this user and password. If they're right, the server may not allow logins from OpenDashboards' address.",
           },
         };
       case "database_not_found":
@@ -89,7 +89,7 @@ export const postgresSource: ConnectionSource<PostgresConfig> = {
           error: {
             code: "host_blocked",
             field: "host",
-            message: "This host points to a private or reserved address. Prism only connects to databases reachable on the public internet.",
+            message: "This host points to a private or reserved address. OpenDashboards only connects to databases reachable on the public internet.",
           },
         };
       case "host_not_found":
@@ -100,7 +100,7 @@ export const postgresSource: ConnectionSource<PostgresConfig> = {
           error: {
             code: "unreachable",
             field: "host",
-            message: "Couldn't reach the server. Check the host and port, and that the database accepts connections from Prism.",
+            message: "Couldn't reach the server. Check the host and port, and that the database accepts connections from OpenDashboards.",
           },
         };
       case "timeout":
@@ -109,7 +109,7 @@ export const postgresSource: ConnectionSource<PostgresConfig> = {
           error: {
             code: "timeout",
             field: "host",
-            message: "The server didn't answer in time. Check the host and port, or allowlist Prism's address in your firewall.",
+            message: "The server didn't answer in time. Check the host and port, or allowlist OpenDashboards' address in your firewall.",
           },
         };
       case "tls_failed":

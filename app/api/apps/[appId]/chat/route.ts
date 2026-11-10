@@ -72,16 +72,16 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
         await runner.done();
         translate.finish();
         emit({ type: EventType.RUN_FINISHED, threadId, runId } as BaseEvent);
-        count("prism.chat.turn", { outcome: "completed", cause: "none" });
+        count("opendashboards.chat.turn", { outcome: "completed", cause: "none" });
       } catch (error) {
         if (request.signal.aborted) {
-          count("prism.chat.turn", { outcome: "cancelled", cause: "none" });
+          count("opendashboards.chat.turn", { outcome: "cancelled", cause: "none" });
           controller.close();
           return; // Cancelled: save nothing.
         }
         logError("chat.turn", error);
         const failure = turnFailure(error);
-        count("prism.chat.turn", { outcome: "failed", cause: failure.cause });
+        count("opendashboards.chat.turn", { outcome: "failed", cause: failure.cause });
         translate.finish();
         emit({ type: EventType.RUN_ERROR, message: failure.message } as BaseEvent);
         controller.close();
@@ -118,7 +118,7 @@ function turnFailure(error: unknown): { cause: string; message: string } {
     if (status === 429) {
       return { cause: "rate_limited", message: "OpenUI Gateway is rate-limiting requests right now. Try again in a minute." };
     }
-    if (status === 401 || status === 403) return { cause: "key_refused", message: "OpenUI Gateway refused Prism's API key." };
+    if (status === 401 || status === 403) return { cause: "key_refused", message: "OpenUI Gateway refused OpenDashboards' API key." };
     if (status === 402) return { cause: "out_of_credits", message: "OpenUI Gateway says this account is out of credits." };
     if (typeof status === "number" && status >= 500) {
       return { cause: "upstream_error", message: `OpenUI Gateway had an error (HTTP ${status}). Try again.` };

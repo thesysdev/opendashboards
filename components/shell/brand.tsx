@@ -2,7 +2,7 @@ import Image from "next/image";
 
 import { cn } from "@/lib/utils";
 
-/** "Shiro / Prism": the OpenUI mascot, then the product name. */
+/** "Shiro / Dashboards": the OpenUI mascot, then the product. */
 export function Brand({ className }: { className?: string }) {
   return (
     <span className={cn("flex items-center gap-2 text-sm font-medium", className)}>
@@ -10,7 +10,7 @@ export function Brand({ className }: { className?: string }) {
       <span className="text-muted-foreground" aria-hidden>
         /
       </span>
-      Prism
+      Dashboards
     </span>
   );
 }

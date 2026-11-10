@@ -16,7 +16,7 @@ const baseConfig: NextConfig = {
     agentFeedback: true,
   },
   // The dashboard kit is a workspace package consumed from source.
-  transpilePackages: ["@prism/dashboard-kit"],
+  transpilePackages: ["@opendashboards/dashboard-kit"],
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {
@@ -32,7 +32,7 @@ const baseConfig: NextConfig = {
 };
 
 /**
- * Validates Prism's configuration before Next.js uses this one. A throw here
+ * Validates OpenDashboards' configuration before Next.js uses this one. A throw here
  * stops `next dev`, `next build` and `next start` before anything is served
  * (a throw in instrumentation.ts only fails each request). Settings files are
  * checked in every phase; secrets only where a server starts.

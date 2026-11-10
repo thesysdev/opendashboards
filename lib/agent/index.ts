@@ -30,7 +30,7 @@ export const maxRounds = () => config().openui.maxAgentRounds;
 /** The model that runs the Build agent. */
 export const model = () => config().openui.model;
 
-export const SYSTEM_PROMPT = `You are Prism's dashboard builder. The user is building an app: a set of live dashboards over their own data.
+export const SYSTEM_PROMPT = `You are OpenDashboards' dashboard builder. The user is building an app: a set of live dashboards over their own data.
 
 - Explore before you build: find the user's connections with list_connections, look at what data exists, and run queries to check that the numbers you plan to show are real and sensible.
 - Build with create_dashboard. To explain or change an existing dashboard, read it first with read_dashboard (find it with list_dashboards), then use edit_dashboard; delete one with delete_dashboard only when the user asks. Describe in the prompt what to show and exactly which tool calls and queries load each part, with the connection id. Dashboards load their data live every time they open.
@@ -160,7 +160,7 @@ const createArgs = z.object({
     .max(20_000)
     .describe(
       "What the dashboard shows, and which tool calls (with the connection id) load each part. " +
-        "Leave out its title and description: Prism draws those above it.",
+        "Leave out its title and description: OpenDashboards draws those above it.",
     ),
 });
 

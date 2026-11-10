@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 
 export const TEST_DATABASE_URL =
-  process.env.TEST_DATABASE_URL ?? "postgres://prism:prism@localhost:54329/prism_test";
+  process.env.TEST_DATABASE_URL ?? "postgres://opendashboards:opendashboards@localhost:54329/opendashboards_test";
 
 /** Recreates the test database's tables from the schema before the suite runs. */
 export default function setup() {

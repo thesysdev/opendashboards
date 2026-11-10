@@ -4,7 +4,7 @@ import type { ChatStorage, Thread, ThreadStorage } from "@openuidev/react-headle
  * Scopes OpenUI Cloud chat storage to one app, for Agent Interface.
  *
  * Cloud keeps one flat list of a user's conversations. This wrapper reads the
- * app's list from Prism (`/api/apps/:appId/threads`) and keeps the mapping in
+ * app's list from OpenDashboards (`/api/apps/:appId/threads`) and keeps the mapping in
  * step with every create, rename and delete. Messages are still read straight
  * from Cloud.
  *

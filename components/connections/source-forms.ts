@@ -50,13 +50,13 @@ const NO_PASSWORD_OK: FieldSpec = {
 export const SOURCE_FORMS: Record<"mysql" | "clickhouse" | "bigquery", FormSpec> = {
   mysql: {
     title: "Connect MySQL",
-    description: "Prism runs read-only queries against your MySQL or MariaDB database to build dashboards.",
+    description: "OpenDashboards runs read-only queries against your MySQL or MariaDB database to build dashboards.",
     fields: [
       { name: "name", label: "Name", kind: "text", placeholder: "Production MySQL" },
       { name: "host", label: "Host", kind: "text", placeholder: "db.example.com" },
       { name: "port", label: "Port", kind: "number", initial: String(MYSQL_DEFAULT_PORT), half: true },
       { name: "database", label: "Database", kind: "text", placeholder: "shop", half: true },
-      { name: "user", label: "User", kind: "text", placeholder: "prism_reader" },
+      { name: "user", label: "User", kind: "text", placeholder: "dashboards_reader" },
       { name: "sslMode", label: "SSL", kind: "ssl", initial: "verify-full" },
     ],
     credential: NO_PASSWORD_OK,
@@ -69,15 +69,15 @@ export const SOURCE_FORMS: Record<"mysql" | "clickhouse" | "bigquery", FormSpec>
     },
     help: {
       summary: "Use a read-only user (recommended)",
-      intro: "Prism only reads, but a user that can't write is safer. Run this as an admin, then connect as prism_reader:",
-      code: `CREATE USER 'prism_reader'@'%' IDENTIFIED BY '…' REQUIRE SSL;
-GRANT SELECT, SHOW VIEW ON your_db.* TO 'prism_reader'@'%';`,
+      intro: "OpenDashboards only reads, but a user that can't write is safer. Run this as an admin, then connect as dashboards_reader:",
+      code: `CREATE USER 'dashboards_reader'@'%' IDENTIFIED BY '…' REQUIRE SSL;
+GRANT SELECT, SHOW VIEW ON your_db.* TO 'dashboards_reader'@'%';`,
     },
     secretNoun: "passwords",
   },
   clickhouse: {
     title: "Connect ClickHouse",
-    description: "Prism runs read-only queries against ClickHouse over HTTPS to build dashboards.",
+    description: "OpenDashboards runs read-only queries against ClickHouse over HTTPS to build dashboards.",
     fields: [
       { name: "name", label: "Name", kind: "text", placeholder: "Events warehouse" },
       { name: "host", label: "Host", kind: "text", placeholder: "abc123.us-east-1.aws.clickhouse.cloud" },
@@ -89,7 +89,7 @@ GRANT SELECT, SHOW VIEW ON your_db.* TO 'prism_reader'@'%';`,
         half: true,
       },
       { name: "database", label: "Database", kind: "text", initial: "default", half: true },
-      { name: "user", label: "User", kind: "text", placeholder: "prism_reader" },
+      { name: "user", label: "User", kind: "text", placeholder: "dashboards_reader" },
       { name: "sslMode", label: "SSL", kind: "ssl", initial: "verify-full" },
     ],
     credential: NO_PASSWORD_OK,
@@ -98,15 +98,15 @@ GRANT SELECT, SHOW VIEW ON your_db.* TO 'prism_reader'@'%';`,
     help: {
       summary: "Use a read-only user (recommended)",
       intro:
-        "Prism runs every query read-only with its own time and row limits, but a user that can only SELECT is safer. Run this as an admin (no readonly profile setting: Prism sets it per query):",
-      code: `CREATE USER prism_reader IDENTIFIED BY '…';
-GRANT SELECT ON your_db.* TO prism_reader;`,
+        "OpenDashboards runs every query read-only with its own time and row limits, but a user that can only SELECT is safer. Run this as an admin (no readonly profile setting: OpenDashboards sets it per query):",
+      code: `CREATE USER dashboards_reader IDENTIFIED BY '…';
+GRANT SELECT ON your_db.* TO dashboards_reader;`,
     },
     secretNoun: "passwords",
   },
   bigquery: {
     title: "Connect BigQuery",
-    description: "Prism runs read-only queries in your Google Cloud project to build dashboards. Queries are billed to that project.",
+    description: "OpenDashboards runs read-only queries in your Google Cloud project to build dashboards. Queries are billed to that project.",
     fields: [
       { name: "name", label: "Name", kind: "text", placeholder: "Analytics warehouse" },
       { name: "projectId", label: "Project ID", kind: "text", placeholder: "my-project-123", half: true, description: "Runs and pays for the queries." },
@@ -130,8 +130,8 @@ GRANT SELECT ON your_db.* TO prism_reader;`,
       summary: "How to create a read-only service account",
       intro: "In the Google Cloud console:",
       steps: [
-        "IAM & Admin → Service accounts → Create service account, e.g. prism-reader.",
-        "Grant it BigQuery Job User (to run queries) and BigQuery Data Viewer (to read data), on the project or only on the datasets Prism should see.",
+        "IAM & Admin → Service accounts → Create service account, e.g. dashboards-reader.",
+        "Grant it BigQuery Job User (to run queries) and BigQuery Data Viewer (to read data), on the project or only on the datasets OpenDashboards should see.",
         "Open the account → Keys → Add key → Create new key → JSON, and paste or upload the file here.",
       ],
     },

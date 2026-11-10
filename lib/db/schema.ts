@@ -123,7 +123,7 @@ export const dashboards = pgTable(
     /** OpenUI Cloud's artifact id (art_…). */
     artifactId: text("artifact_id").notNull().unique(),
     /**
-     * The dashboard's title and one-line description, drawn above it. Prism
+     * The dashboard's title and one-line description, drawn above it. OpenDashboards
      * keeps them, not the program in Cloud: the agent sets them when it
      * creates the dashboard, and only people change them afterwards.
      */

@@ -83,12 +83,12 @@ describe("ClickHouse errors", () => {
 /*
  * The settings above, against a real server (plain HTTP, so it goes around
  * the HTTPS client; the settings are what's under test):
- *   docker run -d --name prism-clickhouse-test -e CLICKHOUSE_PASSWORD=rootpw -p 127.0.0.1:38123:8123 clickhouse/clickhouse-server:25.8
+ *   docker run -d --name opendashboards-clickhouse-test -e CLICKHOUSE_PASSWORD=rootpw -p 127.0.0.1:38123:8123 clickhouse/clickhouse-server:25.8
  *   CLICKHOUSE_TEST_PORT=38123 pnpm test tests/clickhouse-client.test.ts
  */
 const localPort = Number(process.env.CLICKHOUSE_TEST_PORT ?? 0);
 
-describe.skipIf(!localPort)("Prism's settings on a real ClickHouse server", () => {
+describe.skipIf(!localPort)("OpenDashboards' settings on a real ClickHouse server", () => {
   async function run(sql: string, options: { maxRows?: number; timeoutMs?: number; params?: Record<string, string | number> } = {}) {
     const url = clickhouseUrl({ host: "localhost", port: localPort, database: "default" }, { maxRows: options.maxRows ?? 100, timeoutMs: options.timeoutMs ?? 10_000, params: options.params });
     const response = await fetch(`http://127.0.0.1:${localPort}/${url.search}`, {
@@ -135,7 +135,7 @@ describe.skipIf(!localPort)("Prism's settings on a real ClickHouse server", () =
   it("works for users an admin locked down in their profile", async () => {
     const admin = (sql: string) =>
       fetch(`http://127.0.0.1:${localPort}/`, { method: "POST", headers: { "X-ClickHouse-User": "default", "X-ClickHouse-Key": "rootpw" }, body: sql });
-    for (const [user, level] of [["prism_ro1", 1], ["prism_ro2", 2]] as const) {
+    for (const [user, level] of [["dashboards_ro1", 1], ["dashboards_ro2", 2]] as const) {
       await admin(`CREATE USER IF NOT EXISTS ${user} IDENTIFIED BY 'pw' SETTINGS readonly = ${level}`);
       await admin(`GRANT SELECT ON default.* TO ${user}`);
     }
@@ -145,10 +145,10 @@ describe.skipIf(!localPort)("Prism's settings on a real ClickHouse server", () =
       return { status: response.status, body: await response.text() };
     };
     // What the client tries first fails with "Cannot modify …"; the fallback it picks works.
-    expect((await as("prism_ro1", "full")).body).toMatch(/Cannot modify 'max_\w+' setting/);
-    expect((await as("prism_ro1", "profile-readonly-1")).status).toBe(200);
-    expect((await as("prism_ro2", "full")).body).toMatch(/Cannot modify 'readonly' setting/);
-    expect((await as("prism_ro2", "profile-readonly-2")).status).toBe(200);
+    expect((await as("dashboards_ro1", "full")).body).toMatch(/Cannot modify 'max_\w+' setting/);
+    expect((await as("dashboards_ro1", "profile-readonly-1")).status).toBe(200);
+    expect((await as("dashboards_ro2", "full")).body).toMatch(/Cannot modify 'readonly' setting/);
+    expect((await as("dashboards_ro2", "profile-readonly-2")).status).toBe(200);
   });
 
   it("binds typed parameters", async () => {

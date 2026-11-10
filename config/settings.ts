@@ -1,5 +1,5 @@
 /**
- * Every setting Prism has. common.ts sets the ones that are the same
+ * Every setting OpenDashboards has. common.ts sets the ones that are the same
  * everywhere; local.ts and prod.ts set the ones that differ. index.ts picks
  * by Next.js's mode and checks them. Secrets are never here: they stay in
  * environment variables, read in index.ts.
@@ -10,9 +10,9 @@ export const ENVIRONMENTS = ["local", "prod"] as const;
 export type Environment = (typeof ENVIRONMENTS)[number];
 
 /**
- * A sample database Prism offers to users who have no data of their own
+ * A sample database OpenDashboards offers to users who have no data of their own
  * yet. Users install it (a connection row of theirs that points here) and
- * uninstall it. Every demo dataset is a database on Prism's own Neon
+ * uninstall it. Every demo dataset is a database on OpenDashboards' own Neon
  * project, read through one read-only role whose password is the
  * DEMO_DATABASE_PASSWORD secret.
  */
@@ -69,7 +69,7 @@ export type CommonSettings = {
     /** Checking a connection when it's added or retested. */
     checkTimeoutMs: number;
     maxRows: { agent: number; dashboard: number };
-    /** The largest response Prism will read from a ClickHouse server. */
+    /** The largest response OpenDashboards will read from a ClickHouse server. */
     maxResponseBytes: number;
   };
   bigquery: {
@@ -83,7 +83,7 @@ export type CommonSettings = {
      */
     maxBytesBilled: number;
   };
-  /** Sample datasets users can install to try Prism without data of their own. */
+  /** Sample datasets users can install to try OpenDashboards without data of their own. */
   demoDatasets: DemoDataset[];
 };
 
@@ -97,7 +97,7 @@ export type EnvironmentSettings = {
      */
     devUser: { id: string; email: string } | null;
     /**
-     * The host people use Prism at, when a gateway sits in front of it.
+     * The host people use OpenDashboards at, when a gateway sits in front of it.
      * Cross-site checks accept it alongside the request's own host.
      */
     publicHost: string | null;

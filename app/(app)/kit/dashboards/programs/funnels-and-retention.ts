@@ -1,5 +1,5 @@
 // Mock dashboards for the "Signup funnel", "Retention cohorts" and "Onboarding health" apps,
-// written in OpenUI Lang against @prism/dashboard-kit. Static data only; weekly series end with the
+// written in OpenUI Lang against @opendashboards/dashboard-kit. Static data only; weekly series end with the
 // week of Oct 26, 2026 (data through Nov 1). Numbers are internally consistent across dashboards.
 
 import type { KitProgram } from "@/app/(app)/kit/program";

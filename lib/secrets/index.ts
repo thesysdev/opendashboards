@@ -44,5 +44,5 @@ let warned = false;
 function warnPlaintextOnce() {
   if (warned) return;
   warned = true;
-  console.warn("[prism] Secrets are stored unencrypted (no KMS_KEY_ID). Local development only.");
+  console.warn("[opendashboards] Secrets are stored unencrypted (no KMS_KEY_ID). Local development only.");
 }

@@ -1,22 +1,23 @@
-# Local Postgres for Prism's own data (connections, apps).
+# Local Postgres for OpenDashboards' own data (connections, apps).
 # Start: docker compose up -d
+name: opendashboards
 services:
   postgres:
     image: postgres:17-alpine
     environment:
-      POSTGRES_USER: prism
-      POSTGRES_PASSWORD: prism
-      POSTGRES_DB: prism
+      POSTGRES_USER: opendashboards
+      POSTGRES_PASSWORD: opendashboards
+      POSTGRES_DB: opendashboards
     ports:
       - "54329:5432"
     volumes:
-      - prism-postgres:/var/lib/postgresql/data
+      - opendashboards-postgres:/var/lib/postgresql/data
       - ./db/init:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U prism -d prism"]
+      test: ["CMD-SHELL", "pg_isready -U opendashboards -d opendashboards"]
       interval: 2s
       timeout: 3s
       retries: 20
 
 volumes:
-  prism-postgres:
+  opendashboards-postgres:

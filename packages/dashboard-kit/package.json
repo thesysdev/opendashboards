@@ -1,5 +1,5 @@
 {
-  "name": "@prism/dashboard-kit",
+  "name": "@opendashboards/dashboard-kit",
   "version": "0.0.1",
   "description": "An OpenUI Lang component library for polished analytics dashboards: KPIs with period comparison, time series, funnels, cohorts, tables and filters.",
   "license": "MIT",

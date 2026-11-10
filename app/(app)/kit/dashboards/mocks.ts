@@ -7,7 +7,7 @@ import { featureAdoptionSearch, marketingAttribution } from "./programs/marketin
 
 /**
  * Hand-written dashboards with realistic static data, showing how real
- * dashboards built with @prism/dashboard-kit look. Development only (/kit).
+ * dashboards built with @opendashboards/dashboard-kit look. Development only (/kit).
  */
 const APPS: { app: string; dashboards: Record<string, KitProgram> }[] = [
   { app: "Growth metrics", dashboards: growthMetrics },

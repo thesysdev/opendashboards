@@ -15,7 +15,7 @@ const PROD_SECRETS = {
   DATABASE_URL: "postgres://db",
   THESYS_API_KEY: "key",
   KMS_KEY_ID: "kms",
-  KMS_ROLE_ARN: "arn:aws:iam::1:role/prism",
+  KMS_ROLE_ARN: "arn:aws:iam::1:role/opendashboards",
   SUPABASE_URL: "https://project.supabase.co",
   DEMO_DATABASE_PASSWORD: "demo",
 };

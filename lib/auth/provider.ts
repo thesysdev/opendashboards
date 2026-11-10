@@ -1,11 +1,11 @@
 /**
- * How Prism learns who a request is for. Each way of signing in is a provider;
+ * How OpenDashboards learns who a request is for. Each way of signing in is a provider;
  * `proxy.ts` and `requireUser()` only ever talk to this interface.
  */
 
 /**
  * Who a request is for. A provider promises `id` is stable, unique and
- * non-empty, and that every user has an email. Prism doesn't second-guess
+ * non-empty, and that every user has an email. OpenDashboards doesn't second-guess
  * either. Data is keyed by `id`, never by email: emails change.
  */
 export type AuthUser = { id: string; email: string };

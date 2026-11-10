@@ -35,11 +35,11 @@ export const common: CommonSettings = {
         "(daily_sales_by_region, monthly_business_kpis, customer_summary, target_attainment, …). " +
         "Prefer the analytics views for standard metrics and use the retail tables for anything they don't cover.",
       postgres: {
-        // Neon's pooler: Prism opens a connection per query.
+        // Neon's pooler: OpenDashboards opens a connection per query.
         host: "ep-wispy-hill-bbojf1nh-pooler.c-15.us-east-1.aws.neon.tech",
         port: 5432,
         database: "retail_sales",
-        user: "prism_demo_reader",
+        user: "opendashboards_demo_reader",
         sslMode: "verify-full",
       },
       prompts: [

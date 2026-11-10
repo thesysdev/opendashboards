@@ -9,7 +9,7 @@ export type ClickhouseErrorCode =
   | "unreachable"
   | "timeout"
   | "tls_failed"
-  /** The query tried to change something, or used something Prism doesn't allow. */
+  /** The query tried to change something, or used something OpenDashboards doesn't allow. */
   | "read_only"
   /** The user may not read a table or use a function. */
   | "access_denied"
@@ -17,7 +17,7 @@ export type ClickhouseErrorCode =
   | "too_heavy"
   /** Too many queries at once, or a quota ran out. */
   | "rate_limited"
-  /** The response was bigger than Prism reads. */
+  /** The response was bigger than OpenDashboards reads. */
   | "too_large"
   /** The SQL itself failed: syntax, unknown table, column or function, type errors…; `detail` says why. */
   | "bad_query"

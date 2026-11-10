@@ -5,7 +5,7 @@
 import { execFileSync } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
 
-execFileSync("pnpm", ["--filter", "@prism/dashboard-kit", "build"], { stdio: "ignore" });
+execFileSync("pnpm", ["--filter", "@opendashboards/dashboard-kit", "build"], { stdio: "ignore" });
 const { library } = await import(`../packages/dashboard-kit/dist/index.mjs?t=${Date.now()}`);
 
 mkdirSync("lib/dashboards/generated", { recursive: true });

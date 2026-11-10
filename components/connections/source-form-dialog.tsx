@@ -66,7 +66,7 @@ export function SourceFormDialog(props: Props) {
     setPasted(text);
     if (!spec.paste || !text.trim()) return setPasteNote(null);
     const parsed = spec.paste.parse(text);
-    if (!parsed) return setPasteNote("That isn't a connection string Prism recognizes.");
+    if (!parsed) return setPasteNote("That isn't a connection string OpenDashboards recognizes.");
     setValues((current) => ({ ...current, ...Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v)])) }));
     setFieldErrors({});
     setPasteNote("Filled in the fields below. Check them, then test.");

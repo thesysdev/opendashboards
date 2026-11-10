@@ -1,5 +1,5 @@
 /** Every dashboard-kit component in one program, for visual review on /kit. */
-export const GALLERY = { title: "Component gallery", description: "Every component in the Prism dashboard kit with realistic data.", source: String.raw`root = Dashboard([filters, s1, s2, s3, s6, s4, s5])
+export const GALLERY = { title: "Component gallery", description: "Every component in the OpenDashboards dashboard kit with realistic data.", source: String.raw`root = Dashboard([filters, s1, s2, s3, s6, s4, s5])
 $period = "30d"
 $region = "all"
 filters = FilterBar([PeriodPicker("period", [{value: "7d", label: "7D"}, {value: "30d", label: "30D"}, {value: "90d", label: "90D"}], $period), ChipFilter("region", [{value: "all", label: "All regions"}, {value: "na", label: "North America"}, {value: "eu", label: "Europe"}], $region), SelectFilter("plan", "Plan", [{value: "all", label: "All plans"}, {value: "team", label: "Team"}, {value: "ent", label: "Enterprise"}]), MultiSelectFilter("channels", "Channel", [{value: "search", label: "Paid search"}, {value: "social", label: "Paid social"}, {value: "email", label: "Email"}, {value: "referral", label: "Referral"}, {value: "organic", label: "Organic"}], $channels), SearchFilter("q", "Search campaigns", $q), CompareToggle("Previous period")])

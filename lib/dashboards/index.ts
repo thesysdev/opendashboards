@@ -102,7 +102,7 @@ export async function readDashboard(
 export type DeleteResult = { ok: true } | { ok: false; reason: "not_found" | "cloud_failed" };
 
 /**
- * Deletes one of an app's dashboards: in OpenUI Cloud first, then Prism's
+ * Deletes one of an app's dashboards: in OpenUI Cloud first, then OpenDashboards'
  * record of it. If Cloud fails, the record stays, so the sidebar never hides
  * a dashboard that still exists.
  */
