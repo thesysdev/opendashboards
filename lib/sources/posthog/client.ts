@@ -110,8 +110,13 @@ async function classify(response: Response): Promise<PostHogErrorCode> {
       return "rate_limited";
     case 400:
       return "bad_query";
-    default:
-      return response.status >= 500 ? "unavailable" : "unexpected";
+    default: {
+      if (response.status < 500) return "unexpected";
+      // A query that ran out of time comes back as a 504 too, and is the
+      // query's problem, not PostHog being down.
+      const { detail } = await errorBody(response);
+      return /max execution time|timed? ?out/i.test(detail) ? "timeout" : "unavailable";
+    }
   }
 }
 

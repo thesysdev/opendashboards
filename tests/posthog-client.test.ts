@@ -66,6 +66,9 @@ describe("error classification", () => {
     expect(await codeFor(respond(404, {}))).toBe("project_not_found");
     expect(await codeFor(respond(429, {}))).toBe("rate_limited");
     expect(await codeFor(respond(502, {}))).toBe("unavailable");
+    const slow = "Query has hit the max execution time before completing. See our docs for how to improve your query performance.";
+    expect(await codeFor(respond(504, { detail: slow }))).toBe("timeout");
+    expect(await codeFor(respond(504, {}))).toBe("unavailable");
     // 400 is a query PostHog couldn't run; its detail is kept for the query's author.
     expect(await codeFor(respond(400, { detail: "Unknown table" }))).toBe("bad_query");
     expect(await codeFor(respond(418, {}))).toBe("unexpected");
