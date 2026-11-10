@@ -15,7 +15,7 @@ pnpm dev
 ```
 
 Without `SUPABASE_URL`, every request acts as the dev user in `config/local.ts`;
-change `auth.devUserId` there to act as someone else. Without `KMS_KEY_ID`, API keys are stored
+change `auth.devUser` there to act as someone else. Without `KMS_KEY_ID`, API keys are stored
 unencrypted. Both fallbacks only work outside production.
 
 ## Tests

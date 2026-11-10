@@ -3,8 +3,12 @@
  * `proxy.ts` and `requireUser()` only ever talk to this interface.
  */
 
-/** A provider promises `id` is stable, unique and non-empty. Prism doesn't second-guess it. */
-export type AuthUser = { id: string; email: string | null };
+/**
+ * Who a request is for. A provider promises `id` is stable, unique and
+ * non-empty, and that every user has an email. Prism doesn't second-guess
+ * either. Data is keyed by `id`, never by email: emails change.
+ */
+export type AuthUser = { id: string; email: string };
 
 export type AuthOutcome =
   | { ok: true; user: AuthUser }

@@ -95,7 +95,7 @@ export type EnvironmentSettings = {
      * null: every request must come through the gateway, with a verified
      * token. Local only.
      */
-    devUserId: string | null;
+    devUser: { id: string; email: string } | null;
     /**
      * The host people use Prism at, when a gateway sits in front of it.
      * Cross-site checks accept it alongside the request's own host.

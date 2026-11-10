@@ -32,8 +32,9 @@ export function supabaseProvider(supabaseUrl: string, keys: JWTVerifyGetKey = sh
         const { payload } = await jwtVerify(token, keys, { issuer, audience: "authenticated", algorithms: TOKEN_ALGORITHMS });
         if (payload.role !== "authenticated" || payload.is_anonymous === true) return { ok: false, reason: "invalid" };
         if (typeof payload.sub !== "string" || !payload.sub) return { ok: false, reason: "invalid" };
-        const email = typeof payload.email === "string" && payload.email ? payload.email : null;
-        return { ok: true, user: { id: payload.sub, email } };
+        // Every Prism user has an email; a token without one (a phone-only sign-in, say) isn't accepted.
+        if (typeof payload.email !== "string" || !payload.email) return { ok: false, reason: "invalid" };
+        return { ok: true, user: { id: payload.sub, email: payload.email } };
       } catch (error) {
         // No usable key set (or none in time) says nothing about the token.
         if (error instanceof errors.JWKSTimeout || error instanceof errors.JWKSInvalid) return { ok: false, reason: "unavailable" };

@@ -7,6 +7,8 @@ import { AUTHORIZATION_HEADER, supabaseProvider } from "@/lib/auth/providers/sup
 
 const SUPABASE_URL = "https://project.supabase.co";
 const USER = "6f1c2d3e-0000-4000-8000-000000000001";
+const EMAIL = "ada@example.com";
+const DEV = { id: "dev-user", email: "user@example.dev" };
 const headers = (values: Record<string, string>) => new Headers(values);
 
 type Keys = Awaited<ReturnType<typeof generateKeyPair>>;
@@ -24,7 +26,7 @@ type TokenOptions = {
 };
 
 function sign({ claims, issuer, audience, subject, expires, signWith }: TokenOptions = {}) {
-  return new SignJWT({ role: "authenticated", ...claims })
+  return new SignJWT({ role: "authenticated", email: EMAIL, ...claims })
     .setProtectedHeader({ alg: "ES256", kid: "k1" })
     .setIssuer(issuer ?? `${SUPABASE_URL}/auth/v1`)
     .setAudience(audience ?? "authenticated")
@@ -45,10 +47,10 @@ beforeAll(async () => {
 });
 
 describe("getAuthProvider", () => {
-  const prod = { environment: "prod" as const, devUserId: null, supabaseUrl: SUPABASE_URL };
+  const prod = { environment: "prod" as const, devUser: null, supabaseUrl: SUPABASE_URL };
 
   it("uses Supabase when it's configured, even locally", async () => {
-    const local = getAuthProvider({ ...prod, environment: "local", devUserId: "dev-user" });
+    const local = getAuthProvider({ ...prod, environment: "local", devUser: DEV });
     await expect(local.authenticate(headers({}))).resolves.toEqual({ ok: false, reason: "signed_out" });
     await expect(getAuthProvider(prod).authenticate(headers({}))).resolves.toEqual({ ok: false, reason: "signed_out" });
   });
@@ -58,36 +60,36 @@ describe("getAuthProvider", () => {
   });
 
   it("refuses a dev user outside local", () => {
-    expect(() => getAuthProvider({ ...prod, devUserId: "dev-user" })).toThrow(AuthConfigError);
+    expect(() => getAuthProvider({ ...prod, devUser: DEV })).toThrow(AuthConfigError);
   });
 
-  it("refuses an empty dev user", () => {
-    expect(() => getAuthProvider({ environment: "local", devUserId: "", supabaseUrl: undefined })).toThrow(AuthConfigError);
+  it("refuses a dev user without an id or an email", () => {
+    for (const devUser of [{ ...DEV, id: "" }, { ...DEV, email: "" }]) {
+      expect(() => getAuthProvider({ environment: "local", devUser, supabaseUrl: undefined })).toThrow(AuthConfigError);
+    }
   });
 
   it("uses local's dev user without Supabase", async () => {
-    const provider = getAuthProvider({ environment: "local", devUserId: "alice", supabaseUrl: undefined });
-    await expect(provider.authenticate(headers({}))).resolves.toEqual({ ok: true, user: { id: "alice", email: null } });
+    const provider = getAuthProvider({ environment: "local", devUser: DEV, supabaseUrl: undefined });
+    await expect(provider.authenticate(headers({}))).resolves.toEqual({ ok: true, user: DEV });
   });
 });
 
 describe("supabaseProvider", () => {
   it("takes the user from a valid token", async () => {
-    await expect(supabase.authenticate(request(await sign()))).resolves.toEqual({ ok: true, user: { id: USER, email: null } });
+    await expect(supabase.authenticate(request(await sign()))).resolves.toEqual({ ok: true, user: { id: USER, email: EMAIL } });
   });
 
-  it("returns the user's email when the token has one", async () => {
-    const token = await sign({ claims: { email: "ada@example.com" } });
-    await expect(supabase.authenticate(request(token))).resolves.toEqual({
-      ok: true,
-      user: { id: USER, email: "ada@example.com" },
-    });
+  it("rejects a token without an email: every user has one", async () => {
+    for (const email of [undefined, "", 42]) {
+      await expect(supabase.authenticate(request(await sign({ claims: { email } })))).resolves.toEqual({ ok: false, reason: "invalid" });
+    }
   });
 
   it("ignores X-User-Id", async () => {
     const forged = request(await sign());
     forged.set("x-user-id", "someone-else");
-    await expect(supabase.authenticate(forged)).resolves.toEqual({ ok: true, user: { id: USER, email: null } });
+    await expect(supabase.authenticate(forged)).resolves.toEqual({ ok: true, user: { id: USER, email: EMAIL } });
   });
 
   it("rejects a missing or malformed Authorization header", async () => {
@@ -129,7 +131,7 @@ describe("supabaseProvider", () => {
 
   it("trusts whatever non-empty subject the token carries", async () => {
     const id = "a b/../c";
-    await expect(supabase.authenticate(request(await sign({ subject: id })))).resolves.toEqual({ ok: true, user: { id, email: null } });
+    await expect(supabase.authenticate(request(await sign({ subject: id })))).resolves.toEqual({ ok: true, user: { id, email: EMAIL } });
   });
 
   it("reports an outage, not a bad token, when the keys can't be fetched", async () => {
@@ -142,8 +144,8 @@ describe("supabaseProvider", () => {
 
 describe("devProvider", () => {
   it("always returns the configured user, ignoring X-User-Id", async () => {
-    const dev = devProvider("dev-user");
-    const expected = { ok: true, user: { id: "dev-user", email: null } };
+    const dev = devProvider(DEV);
+    const expected = { ok: true, user: DEV };
     await expect(dev.authenticate(headers({}))).resolves.toEqual(expected);
     await expect(dev.authenticate(headers({ "x-user-id": "bob" }))).resolves.toEqual(expected);
   });

@@ -66,7 +66,7 @@ export const secrets = {
 export function settingsProblems(name: Environment, settings: Settings): string[] {
   const problems = demoDatasetProblems(settings);
   if (name === "local") return problems;
-  if (settings.auth.devUserId !== null) problems.push(`${name}: auth.devUserId must be null; only local may skip the gateway`);
+  if (settings.auth.devUser !== null) problems.push(`${name}: auth.devUser must be null; only local may skip the gateway`);
   if (settings.auth.publicHost === null) problems.push(`${name}: auth.publicHost must be set; it sits behind the gateway`);
   if (settings.secrets.allowPlaintext) problems.push(`${name}: secrets.allowPlaintext must be false; keys are never stored unencrypted outside local`);
   if (settings.kitPages) problems.push(`${name}: kitPages must be false; the /kit pages are for local development`);
@@ -101,7 +101,7 @@ export function secretProblems(name: Environment, settings: Settings, env: Env =
   const problems: string[] = [];
   if (!env.DATABASE_URL) problems.push("DATABASE_URL is not set");
   if (!env.THESYS_API_KEY) problems.push("THESYS_API_KEY is not set");
-  if (settings.auth.devUserId === null && !env.SUPABASE_URL) {
+  if (settings.auth.devUser === null && !env.SUPABASE_URL) {
     problems.push(`SUPABASE_URL is not set; ${name} has no dev user, so requests must carry a verified token`);
   }
   if (!settings.secrets.allowPlaintext && !env.KMS_KEY_ID) {

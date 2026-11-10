@@ -47,8 +47,8 @@ describe("the settings files", () => {
     const prod = settingsFor("prod");
     expect(local.network.connectAttemptTimeoutMs).toBe(2_000);
     expect(prod.network.connectAttemptTimeoutMs).toBeNull();
-    expect(local.auth.devUserId).toBe("dev-user");
-    expect(prod.auth.devUserId).toBeNull();
+    expect(local.auth.devUser).toEqual({ id: "dev-user", email: "user@example.dev" });
+    expect(prod.auth.devUser).toBeNull();
     expect([local.secrets.allowPlaintext, prod.secrets.allowPlaintext]).toEqual([true, false]);
     expect([local.kitPages, prod.kitPages]).toEqual([true, false]);
   });
@@ -60,7 +60,7 @@ describe("the settings files", () => {
 
 describe("settingsProblems", () => {
   it.each([
-    ["a dev user", (s: Settings) => (s.auth.devUserId = "dev-user"), "auth.devUserId"],
+    ["a dev user", (s: Settings) => (s.auth.devUser = { id: "dev-user", email: "user@example.dev" }), "auth.devUser"],
     ["no public host", (s: Settings) => (s.auth.publicHost = null), "auth.publicHost"],
     ["plaintext secrets", (s: Settings) => (s.secrets.allowPlaintext = true), "secrets.allowPlaintext"],
     ["the /kit pages", (s: Settings) => (s.kitPages = true), "kitPages"],

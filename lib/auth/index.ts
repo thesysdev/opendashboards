@@ -1,6 +1,6 @@
 import { config, secrets, type Environment } from "@/config";
 
-import type { AuthProvider } from "./provider";
+import type { AuthProvider, AuthUser } from "./provider";
 import { devProvider } from "./providers/dev";
 import { supabaseProvider } from "./providers/supabase";
 
@@ -22,7 +22,7 @@ export class AuthConfigError extends Error {
 /** What auth needs from the configuration: the environment, its dev user and Supabase. */
 export type AuthSettings = {
   environment: Environment;
-  devUserId: string | null;
+  devUser: AuthUser | null;
   supabaseUrl: string | undefined;
 };
 
@@ -30,7 +30,7 @@ const currentAuthSettings = (): AuthSettings => {
   const { env, auth } = config();
   return {
     environment: env,
-    devUserId: auth.devUserId,
+    devUser: auth.devUser,
     supabaseUrl: secrets.supabaseUrl(),
   };
 };
@@ -44,11 +44,12 @@ const currentAuthSettings = (): AuthSettings => {
  * case a request somehow gets this far.
  */
 export function getAuthProvider(settings: AuthSettings = currentAuthSettings()): AuthProvider {
-  if (settings.environment !== "local" && settings.devUserId !== null) {
+  if (settings.environment !== "local" && settings.devUser !== null) {
     throw new AuthConfigError(`${settings.environment} can't have a dev user; only local may skip the gateway`);
   }
   if (settings.supabaseUrl) return supabaseProvider(settings.supabaseUrl);
-  if (settings.devUserId === null) throw new AuthConfigError("SUPABASE_URL must be set outside local");
-  if (!settings.devUserId) throw new AuthConfigError("auth.devUserId is empty");
-  return devProvider(settings.devUserId);
+  if (settings.devUser === null) throw new AuthConfigError("SUPABASE_URL must be set outside local");
+  if (!settings.devUser.id) throw new AuthConfigError("auth.devUser.id is empty");
+  if (!settings.devUser.email) throw new AuthConfigError("auth.devUser.email is empty");
+  return devProvider(settings.devUser);
 }

@@ -1,8 +1,8 @@
-import type { AuthProvider } from "../provider";
+import type { AuthProvider, AuthUser } from "../provider";
 
 /** Local development: every request is the configured user. */
-export function devProvider(devUserId: string): AuthProvider {
+export function devProvider(user: AuthUser): AuthProvider {
   return {
-    authenticate: async () => ({ ok: true, user: { id: devUserId, email: null } }),
+    authenticate: async () => ({ ok: true, user: { id: user.id, email: user.email } }),
   };
 }
