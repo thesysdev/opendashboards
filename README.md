@@ -14,8 +14,8 @@ pnpm db:reset     # create the tables from lib/db/schema.ts
 pnpm dev
 ```
 
-Without `SUPABASE_URL`, requests act as the dev user in `config/local.ts`, or as
-whatever `X-User-Id` header a request sends. Without `KMS_KEY_ID`, API keys are stored
+Without `SUPABASE_URL`, every request acts as the dev user in `config/local.ts`;
+change `auth.devUserId` there to act as someone else. Without `KMS_KEY_ID`, API keys are stored
 unencrypted. Both fallbacks only work outside production.
 
 ## Tests
