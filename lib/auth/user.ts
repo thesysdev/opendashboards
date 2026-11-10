@@ -6,7 +6,8 @@ import { cache } from "react";
 
 import { authenticate, getAuthConfig } from "./gateway";
 
-export type CurrentUser = { id: string };
+/** `email` comes from the gateway token; the local dev user has none. */
+export type CurrentUser = { id: string; email?: string };
 
 export class UnauthorizedError extends Error {
   constructor() {
@@ -28,5 +29,5 @@ export const requireUser = cache(async (): Promise<CurrentUser> => {
   await connection();
   const result = await authenticate(await headers(), getAuthConfig());
   if (!result.ok) throw new UnauthorizedError();
-  return { id: result.userId };
+  return { id: result.userId, email: result.email };
 });

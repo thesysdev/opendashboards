@@ -24,7 +24,7 @@ const BEARER_PATTERN = /^Bearer ([^\s]+)$/i;
 /** Asymmetric only: Prism must never hold anything that can mint a token. */
 const TOKEN_ALGORITHMS = ["ES256", "RS256"];
 
-export type TokenCheck = { ok: true; userId: string } | { ok: false; reason: "bad_token" | "bad_user" | "auth_unavailable" };
+export type TokenCheck = { ok: true; userId: string; email?: string } | { ok: false; reason: "bad_token" | "bad_user" | "auth_unavailable" };
 export type TokenVerifier = (token: string) => Promise<TokenCheck>;
 
 export type AuthConfig =
@@ -67,7 +67,8 @@ export function createTokenVerifier(supabaseUrl: string, keys: JWTVerifyGetKey):
       const { payload } = await jwtVerify(token, keys, { issuer, audience: "authenticated", algorithms: TOKEN_ALGORITHMS });
       if (payload.role !== "authenticated" || payload.is_anonymous === true) return { ok: false, reason: "bad_token" };
       if (typeof payload.sub !== "string" || !USER_ID_PATTERN.test(payload.sub)) return { ok: false, reason: "bad_user" };
-      return { ok: true, userId: payload.sub };
+      const email = typeof payload.email === "string" && payload.email ? payload.email : undefined;
+      return { ok: true, userId: payload.sub, email };
     } catch (error) {
       // No usable key set (or none in time) says nothing about the token.
       if (error instanceof errors.JWKSTimeout || error instanceof errors.JWKSInvalid) return { ok: false, reason: "auth_unavailable" };
@@ -113,7 +114,7 @@ export function getAuthConfig(settings: AuthSettings = currentAuthSettings()): A
 }
 
 export type AuthResult =
-  | { ok: true; userId: string }
+  | { ok: true; userId: string; email?: string }
   | { ok: false; reason: "missing_token" | "bad_token" | "bad_user" | "auth_unavailable" };
 
 interface HeaderReader {

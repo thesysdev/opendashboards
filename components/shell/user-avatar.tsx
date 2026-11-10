@@ -2,11 +2,11 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { requireUser } from "@/lib/auth/user";
 import { cn } from "@/lib/utils";
 
-export function initialsFor(userId: string): string {
-  return userId.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || "?";
+export function initialsFor(name: string): string {
+  return name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || "?";
 }
 
-export function AvatarCircle({ userId, className }: { userId: string; className?: string }) {
+export function AvatarCircle({ name, className }: { name: string; className?: string }) {
   return (
     <span
       aria-hidden
@@ -15,7 +15,7 @@ export function AvatarCircle({ userId, className }: { userId: string; className?
         className,
       )}
     >
-      {initialsFor(userId)}
+      {initialsFor(name)}
     </span>
   );
 }
@@ -23,14 +23,15 @@ export function AvatarCircle({ userId, className }: { userId: string; className?
 /** The compact avatar for the mobile top bar. Reads the request, so it renders behind Suspense. */
 export async function UserAvatar() {
   const user = await requireUser();
+  const name = user.email ?? user.id;
   return (
     <Tooltip>
       <TooltipTrigger asChild>
-        <span tabIndex={0} aria-label={`Signed in as ${user.id}`} className="rounded-full">
-          <AvatarCircle userId={user.id} />
+        <span tabIndex={0} aria-label={`Signed in as ${name}`} className="rounded-full">
+          <AvatarCircle name={name} />
         </span>
       </TooltipTrigger>
-      <TooltipContent>Signed in as {user.id}</TooltipContent>
+      <TooltipContent>Signed in as {name}</TooltipContent>
     </Tooltip>
   );
 }
