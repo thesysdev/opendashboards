@@ -66,9 +66,9 @@ export type CommonSettings = {
 export type EnvironmentSettings = {
   auth: {
     /**
-     * Who requests are for when no gateway sits in front of the app (an
-     * X-User-Id header can still override it). null: every request must come
-     * through the gateway, with a verified token. Local only.
+     * Who every request is for when no gateway sits in front of the app.
+     * null: every request must come through the gateway, with a verified
+     * token. Local only.
      */
     devUserId: string | null;
     /**
