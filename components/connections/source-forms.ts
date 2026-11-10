@@ -1,5 +1,5 @@
 import { CLICKHOUSE_DEFAULT_PORT } from "@/lib/sources/clickhouse/catalog";
-import { projectIdOfKey } from "@/lib/sources/bigquery/credential";
+import { projectIdOfKey } from "@/lib/sources/google/credential";
 import { MYSQL_DEFAULT_PORT, parseMysqlUrl } from "@/lib/sources/mysql/catalog";
 
 /**
@@ -47,7 +47,22 @@ const NO_PASSWORD_OK: FieldSpec = {
   description: "Leave empty for a server that doesn't need one.",
 };
 
-export const SOURCE_FORMS: Record<"mysql" | "clickhouse" | "bigquery", FormSpec> = {
+/** A service account's JSON key: what every Google source takes. */
+const SERVICE_ACCOUNT_KEY: FieldSpec = {
+  name: "serviceAccountKey",
+  label: "Service account key (JSON)",
+  kind: "textarea",
+  placeholder: '{ "type": "service_account", "client_email": "…", "private_key": "…" }',
+  fileAccept: "application/json,.json",
+  description: "Only the account's email and private key are kept, encrypted.",
+};
+
+const CREATE_SERVICE_ACCOUNT = [
+  "In the Google Cloud console: IAM & Admin → Service accounts → Create service account, e.g. dashboards-reader. It needs no project roles.",
+  "Open the account → Keys → Add key → Create new key → JSON.",
+];
+
+export const SOURCE_FORMS: Record<"mysql" | "clickhouse" | "bigquery" | "ga4" | "searchconsole", FormSpec> = {
   mysql: {
     title: "Connect MySQL",
     description: "OpenDashboards runs read-only queries against your MySQL or MariaDB database to build dashboards.",
@@ -133,6 +148,60 @@ GRANT SELECT ON your_db.* TO dashboards_reader;`,
         "IAM & Admin → Service accounts → Create service account, e.g. dashboards-reader.",
         "Grant it BigQuery Job User (to run queries) and BigQuery Data Viewer (to read data), on the project or only on the datasets OpenDashboards should see.",
         "Open the account → Keys → Add key → Create new key → JSON, and paste or upload the file here.",
+      ],
+    },
+    secretNoun: "keys",
+  },
+  ga4: {
+    title: "Connect Google Analytics",
+    description: "OpenDashboards reads reports from your GA4 property, read-only, to build dashboards.",
+    fields: [
+      { name: "name", label: "Name", kind: "text", placeholder: "Website analytics" },
+      {
+        name: "propertyId",
+        label: "Property ID",
+        kind: "text",
+        placeholder: "123456789",
+        description: "In GA4: Admin → Property settings. Numbers only, not the G- measurement ID.",
+      },
+    ],
+    credential: SERVICE_ACCOUNT_KEY,
+    replaceTitle: "Replace key",
+    replaceAction: "Test & replace",
+    help: {
+      summary: "How to give OpenDashboards read-only access",
+      intro: "A service account reads the property on OpenDashboards' behalf:",
+      steps: [
+        ...CREATE_SERVICE_ACCOUNT,
+        "In the same Cloud project, enable the Google Analytics Data API (APIs & Services → Library).",
+        "In GA4: Admin → Property access management → add the account's email as a Viewer.",
+      ],
+    },
+    secretNoun: "keys",
+  },
+  searchconsole: {
+    title: "Connect Search Console",
+    description: "OpenDashboards reads your site's Google Search performance, read-only, to build dashboards.",
+    fields: [
+      { name: "name", label: "Name", kind: "text", placeholder: "Google Search" },
+      {
+        name: "siteUrl",
+        label: "Property",
+        kind: "text",
+        placeholder: "sc-domain:example.com",
+        description: "As Search Console shows it: sc-domain:example.com for a Domain property, or https://www.example.com/ for a URL prefix.",
+      },
+    ],
+    credential: SERVICE_ACCOUNT_KEY,
+    replaceTitle: "Replace key",
+    replaceAction: "Test & replace",
+    help: {
+      summary: "How to give OpenDashboards read-only access",
+      intro: "A service account reads the property on OpenDashboards' behalf:",
+      steps: [
+        ...CREATE_SERVICE_ACCOUNT,
+        "In the same Cloud project, enable the Google Search Console API (APIs & Services → Library).",
+        "In Search Console: open the property → Settings → Users and permissions → Add user, with the account's email and Restricted permission.",
       ],
     },
     secretNoun: "keys",

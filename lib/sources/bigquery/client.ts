@@ -1,15 +1,13 @@
 import "server-only";
 
-import { createHash, randomUUID } from "node:crypto";
-
-import { importPKCS8, SignJWT } from "jose";
+import { randomUUID } from "node:crypto";
 
 import { config as appConfig } from "@/config";
 
+import { googleAccessToken, GoogleAuthError } from "../google/auth";
 import type { QueryResult } from "../types";
 
 import { DATASET_ID, PROJECT_ID, type BigqueryConfig } from "./catalog";
-import { readServiceAccountKey, type ServiceAccountKey } from "./credential";
 import { BigqueryError, fromApiError, toBigqueryError } from "./errors";
 
 /**
@@ -17,7 +15,7 @@ import { BigqueryError, fromApiError, toBigqueryError } from "./errors";
  * Google's cloud, nothing runs here. What keeps it safe:
  *
  * - Only service account keys are accepted, and tokens are only requested
- *   from Google's fixed token endpoint (see ./credential.ts).
+ *   from Google's fixed token endpoint (see ../google/).
  * - Every query is dry-run first: anything but a single SELECT is refused
  *   before it runs, and so is one that would scan more than the byte limit.
  * - The real run carries maximumBytesBilled too, so BigQuery itself refuses
@@ -25,7 +23,6 @@ import { BigqueryError, fromApiError, toBigqueryError } from "./errors";
  * - A query that outlives our wait is cancelled.
  */
 
-const TOKEN_URL = "https://oauth2.googleapis.com/token";
 const API = "https://bigquery.googleapis.com/bigquery/v2";
 /** Read data and run queries; nothing that manages datasets or IAM. */
 const SCOPE = "https://www.googleapis.com/auth/bigquery";
@@ -37,53 +34,18 @@ export type BigqueryParams = Record<string, string | number | boolean | null>;
 
 const PARAM_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/;
 
-// Access tokens by key, reused until shortly before they expire.
-const tokens = new Map<string, { token: string; expiresAt: number }>();
-
-async function accessToken(key: ServiceAccountKey, signal?: AbortSignal): Promise<string> {
-  const cacheKey = createHash("sha256").update(key.client_email).update(key.private_key).digest("hex");
-  const cached = tokens.get(cacheKey);
-  if (cached && cached.expiresAt > Date.now() + 60_000) return cached.token;
-
-  let assertion: string;
+/** Turns a failed sign-in into this source's error. */
+async function accessToken(credential: string, signal: AbortSignal): Promise<string> {
   try {
-    const privateKey = await importPKCS8(key.private_key, "RS256");
-    assertion = await new SignJWT({ scope: SCOPE })
-      .setProtectedHeader({ alg: "RS256", typ: "JWT" })
-      .setIssuer(key.client_email)
-      .setAudience(TOKEN_URL)
-      .setIssuedAt()
-      .setExpirationTime("1h")
-      .sign(privateKey);
-  } catch {
-    throw new BigqueryError("key_rejected", "The private key in this service account key can't be used.");
-  }
-
-  let response: Response;
-  try {
-    response = await fetch(TOKEN_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer", assertion }),
-      redirect: "error",
-      cache: "no-store",
-      signal: signal ?? AbortSignal.timeout(appConfig().bigquery.checkTimeoutMs),
-    });
+    return await googleAccessToken(credential, SCOPE, signal);
   } catch (error) {
-    throw toBigqueryError(error);
+    if (error instanceof GoogleAuthError) throw new BigqueryError(error.code, error.detail);
+    throw error;
   }
-  const body = (await response.json().catch(() => null)) as { access_token?: string; expires_in?: number; error?: string; error_description?: string } | null;
-  if (!response.ok || !body?.access_token) {
-    if (response.status >= 500) throw new BigqueryError("unavailable", `Token endpoint: HTTP ${response.status}`);
-    // invalid_grant: the key was deleted or disabled, or the account was.
-    throw new BigqueryError("key_rejected", body?.error_description ?? body?.error ?? `HTTP ${response.status}`);
-  }
-  tokens.set(cacheKey, { token: body.access_token, expiresAt: Date.now() + (body.expires_in ?? 3600) * 1000 });
-  return body.access_token;
 }
 
 async function api<T>(target: BigqueryTarget, method: "GET" | "POST", path: string, body: unknown, signal: AbortSignal): Promise<T> {
-  const token = await accessToken(readServiceAccountKey(target.credential), signal);
+  const token = await accessToken(target.credential, signal);
   let response: Response;
   try {
     response = await fetch(`${API}${path}`, {
