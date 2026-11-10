@@ -25,28 +25,34 @@ export const common: CommonSettings = {
     // 10 GiB: about six US cents at on-demand prices.
     maxBytesBilled: 10 * 1024 ** 3,
   },
-  demoDatasets: [
-    {
-      key: "retail",
-      name: "Retail sales",
-      description:
-        "A sample retail business: orders, order lines, products, customers, promotions, refunds and sales targets. " +
-        "Raw tables are in the retail schema; the analytics schema has ready-made reporting views " +
-        "(daily_sales_by_region, monthly_business_kpis, customer_summary, target_attainment, …). " +
-        "Prefer the analytics views for standard metrics and use the retail tables for anything they don't cover.",
-      postgres: {
-        // Neon's pooler: OpenDashboards opens a connection per query.
-        host: "ep-wispy-hill-bbojf1nh-pooler.c-15.us-east-1.aws.neon.tech",
-        port: 5432,
-        database: "retail_sales",
-        user: "opendashboards_demo_reader",
-        sslMode: "verify-full",
+  // Demo data: the "Demo Data" Neon project, shared by several apps. Read-only
+  // for us: we connect only as its read-only role (DEMO_DATABASE_PASSWORD) and
+  // never migrate, branch or write to it. Our own data is DATABASE_URL's.
+  demoData: {
+    neonProject: "Demo Data",
+    datasets: [
+      {
+        key: "retail",
+        name: "Retail sales",
+        description:
+          "A sample retail business: orders, order lines, products, customers, promotions, refunds and sales targets. " +
+          "Raw tables are in the retail schema; the analytics schema has ready-made reporting views " +
+          "(daily_sales_by_region, monthly_business_kpis, customer_summary, target_attainment, …). " +
+          "Prefer the analytics views for standard metrics and use the retail tables for anything they don't cover.",
+        postgres: {
+          // Neon's pooler: OpenDashboards opens a connection per query.
+          host: "ep-wispy-hill-bbojf1nh-pooler.c-15.us-east-1.aws.neon.tech",
+          port: 5432,
+          database: "retail_sales",
+          user: "prism_demo_reader",
+          sslMode: "verify-full",
+        },
+        prompts: [
+          "An executive overview: revenue, orders, average order value and margin by month",
+          "Sales by region and product category over the last 90 days",
+          "How much promotions and refunds cost us each month",
+        ],
       },
-      prompts: [
-        "An executive overview: revenue, orders, average order value and margin by month",
-        "Sales by region and product category over the last 90 days",
-        "How much promotions and refunds cost us each month",
-      ],
-    },
-  ],
+    ],
+  },
 };

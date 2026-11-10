@@ -17,7 +17,7 @@ export function getConnectionService(): ConnectionService {
     db: getDb(),
     secrets: () => getSecretBox(),
     sources: sourceFor,
-    demo: { datasets: () => config().demoDatasets, password: secrets.demoDatabasePassword },
+    demo: { datasets: () => config().demoData.datasets, password: secrets.demoDataPassword },
   });
   return service;
 }

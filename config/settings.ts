@@ -12,9 +12,8 @@ export type Environment = (typeof ENVIRONMENTS)[number];
 /**
  * A sample database OpenDashboards offers to users who have no data of their own
  * yet. Users install it (a connection row of theirs that points here) and
- * uninstall it. Every demo dataset is a database on OpenDashboards' own Neon
- * project, read through one read-only role whose password is the
- * DEMO_DATABASE_PASSWORD secret.
+ * uninstall it. It lives in the shared Demo Data project (see DemoData), not in
+ * our own database.
  */
 export type DemoDataset = {
   /** Stable id, stored on installed connections: "retail". Never reuse one for different data. */
@@ -27,6 +26,19 @@ export type DemoDataset = {
   postgres: { host: string; port: number; database: string; user: string; sslMode: "verify-full" | "require" };
   /** Starting prompts offered on the home page. */
   prompts: string[];
+};
+
+/**
+ * Demo data: a Neon project shared by several apps, holding the demo datasets.
+ * Read-only for us. We connect to it only as its read-only role, whose password
+ * is the DEMO_DATABASE_PASSWORD secret, and never migrate, branch or write to
+ * it. Our own data (users' connections, apps, dashboards) is in our database,
+ * DATABASE_URL.
+ */
+export type DemoData = {
+  /** The Neon project's name, so it's recognizable in the Neon console: "Demo Data". */
+  neonProject: string;
+  datasets: DemoDataset[];
 };
 
 /** The same in every environment. */
@@ -83,8 +95,8 @@ export type CommonSettings = {
      */
     maxBytesBilled: number;
   };
-  /** Sample datasets users can install to try OpenDashboards without data of their own. */
-  demoDatasets: DemoDataset[];
+  /** Sample datasets users can install to try OpenDashboards without data of their own. Read-only. */
+  demoData: DemoData;
 };
 
 /** Different per environment. */

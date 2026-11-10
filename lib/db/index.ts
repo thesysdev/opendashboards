@@ -1,3 +1,9 @@
+/**
+ * Our database: OpenDashboards' own data (users' connections, apps,
+ * dashboards, threads), at DATABASE_URL. The only database we write to and
+ * migrate. Demo datasets are elsewhere: the shared, read-only Demo Data
+ * project (config demoData), reached only as a data connection.
+ */
 import "server-only";
 
 import { attachDatabasePool } from "@vercel/functions";
