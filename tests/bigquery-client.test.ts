@@ -2,7 +2,7 @@ import { exportPKCS8, generateKeyPair } from "jose";
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 
 import { queryBigquery, toResult } from "@/lib/sources/bigquery/client";
-import { readServiceAccountKey, serviceAccountKeySchema } from "@/lib/sources/bigquery/credential";
+import { readServiceAccountKey, serviceAccountKeySchema } from "@/lib/sources/google/credential";
 import { BigqueryError, fromApiError } from "@/lib/sources/bigquery/errors";
 import { bigquerySource } from "@/lib/sources/bigquery/source";
 

@@ -1,7 +1,9 @@
 import { DatabaseIcon } from "lucide-react";
 import {
   siClickhouse,
+  siGoogleanalytics,
   siGooglebigquery,
+  siGooglesearchconsole,
   siMysql,
   siNeon,
   siPostgresql,
@@ -21,6 +23,8 @@ const LOGOS: Record<string, SimpleIcon> = {
   MY: siMysql,
   CH: siClickhouse,
   BQ: siGooglebigquery,
+  GA: siGoogleanalytics,
+  SC: siGooglesearchconsole,
 };
 
 /** The square tile at the start of a source or connection row: the source's logo. */

@@ -8,7 +8,7 @@ import type { ConnectionSource, SourceError, SourceTool } from "../types";
 
 import { bigqueryCatalog, type BigqueryConfig } from "./catalog";
 import { listBigqueryDatasets, listBigqueryTables, queryBigquery, testBigqueryConnection, type BigqueryParams } from "./client";
-import { readServiceAccountKey, serviceAccountKeySchema } from "./credential";
+import { readServiceAccountKey, serviceAccountKeySchema } from "../google/credential";
 import { BigqueryError } from "./errors";
 
 const target = (connection: { config: BigqueryConfig; credential: string }) => ({ ...connection.config, credential: connection.credential });

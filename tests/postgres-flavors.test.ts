@@ -40,6 +40,8 @@ describe("SOURCE_OPTIONS", () => {
       ["mysql", "mysql", null],
       ["clickhouse", "clickhouse", null],
       ["bigquery", "bigquery", null],
+      ["ga4", "ga4", null],
+      ["searchconsole", "searchconsole", null],
     ]);
   });
 });

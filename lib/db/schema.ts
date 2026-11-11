@@ -17,7 +17,7 @@ import type { ConnectionConfig } from "@/lib/sources/catalog";
 import type { SealedSecret } from "@/lib/secrets/types";
 
 /** Matches CONNECTION_TYPES in lib/sources/catalog.ts (a test checks). */
-export const connectionTypeEnum = pgEnum("connection_type", ["posthog", "postgres", "mysql", "clickhouse", "bigquery"]);
+export const connectionTypeEnum = pgEnum("connection_type", ["posthog", "postgres", "mysql", "clickhouse", "bigquery", "ga4", "searchconsole"]);
 
 export const connectionStatusEnum = pgEnum("connection_status", [
   /** The last check passed. */

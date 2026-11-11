@@ -86,7 +86,7 @@ export function ConnectionActions({
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setDialog("replace")}>
             <KeyRoundIcon aria-hidden />
-            {connection.type === "posthog" || connection.type === "bigquery" ? "Replace key" : "Change password"}
+            {["posthog", "bigquery", "ga4", "searchconsole"].includes(connection.type) ? "Replace key" : "Change password"}
           </DropdownMenuItem>
           <DropdownMenuItem onSelect={() => setDialog("rename")}>
             <PencilIcon aria-hidden />

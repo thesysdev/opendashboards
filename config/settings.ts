@@ -95,6 +95,18 @@ export type CommonSettings = {
      */
     maxBytesBilled: number;
   };
+  searchConsole: {
+    /** One Search Analytics request, end to end. */
+    requestTimeoutMs: number;
+    /** Rows a query may return. The API's own ceiling is 25,000 per request. */
+    maxRows: { agent: number; dashboard: number };
+  };
+  googleAnalytics: {
+    /** One Data API report, end to end. */
+    requestTimeoutMs: number;
+    /** Rows a report may return. */
+    maxRows: { agent: number; dashboard: number };
+  };
   /** Sample datasets users can install to try OpenDashboards without data of their own. Read-only. */
   demoData: DemoData;
 };
