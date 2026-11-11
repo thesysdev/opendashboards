@@ -5,7 +5,7 @@ import { config, validateConfig } from "./config";
 
 const baseConfig: NextConfig = {
   async redirects() {
-    return [{ source: "/", destination: "/connections", permanent: false }];
+    return [{ source: "/", destination: "/apps", permanent: false }];
   },
   logging: {
     // Dev logs every Server Function's arguments, and connection actions
