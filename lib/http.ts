@@ -3,6 +3,7 @@ import "server-only";
 import { requireUser, UnauthorizedError, type CurrentUser } from "@/lib/auth/user";
 import { config } from "@/config";
 import type { AppErrorCode, AppResult } from "@/lib/apps/errors";
+import { withLogContext } from "@/lib/log";
 
 const MAX_JSON_BYTES = 16 * 1024;
 
@@ -23,8 +24,8 @@ export class HttpError extends Error {
 }
 
 /**
- * Wraps a Route Handler: authenticates the user, and for anything but GET
- * refuses cross-site requests. Unlike Server Actions, Route Handlers get no
+ * Wraps a Route Handler: authenticates the user, tags the request's logs with
+ * them, and for anything but GET refuses cross-site requests. Unlike Server Actions, Route Handlers get no
  * built-in Origin check, and the gateway attaches the user to any request
  * that carries their session.
  */
@@ -35,7 +36,7 @@ export function route<Ctx>(
     try {
       if (request.method !== "GET" && request.method !== "HEAD") assertSameOrigin(request);
       const user = await requireUser();
-      return await handler(request, user, ctx);
+      return await withLogContext({ user: user.id }, () => handler(request, user, ctx));
     } catch (error) {
       if (error instanceof UnauthorizedError) return Response.json({ error: "Unauthorized" }, { status: 401 });
       if (error instanceof HttpError) return Response.json({ error: error.message }, { status: error.status });
