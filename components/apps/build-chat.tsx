@@ -18,13 +18,14 @@ import {
 } from "@openuidev/react-ui";
 import { ArrowUpIcon, CheckIcon, ChevronDownIcon, PlusIcon, SparklesIcon, SquareIcon } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { parseMessage } from "@openuidev/lang-core";
 import remarkGfm from "remark-gfm";
 
 import "@openuidev/react-ui/styles/index.css";
 
 import { takePendingPromptAction } from "@/app/(app)/apps/actions";
+import { analytics } from "@/lib/analytics";
 import { VIEWING_DASHBOARD } from "@/lib/agent/messages";
 import { Button } from "@/components/ui/button";
 import {
@@ -83,13 +84,17 @@ export function BuildChat({
     viewing.current = viewingId;
   }, [viewingId]);
 
+  // The turn in flight, for analytics: when it started and whether it was cancelled.
+  const turn = useRef<Turn | null>(null);
+
   // fetchLLM's request, plus AG-UI `context` naming the dashboard on screen
   // (fetchLLM always sends an empty context). Same adapter and message format.
   const llm = useMemo<ChatLLM>(
     () => ({
       streamProtocol: agUIAdapter(),
-      send: ({ threadId, messages, signal }) =>
-        fetch(`/api/apps/${encodeURIComponent(appId)}/chat`, {
+      send: ({ threadId, messages, signal }) => {
+        turn.current = { signal, startedAt: Date.now() };
+        return fetch(`/api/apps/${encodeURIComponent(appId)}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -100,7 +105,8 @@ export function BuildChat({
             messages: openAIMessageFormat.toApi(messages),
           }),
           signal,
-        }),
+        });
+      },
     }),
     [appId],
   );
@@ -113,7 +119,7 @@ export function BuildChat({
           <ThreadMessages hasDashboards={dashboards.length > 0} />
           <Composer />
         </div>
-        <TurnEffects appId={appId} dashboards={dashboards} hasPendingPrompt={hasPendingPrompt} />
+        <TurnEffects appId={appId} dashboards={dashboards} hasPendingPrompt={hasPendingPrompt} turn={turn} />
         {/* A new app's first prompt starts its own conversation: nothing to reopen. */}
         {!startedWithPrompt && <ReopenLastThread appId={appId} />}
       </ChatProvider>
@@ -429,6 +435,8 @@ function ReopenLastThread({ appId }: { appId: string }) {
   return null;
 }
 
+type Turn = { signal: AbortSignal; startedAt: number };
+
 /**
  * Sends the app's first prompt once, and when a turn ends refreshes the app
  * and opens the dashboard the turn created.
@@ -437,10 +445,12 @@ function TurnEffects({
   appId,
   dashboards,
   hasPendingPrompt,
+  turn,
 }: {
   appId: string;
   dashboards: Dashboard[];
   hasPendingPrompt: boolean;
+  turn: RefObject<Turn | null>;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -481,6 +491,7 @@ function TurnEffects({
       if (!artifactId) continue;
       publish(artifactId, message.content);
       if (tool === "create_dashboard") {
+        analytics.capture("dashboard_created");
         opening.current = artifactId;
         router.refresh(); // The server has recorded it; the sidebar picks it up.
       }
@@ -497,10 +508,19 @@ function TurnEffects({
 
   // When a turn ends, pick up titles and deletions.
   const wasRunning = useRef(false);
+  const threadError = useThread((s) => s.threadError);
   useEffect(() => {
-    if (wasRunning.current && !isRunning) router.refresh();
+    if (wasRunning.current && !isRunning) {
+      const { signal, startedAt } = turn.current ?? {};
+      analytics.capture("chat_turn", {
+        outcome: signal?.aborted ? "cancelled" : threadError ? "failed" : "completed",
+        duration_ms: startedAt ? Date.now() - startedAt : undefined,
+        viewing_dashboard: parseAppPath(pathname).dashboardId !== undefined,
+      });
+      router.refresh();
+    }
     wasRunning.current = isRunning;
-  }, [isRunning, router]);
+  }, [isRunning, pathname, router, threadError, turn]);
 
   return null;
 }

@@ -12,6 +12,7 @@ import { SourceFormDialog } from "@/components/connections/source-form-dialog";
 import { SourceTile } from "@/components/connections/source-tile";
 import { Button } from "@/components/ui/button";
 import type { SourceOption } from "@/lib/sources/catalog";
+import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 import { DISCOVERY_PROMPT } from "./discovery-prompt";
@@ -61,9 +62,14 @@ export function Onboarding({
     return new Set((own.length ? own : connections).map((connection) => connection.id));
   });
 
+  function toBuild() {
+    analytics.capture("onboarding_step", { step: "build" });
+    setStep("build");
+  }
+
   function pickOnly(id: string) {
     setSelected(new Set([id]));
-    setStep("build");
+    toBuild();
   }
 
   return (
@@ -84,7 +90,7 @@ export function Onboarding({
               return next;
             })
           }
-          onContinue={() => setStep("build")}
+          onContinue={toBuild}
           onPickOnly={pickOnly}
         />
       ) : (
@@ -187,8 +193,10 @@ function DataStep({
     startTransition(async () => {
       const result = await installDemoAction({ dataset });
       setInstalling(null);
-      if (result.ok) onPickOnly(result.data.id);
-      else setError(result.error.message);
+      if (result.ok) {
+        analytics.capture("demo_dataset_installed", { dataset });
+        onPickOnly(result.data.id);
+      } else setError(result.error.message);
     });
   }
 
@@ -362,6 +370,10 @@ function BuildStep({
   function build(prompt: string) {
     setError(null);
     setStarted(prompt);
+    analytics.capture("app_created", {
+      surface: prompt === DISCOVERY_PROMPT ? "onboarding_discover" : "onboarding_example",
+      connection_count: ids.length,
+    });
     startTransition(async () => {
       // Only returns when creating failed; on success it opens the new app.
       const result = await createAppAction({ prompt, connectionIds: ids });

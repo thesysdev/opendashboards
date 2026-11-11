@@ -5,6 +5,7 @@ import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
 import { createConnectionAction, replaceCredentialAction } from "@/app/(app)/connections/actions";
+import { analytics } from "@/lib/analytics";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -71,6 +72,7 @@ export function PostHogFormDialog(props: Props) {
       const result = replacing
         ? await replaceCredentialAction({ id: props.connection.id, credential: values.apiKey })
         : await createConnectionAction({ type: "posthog", ...values });
+      if (!replacing) captureConnectionAdded("posthog", result);
 
       if (result.ok) {
         toast.success(replacing ? "Key replaced" : `Connected to ${values.name.trim()}`);
@@ -243,4 +245,16 @@ function ExternalLink({ href, children }: { href: string; children: React.ReactN
       <ExternalLinkIcon className="size-3" aria-hidden />
     </a>
   );
+}
+
+/** Shared by every source's form: one `connection_added` per attempt to connect. */
+export function captureConnectionAdded(
+  sourceType: string,
+  result: { ok: true } | { ok: false; error: { code: string } },
+): void {
+  analytics.capture("connection_added", {
+    source_type: sourceType,
+    ok: result.ok,
+    ...(result.ok ? {} : { error_code: result.error.code }),
+  });
 }

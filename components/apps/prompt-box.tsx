@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 
 import { createAppAction } from "@/app/(app)/apps/actions";
 import { Button } from "@/components/ui/button";
+import { analytics } from "@/lib/analytics";
 import { cn } from "@/lib/utils";
 
 import { DataSourcePicker, type PickerConnection } from "./data-source-picker";
@@ -53,6 +54,7 @@ export function PromptBox({
   function send() {
     if (!canSend) return;
     setError(null);
+    analytics.capture("app_created", { surface: "composer", connection_count: selected.size, prompt_length: prompt.length });
     startTransition(async () => {
       // Only returns when creating failed; on success it navigates to the app.
       const result = await createAppAction({ prompt, connectionIds: [...selected] });

@@ -5,6 +5,7 @@ import { useTransition } from "react";
 import { toast } from "sonner";
 
 import { installDemoAction, uninstallDemoAction } from "@/app/(app)/connections/actions";
+import { analytics } from "@/lib/analytics";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -32,6 +33,7 @@ export function DemoDatasetSwitch({
       const result = installed
         ? await uninstallDemoAction({ dataset })
         : await installDemoAction({ dataset });
+      if (result.ok && !installed) analytics.capture("demo_dataset_installed", { dataset });
       if (result.ok) toast.success(installed ? `${name} uninstalled` : `${name} installed`);
       else toast.error(result.error.message);
     });

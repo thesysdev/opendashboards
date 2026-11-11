@@ -28,7 +28,7 @@ import {
 } from "@/lib/sources/postgres/catalog";
 
 import { showConnectionWarnings } from "./connection-feedback";
-import type { SecretMode } from "./connection-form-dialog";
+import { captureConnectionAdded, type SecretMode } from "./connection-form-dialog";
 
 type Props = {
   open: boolean;
@@ -143,6 +143,7 @@ export function PostgresFormDialog(props: Props) {
       const result = replacing
         ? await replaceCredentialAction({ id: props.connection.id, credential: password })
         : await createConnectionAction({ type: "postgres", name, host, port, database, user, password, sslMode });
+      if (props.mode === "create") captureConnectionAdded(props.flavor ?? "postgres", result);
 
       if (result.ok) {
         toast.success(replacing ? "Password changed" : `Connected to ${name.trim()}`);

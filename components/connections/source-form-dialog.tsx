@@ -13,7 +13,7 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SSL_MODES, type SslMode } from "@/lib/sources/host";
 
 import { showConnectionWarnings } from "./connection-feedback";
-import type { SecretMode } from "./connection-form-dialog";
+import { captureConnectionAdded, type SecretMode } from "./connection-form-dialog";
 import { SOURCE_FORMS, type FieldSpec } from "./source-forms";
 
 export type FormSourceType = keyof typeof SOURCE_FORMS;
@@ -79,6 +79,7 @@ export function SourceFormDialog(props: Props) {
         props.mode === "replace"
           ? await replaceCredentialAction({ id: props.connection.id, credential: values[spec.credential.name] ?? "" })
           : await createConnectionAction({ type, ...values });
+      if (!replacing) captureConnectionAdded(type, result);
 
       if (result.ok) {
         toast.success(replacing ? "Saved" : `Connected to ${(values.name ?? "").trim()}`);
