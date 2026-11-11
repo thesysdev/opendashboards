@@ -12,7 +12,7 @@ import type { ConnectionType } from "@/lib/sources/catalog";
 import { logError } from "@/lib/log";
 
 import { fail, fromValidation, internalError, notFound, ok, type AppResult } from "./errors";
-import { appIdSchema, appRefSchema, createAppSchema, renameAppSchema } from "./schemas";
+import { addAppConnectionSchema, appIdSchema, appRefSchema, createAppSchema, renameAppSchema } from "./schemas";
 
 export type AppConnectionBadge = { id: string; name: string };
 
@@ -77,7 +77,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
       .orderBy(asc(dataConnections.name));
   }
 
-  return {
+  const service = {
     /** The user's apps, most recently updated first. */
     async list(userId: string, { limit }: { limit?: number } = {}): Promise<AppSummary[]> {
       const query = db
@@ -207,6 +207,8 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
             pendingConnectionIds: connectionIds,
           })
           .returning({ id: apps.id });
+        // The sources picked for it are the app's from the start: they show on it, and the agent is told about them.
+        await db.insert(appConnections).values(connectionIds.map((connectionId) => ({ appId: app.id, connectionId }))).onConflictDoNothing();
         return ok({ id: app.id });
       });
     },
@@ -269,6 +271,13 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
       return { prompt: row.pending_prompt, connectionIds: row.pending_connection_ids ?? [] };
     },
 
+    /** Adds one of the user's connections to an app, so it shows there and the agent uses it. */
+    addConnection(userId: string, input: unknown): Promise<AppResult> {
+      const parsed = addAppConnectionSchema.safeParse(input);
+      if (!parsed.success) return Promise.resolve(notFound());
+      return service.recordConnectionUse(userId, parsed.data.appId, parsed.data.connectionId);
+    },
+
     /**
      * Records that an app's dashboards use a connection. Both must belong to
      * the user. The server calls it when a dashboard queries a connection;
@@ -291,6 +300,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
       });
     },
   };
+  return service;
 }
 
 export type AppService = ReturnType<typeof createAppService>;

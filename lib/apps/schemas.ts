@@ -35,6 +35,7 @@ export const createAppSchema = z
   .strict();
 export const renameAppSchema = z.object({ id: appIdSchema, name: appNameSchema }).strict();
 export const appRefSchema = z.object({ id: appIdSchema }).strict();
+export const addAppConnectionSchema = z.object({ appId: appIdSchema, connectionId: z.uuid() }).strict();
 
 export const registerThreadSchema = z
   .object({ threadId: threadIdSchema, title: threadTitleSchema })

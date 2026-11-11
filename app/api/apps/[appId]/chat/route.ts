@@ -7,7 +7,7 @@ import { secrets } from "@/config";
 import { agentTools, getGateway, maxRounds, model, SYSTEM_PROMPT, type TurnContext } from "@/lib/agent";
 import { createAgUiTranslator, sse } from "@/lib/agent/ag-ui";
 import { chatBodySchema, VIEWING_DASHBOARD, type ChatBody } from "@/lib/agent/messages";
-import { getThreadService } from "@/lib/apps";
+import { getAppService, getThreadService } from "@/lib/apps";
 import { getDashboardService } from "@/lib/dashboards";
 import { HttpError, readJson, route } from "@/lib/http";
 import { logError } from "@/lib/log";
@@ -39,6 +39,15 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
     ? (await getDashboardService().list(user.id, appId)).find((row) => row.artifactId === viewingId)
     : undefined;
   const system: ChatCompletionMessageParam[] = [{ role: "system", content: SYSTEM_PROMPT }];
+  // The data sources the user put in this app: the agent works from these unless asked otherwise.
+  const app = await getAppService().get(user.id, appId);
+  if (app?.connections.length) {
+    const list = app.connections.map((connection) => `${connection.name} (${connection.type}, id ${connection.id})`).join("; ");
+    system.push({
+      role: "system",
+      content: `This app's data sources: ${list}. Use these unless the user asks for another of their connections.`,
+    });
+  }
   if (viewing) {
     system.push({
       role: "system",

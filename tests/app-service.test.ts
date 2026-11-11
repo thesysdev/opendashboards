@@ -68,8 +68,8 @@ describe("create", () => {
       pendingPrompt: "show me weekly signups by plan and country for the last year.",
       pendingConnections: [{ id: prod, name: "Production" }],
       dashboards: [],
-      // Picking a source isn't using it: usage is recorded when dashboards query it.
-      connections: [],
+      // The sources picked for an app are its own from the start.
+      connections: [{ id: prod, name: "Production" }],
     });
     const next = await createApp("alice", "another", [prod]);
     expect((await appsService.get("alice", next))?.name).toBe("Production: App 2");
@@ -134,7 +134,7 @@ describe("list, rename, remove", () => {
       dashboardCount: 2,
       connections: [{ id: connectionId, name: "Production" }],
     });
-    expect(listed[1]).toMatchObject({ id: newer, dashboardCount: 0, connections: [] });
+    expect(listed[1]).toMatchObject({ id: newer, dashboardCount: 0, connections: [{ id: connectionId, name: "Production" }] });
     expect(await appsService.list("alice", { limit: 1 })).toHaveLength(1);
   });
 
@@ -189,6 +189,40 @@ describe("takePendingPrompt", () => {
     });
     expect(await appsService.takePendingPrompt("alice", id)).toBeNull();
     expect((await appsService.get("alice", id))?.pendingConnections).toEqual([]);
+  });
+});
+
+describe("addConnection", () => {
+  it("starts an app with the sources picked for it", async () => {
+    const first = await addConnection("alice", "Production");
+    await addConnection("alice", "Staging");
+    const id = await createApp("alice", "Signups", [first]);
+    expect((await appsService.get("alice", id))?.connections.map((connection) => connection.name)).toEqual(["Production"]);
+  });
+
+  it("adds another of the user's connections, once", async () => {
+    const first = await addConnection("alice", "Production");
+    const second = await addConnection("alice", "Staging");
+    const id = await createApp("alice", "Signups", [first]);
+
+    expect(await appsService.addConnection("alice", { appId: id, connectionId: second })).toEqual({ ok: true, data: undefined });
+    expect(await appsService.addConnection("alice", { appId: id, connectionId: second })).toMatchObject({ ok: true });
+    expect((await appsService.get("alice", id))?.connections.map((connection) => connection.name)).toEqual(["Production", "Staging"]);
+  });
+
+  it("refuses someone else's app or connection, and malformed input", async () => {
+    const mine = await addConnection("alice");
+    const theirs = await addConnection("bob");
+    const id = await createApp("alice", "Signups", [mine]);
+    for (const [userId, input] of [
+      ["alice", { appId: id, connectionId: theirs }],
+      ["bob", { appId: id, connectionId: theirs }],
+      ["alice", { appId: id, connectionId: "not-a-uuid" }],
+      ["alice", { appId: id, connectionId: mine, extra: true }],
+    ] as const) {
+      expect(await appsService.addConnection(userId, input)).toMatchObject({ ok: false, error: { code: "not_found" } });
+    }
+    expect(await db.select().from(appConnections)).toHaveLength(1);
   });
 });
 

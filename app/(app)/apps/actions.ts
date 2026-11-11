@@ -36,6 +36,14 @@ export async function renameAppAction(input: unknown): Promise<AppResult> {
   return result;
 }
 
+/** Adds one of the user's connections to an app. */
+export async function addAppConnectionAction(input: unknown): Promise<AppResult> {
+  const user = await requireUser();
+  const result = await getAppService().addConnection(user.id, input);
+  if (result.ok) revalidateShell();
+  return result;
+}
+
 /** Deletes the app and goes back to the list. Returns only on failure. */
 export async function deleteAppAction(input: unknown): Promise<AppResult<never>> {
   const user = await requireUser();
