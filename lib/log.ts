@@ -1,4 +1,27 @@
+import { AsyncLocalStorage } from "node:async_hooks";
+
 import { count } from "./metrics";
+
+/** Ids every log line in the request should carry: `user`, `app`, `connection`, ... */
+export type LogContext = Record<string, string | undefined>;
+
+const baggage = new AsyncLocalStorage<LogContext>();
+
+/** Runs `fn` with these ids added to whatever the enclosing request already carries. */
+export function withLogContext<T>(fields: LogContext, fn: () => T): T {
+  return baggage.run({ ...baggage.getStore(), ...fields }, fn);
+}
+
+/** Adds ids to the current request's context (the dashboard's app, say, once it's looked up). */
+export function addLogContext(fields: LogContext): void {
+  const store = baggage.getStore();
+  if (store) Object.assign(store, fields);
+}
+
+function describeContext(): string {
+  const entries = Object.entries(baggage.getStore() ?? {}).filter(([, value]) => value);
+  return entries.length ? ` {${entries.map(([key, value]) => `${key}=${value}`).join(" ")}}` : "";
+}
 
 const API_KEY_PATTERN = /ph[a-z]_[A-Za-z0-9_-]+/g;
 const URL_PASSWORD_PATTERN = /(:\/\/[^\s:/@]*):[^\s/@]*@/g;
@@ -18,7 +41,8 @@ export function redact(text: string): string {
  * Logs an error by name, message and the same for each `cause` behind it
  * (a network failure's code, say), plus a `detail` an API gave. Whole error
  * objects can carry request bodies or headers, so they're never logged as is.
- * Each one also counts toward the `opendashboards.error` metric, which Vercel alerts on.
+ * The line also carries the request's ids (`withLogContext`), so a failure can
+ * be traced to a user, app or connection. Each one also counts toward the `opendashboards.error` metric, which Vercel alerts on.
  */
 export function logError(context: string, error: unknown): void {
   const parts: string[] = [];
@@ -29,7 +53,7 @@ export function logError(context: string, error: unknown): void {
     rootCause = current;
     current = current instanceof Error ? current.cause : undefined;
   }
-  console.error(`[opendashboards] ${context}: ${redact(parts.join(" ← caused by "))}`);
+  console.error(`[opendashboards] ${context}${describeContext()}: ${redact(parts.join(" ← caused by "))}`);
   count("opendashboards.error", { context, cause: causeLabel(rootCause) });
 }
 

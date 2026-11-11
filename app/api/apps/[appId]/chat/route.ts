@@ -10,7 +10,7 @@ import { chatBodySchema, VIEWING_DASHBOARD, type ChatBody } from "@/lib/agent/me
 import { getAppService, getThreadService } from "@/lib/apps";
 import { getDashboardService } from "@/lib/dashboards";
 import { HttpError, readJson, route } from "@/lib/http";
-import { logError } from "@/lib/log";
+import { addLogContext, logError } from "@/lib/log";
 import { count } from "@/lib/metrics";
 
 type Ctx = { params: Promise<{ appId: string }> };
@@ -25,10 +25,12 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024;
  */
 export const POST = route<Ctx>(async (request, user, { params }) => {
   const { appId } = await params;
+  addLogContext({ app: appId });
   const parsed = chatBodySchema.safeParse(await readJson(request, { maxBytes: MAX_BODY_BYTES }));
   if (!parsed.success) throw new HttpError(400, parsed.error.issues[0]?.message ?? "Invalid chat request");
   const { threadId, messages, context } = parsed.data as ChatBody;
   const runId = typeof parsed.data.runId === "string" ? parsed.data.runId : crypto.randomUUID();
+  addLogContext({ thread: threadId, run: runId });
 
   const threads = getThreadService();
   if (!(await threads.belongsTo(user.id, appId, threadId))) throw new HttpError(404, "Thread not found");

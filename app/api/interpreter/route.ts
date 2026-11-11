@@ -3,7 +3,7 @@ import { z } from "zod";
 
 import { getDashboardService, getDashboards } from "@/lib/dashboards";
 import { HttpError, readJson, route } from "@/lib/http";
-import { logError } from "@/lib/log";
+import { addLogContext, logError } from "@/lib/log";
 
 const requestSchema = z.object({
   name: z.string().min(1).max(200),
@@ -23,6 +23,7 @@ export const POST = route(async (request, user) => {
 
   const dashboard = await getDashboardService().findByArtifact(user.id, parsed.data.id);
   if (!dashboard) throw new HttpError(404, "Dashboard not found");
+  addLogContext({ app: dashboard.appId, dashboard: parsed.data.id });
 
   try {
     const result = await getDashboards().interpreter.execute(

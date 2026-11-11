@@ -5,7 +5,7 @@ import { z } from "zod";
 import { getAppService } from "@/lib/apps";
 import { fromCheckError } from "@/lib/connections/errors";
 import { getConnectionService } from "@/lib/connections";
-import { logError } from "@/lib/log";
+import { logError, withLogContext } from "@/lib/log";
 import { ALL_SOURCES } from "@/lib/sources";
 import type { ConnectionType } from "@/lib/sources/catalog";
 import type { ConnectionSource, SourceTool, ToolCaller } from "@/lib/sources/types";
@@ -72,20 +72,22 @@ function fromSource(source: ConnectionSource, tool: SourceTool<Record<string, un
       const connection = await getConnectionService().open(context.userId, connectionId, source.type as ConnectionType);
       if (!connection) throw new ToolError("connection_not_found", `No ${source.label} connection with id ${connectionId}.`);
 
-      let result: unknown;
-      try {
-        result = await tool.execute(connection, toolArgs, { signal, caller });
-      } catch (error) {
-        const known = fromCheckError(error);
-        if (known) {
-          // The caller gets a short message; keep the cause (network error, PostHog's
-          // detail) in the server log, where it can be diagnosed.
-          if (known.status === "unavailable") logError(`tools.${tool.name}`, error);
-          throw new ToolError(known.error.code, known.error.message);
+      // Tool calls in one turn run concurrently, so each gets its own copy of the context.
+      const result = await withLogContext({ connection: connection.id }, async () => {
+        try {
+          return await tool.execute(connection, toolArgs, { signal, caller });
+        } catch (error) {
+          const known = fromCheckError(error);
+          if (known) {
+            // The caller gets a short message; keep the cause (network error, PostHog's
+            // detail) in the server log, where it can be diagnosed.
+            if (known.status === "unavailable") logError(`tools.${tool.name}`, error);
+            throw new ToolError(known.error.code, known.error.message);
+          }
+          logError(`tools.${tool.name}`, error);
+          throw new ToolError("internal", "The tool failed unexpectedly.");
         }
-        logError(`tools.${tool.name}`, error);
-        throw new ToolError("internal", "The tool failed unexpectedly.");
-      }
+      });
 
       // Inferred from use. A failure to record shouldn't fail the query.
       const recorded = await getAppService().recordConnectionUse(context.userId, context.appId, connection.id);

@@ -5,6 +5,7 @@ import { refresh } from "next/cache";
 import { requireUser } from "@/lib/auth/user";
 import { getConnectionService } from "@/lib/connections";
 import type { Result } from "@/lib/connections/errors";
+import { withLogContext } from "@/lib/log";
 
 /*
  * Each action is a public POST endpoint: it authenticates itself, and the
@@ -17,7 +18,7 @@ async function run<T>(
   { refreshOnFailure = false } = {},
 ): Promise<Result<T>> {
   const user = await requireUser();
-  const result = await call(user.id);
+  const result = await withLogContext({ user: user.id }, () => call(user.id));
   if (result.ok || refreshOnFailure) refresh();
   return result;
 }
