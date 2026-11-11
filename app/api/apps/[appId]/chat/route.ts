@@ -4,6 +4,7 @@ import { APIError } from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
 import { secrets } from "@/config";
+import { track } from "@/lib/analytics";
 import { agentTools, getGateway, maxRounds, model, SYSTEM_PROMPT, type TurnContext } from "@/lib/agent";
 import { createAgUiTranslator, sse } from "@/lib/agent/ag-ui";
 import { chatBodySchema, VIEWING_DASHBOARD, type ChatBody } from "@/lib/agent/messages";
@@ -60,6 +61,20 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
   const encoder = new TextEncoder();
   const turn: TurnContext = { userId: user.id, appId, signal: request.signal, dashboards: [] };
 
+  const startedAt = Date.now();
+  const trackTurn = (outcome: string, cause: string, turnMessages: ChatCompletionMessageParam[]) => {
+    const results = turnMessages.filter((message) => message.role === "tool");
+    track(user.id, "chat_turn_finished", {
+      app_id: appId,
+      outcome,
+      cause,
+      duration_ms: Date.now() - startedAt,
+      tool_calls: results.length,
+      tool_errors: results.filter((message) => typeof message.content === "string" && message.content.startsWith('{"error":')).length,
+      dashboards_changed: turn.dashboards.length,
+    });
+  };
+
   const body = new ReadableStream({
     async start(controller) {
       const emit = (event: BaseEvent) => controller.enqueue(encoder.encode(sse(event)));
@@ -79,6 +94,9 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
       runner.on("chunk", (chunk) => translate.chunk(chunk));
       runner.on("message", (message) => translate.message(message));
 
+      // The new turn: the user's message, then every message the loop added.
+      const newMessages = () => runner.messages.slice(system.length - 1 + messages.length) as ChatCompletionMessageParam[];
+
       try {
         await runner.done();
         translate.finish();
@@ -87,12 +105,14 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
       } catch (error) {
         if (request.signal.aborted) {
           count("opendashboards.chat.turn", { outcome: "cancelled", cause: "none" });
+          trackTurn("cancelled", "none", newMessages());
           controller.close();
           return; // Cancelled: save nothing.
         }
         logError("chat.turn", error);
         const failure = turnFailure(error);
         count("opendashboards.chat.turn", { outcome: "failed", cause: failure.cause });
+        trackTurn("failed", failure.cause, newMessages());
         translate.finish();
         emit({ type: EventType.RUN_ERROR, message: failure.message } as BaseEvent);
         controller.close();
@@ -100,8 +120,8 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
       }
 
       // Saved before the stream closes: a Vercel Function can stop once its response ends.
-      // The new turn: the user's message, then every message the loop added.
-      const turnMessages = runner.messages.slice(system.length - 1 + messages.length) as ChatCompletionMessageParam[];
+      const turnMessages = newMessages();
+      trackTurn("completed", "none", turnMessages);
       try {
         await storeChatCompletionHistory({
           apiKey: secrets.thesysApiKey() ?? "",

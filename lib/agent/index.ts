@@ -12,6 +12,7 @@ import {
   getDashboards,
   readDashboard,
 } from "@/lib/dashboards";
+import { track } from "@/lib/analytics";
 import { logError } from "@/lib/log";
 import spec from "@/lib/dashboards/generated/kit.spec.json";
 import { ToolError, toolsFor, type ToolContext } from "@/lib/tools";
@@ -240,6 +241,7 @@ async function remember(
     const recorded = await getDashboardService().record(turn.userId, turn.appId, { artifactId: artifact.id, ...created });
     if (!recorded) throw new ToolError("not_found", "This app no longer exists.");
   }
+  track(turn.userId, created ? "dashboard_created" : "dashboard_updated", { app_id: turn.appId, dashboard_id: artifact.id });
   turn.dashboards.push(artifact.id);
   return response;
 }

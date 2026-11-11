@@ -1,6 +1,7 @@
 import { OpenUIApiError, ToolExecutionError } from "@openuidev/server";
 import { z } from "zod";
 
+import { track } from "@/lib/analytics";
 import { getDashboardService, getDashboards } from "@/lib/dashboards";
 import { HttpError, readJson, route } from "@/lib/http";
 import { addLogContext, logError } from "@/lib/log";
@@ -34,6 +35,12 @@ export const POST = route(async (request, user) => {
     return Response.json({ result });
   } catch (error) {
     if (error instanceof ToolExecutionError) {
+      track(user.id, "dashboard_query_failed", {
+        app_id: dashboard.appId,
+        dashboard_id: parsed.data.id,
+        tool: parsed.data.name,
+        error_code: error.code,
+      });
       return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status ?? 400 });
     }
     if (error instanceof OpenUIApiError) {
