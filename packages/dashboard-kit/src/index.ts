@@ -1,9 +1,9 @@
 /**
- * @prism/dashboard-kit — an OpenUI Lang component library for analytics
+ * @opendashboards/dashboard-kit — an OpenUI Lang component library for analytics
  * dashboards.
  *
- *   import { library } from "@prism/dashboard-kit";
- *   import "@prism/dashboard-kit/styles.css";
+ *   import { library } from "@opendashboards/dashboard-kit";
+ *   import "@opendashboards/dashboard-kit/styles.css";
  *
  *   <Renderer response={openuiLang} library={library} />
  *   const systemPrompt = library.prompt();

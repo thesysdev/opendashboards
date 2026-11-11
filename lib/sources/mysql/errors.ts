@@ -1,7 +1,7 @@
 import { BlockedAddressError } from "@/lib/net/guarded-socket";
 
 export type MysqlErrorCode =
-  /** Wrong user or password, or the server refuses logins from Prism's address. */
+  /** Wrong user or password, or the server refuses logins from OpenDashboards' address. */
   | "auth_failed"
   /** No database with that name. */
   | "database_not_found"

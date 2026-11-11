@@ -13,14 +13,14 @@ export async function proxy(request: NextRequest) {
   try {
     provider = getAuthProvider();
   } catch {
-    count("prism.auth.rejected", { reason: "misconfigured" });
+    count("opendashboards.auth.rejected", { reason: "misconfigured" });
     return new NextResponse("Service unavailable", { status: 503 });
   }
 
   const result = await provider.authenticate(request.headers);
   if (!result.ok) {
     // Counted only here: requireUser() re-checks every request that passes.
-    count("prism.auth.rejected", { reason: result.reason });
+    count("opendashboards.auth.rejected", { reason: result.reason });
     if (result.reason === "unavailable") return new NextResponse("Service unavailable", { status: 503 });
     return new NextResponse("Unauthorized", { status: 401 });
   }

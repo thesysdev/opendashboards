@@ -1,5 +1,5 @@
 /*
- * @prism/dashboard-kit styles. Plain CSS, no framework: every class is
+ * @opendashboards/dashboard-kit styles. Plain CSS, no framework: every class is
  * prefixed `pdk-`, and every colour is a variable on `.pdk-root`, so a host
  * can re-theme by overriding variables.
  */

@@ -3,10 +3,10 @@ import { local } from "./local";
 import { prod } from "./prod";
 import type { Environment, EnvironmentSettings, Settings } from "./settings";
 
-export { ENVIRONMENTS, type DemoDataset, type Environment, type Settings } from "./settings";
+export { ENVIRONMENTS, type DemoData, type DemoDataset, type Environment, type Settings } from "./settings";
 
 /**
- * Prism's configuration, in one place. The environment follows Next.js's
+ * OpenDashboards' configuration, in one place. The environment follows Next.js's
  * mode: production builds and `next start` run as prod, `next dev` and tests
  * as local. Settings come from common.ts plus that environment's file.
  *
@@ -44,7 +44,7 @@ export function config(): Settings & { env: Environment } {
 
 /** Secrets, from environment variables only. Never logged, never in settings files. */
 export const secrets = {
-  /** Prism's own database. */
+  /** Our database: OpenDashboards' own Neon project. The only database we write to or migrate. */
   databaseUrl: () => process.env.DATABASE_URL,
   /** OpenUI Cloud and Gateway. */
   thesysApiKey: () => process.env.THESYS_API_KEY,
@@ -54,8 +54,8 @@ export const secrets = {
   kmsRoleArn: () => process.env.KMS_ROLE_ARN,
   /** The Supabase project whose JWTs say who a request is for. Not secret, but set per deployment. */
   supabaseUrl: () => process.env.SUPABASE_URL,
-  /** The read-only role every demo dataset is read through. Unset locally: no demo datasets. */
-  demoDatabasePassword: () => process.env.DEMO_DATABASE_PASSWORD,
+  /** Demo data: the password of the Demo Data project's read-only role. Unset locally: no demo datasets. */
+  demoDataPassword: () => process.env.DEMO_DATABASE_PASSWORD,
 };
 
 /**
@@ -82,8 +82,8 @@ const DEMO_KEY = /^[a-z][a-z0-9_]{0,39}$/;
 function demoDatasetProblems(settings: Settings): string[] {
   const problems: string[] = [];
   const seen = new Set<string>();
-  for (const dataset of settings.demoDatasets) {
-    const label = `demoDatasets.${dataset.key || "?"}`;
+  for (const dataset of settings.demoData.datasets) {
+    const label = `demoData.${dataset.key || "?"}`;
     if (!DEMO_KEY.test(dataset.key)) problems.push(`${label}: key must be lowercase letters, digits or _ (at most 40)`);
     if (seen.has(dataset.key)) problems.push(`${label}: key is used twice`);
     seen.add(dataset.key);
@@ -111,7 +111,7 @@ export function secretProblems(name: Environment, settings: Settings, env: Env =
     problems.push(`KMS_ROLE_ARN is not set; ${name} reaches KMS through Vercel OIDC`);
   }
   // Locally, demo datasets are optional: without the password they're simply not offered.
-  if (name !== "local" && settings.demoDatasets.length && !env.DEMO_DATABASE_PASSWORD) {
+  if (name !== "local" && settings.demoData.datasets.length && !env.DEMO_DATABASE_PASSWORD) {
     problems.push(`DEMO_DATABASE_PASSWORD is not set; ${name} offers demo datasets`);
   }
   return problems;

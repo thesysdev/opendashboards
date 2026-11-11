@@ -59,7 +59,7 @@ export function parseConnectionString(input: string): ParsedConnectionString | n
 
   const sslmode = url.searchParams.get("sslmode");
   if (sslmode === "verify-full" || sslmode === "verify-ca") fields.sslMode = "verify-full";
-  // prefer/allow/disable can mean no encryption, which Prism never uses: encrypt at least.
+  // prefer/allow/disable can mean no encryption, which OpenDashboards never uses: encrypt at least.
   else if (sslmode === "require" || sslmode === "prefer" || sslmode === "allow" || sslmode === "disable") {
     fields.sslMode = "require";
   }
@@ -81,7 +81,7 @@ export const POSTGRES_FLAVORS = {
     sslMode: "require",
     hostPlaceholder: "aws-0-us-east-1.pooler.supabase.com",
     databasePlaceholder: "postgres",
-    userPlaceholder: "prism_reader.your-project-ref",
+    userPlaceholder: "dashboards_reader.your-project-ref",
     tip: "In Supabase, open Connect and copy the Session pooler string: the direct host only answers over IPv6. Supabase uses its own certificate authority, so the connection is encrypted but its certificate isn't checked.",
   },
   neon: {
@@ -92,7 +92,7 @@ export const POSTGRES_FLAVORS = {
     sslMode: "verify-full",
     hostPlaceholder: "ep-example-123456.us-east-2.aws.neon.tech",
     databasePlaceholder: "neondb",
-    userPlaceholder: "prism_reader",
+    userPlaceholder: "dashboards_reader",
     tip: "In Neon, open Connect, pick the branch and database, and copy the connection string.",
   },
 } as const satisfies Record<

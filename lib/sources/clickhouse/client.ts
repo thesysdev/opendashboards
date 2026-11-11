@@ -132,7 +132,7 @@ async function send(
         "X-ClickHouse-User": target.user,
         "X-ClickHouse-Key": target.password,
         "Content-Type": "text/plain; charset=utf-8",
-        "User-Agent": "prism",
+        "User-Agent": "opendashboards",
       },
       body: sql,
       signal: options.signal,

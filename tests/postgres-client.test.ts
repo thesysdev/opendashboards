@@ -26,7 +26,7 @@ describe("parseConnectionString", () => {
     expect(mode("verify-ca")).toBe("verify-full");
     expect(mode("verify-full")).toBe("verify-full");
     expect(mode("prefer")).toBe("require");
-    // Prism never connects unencrypted, so "disable" still encrypts.
+    // OpenDashboards never connects unencrypted, so "disable" still encrypts.
     expect(mode("disable")).toBe("require");
     expect(parseConnectionString("postgres://h/db")?.sslMode).toBeUndefined();
   });

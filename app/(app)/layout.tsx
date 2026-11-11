@@ -3,6 +3,7 @@ import { Suspense } from "react";
 
 import { AppsTree } from "@/components/shell/apps-tree";
 import { Brand } from "@/components/shell/brand";
+import { Footer } from "@/components/shell/footer";
 import { MobileNav } from "@/components/shell/mobile-nav";
 import { NavLink } from "@/components/shell/nav-link";
 import { SidebarUser, SidebarUserFallback } from "@/components/shell/sidebar-user";
@@ -46,9 +47,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           </Suspense>
         </header>
 
-        <main className="mx-2 mb-2 min-h-0 flex-1 overflow-y-auto rounded-xl border bg-background md:my-2 md:ml-0">
+        <main className="mx-2 min-h-0 flex-1 overflow-y-auto rounded-xl border bg-background md:mt-2 md:ml-0">
           {children}
         </main>
+        <Footer />
       </div>
     </div>
   );
@@ -58,7 +60,7 @@ function HomeLink({ className }: { className?: string }) {
   return (
     <Link
       href="/connections"
-      aria-label="Prism home"
+      aria-label="OpenDashboards home"
       className={`rounded-md focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${className ?? ""}`}
     >
       <Brand />

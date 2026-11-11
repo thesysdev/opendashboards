@@ -1,6 +1,6 @@
 "use client";
 
-import { DashboardHeading } from "@prism/dashboard-kit";
+import { DashboardHeading } from "@opendashboards/dashboard-kit";
 import { useState } from "react";
 
 import { updateDashboardAction } from "@/app/(app)/apps/actions";
@@ -9,7 +9,7 @@ import { InlineRename } from "@/components/inline-rename";
 type Field = "title" | "description";
 
 /**
- * A dashboard's title and description, above it: Prism's own record, drawn
+ * A dashboard's title and description, above it: OpenDashboards' own record, drawn
  * the way the dashboard kit draws headings. Click either to change it in
  * place; a saved change shows straight away.
  */

@@ -57,7 +57,7 @@ type AssistantMessage = Extract<Message, { role: "assistant" }>;
  *
  * Chat state, streaming and storage are react-headless's (`ChatProvider`,
  * `agUIAdapter`, `useOpenuiCloudStorage`); the "Working / Behind the scenes"
- * timeline and Markdown are react-ui's own components. Prism only lays them
+ * timeline and Markdown are react-ui's own components. OpenDashboards only lays them
  * out for a narrow panel, the way Agent Interface lays them out full screen.
  */
 export function BuildChat({
@@ -108,7 +108,7 @@ export function BuildChat({
   return (
     <ThemeProvider mode="light">
       <ChatProvider llm={llm} storage={storage}>
-        <div className="prism-build-chat flex min-h-0 flex-1 flex-col">
+        <div className="dashboards-build-chat flex min-h-0 flex-1 flex-col">
           <ThreadBar />
           <ThreadMessages hasDashboards={dashboards.length > 0} />
           <Composer />
@@ -218,7 +218,7 @@ function ThreadMessages({ hasDashboards }: { hasDashboards: boolean }) {
         <SparklesIcon className="size-5 text-muted-foreground" aria-hidden />
         <p className="text-sm font-medium">{hasDashboards ? "Change or add dashboards" : "Ask for a dashboard"}</p>
         <p className="text-sm text-muted-foreground">
-          Describe what you want to see. Prism explores your data and builds it.
+          Describe what you want to see. OpenDashboards explores your data and builds it.
         </p>
       </div>
     );
@@ -370,8 +370,8 @@ function Composer() {
             }
           }}
           rows={1}
-          placeholder="Ask Prism to build or change a dashboard…"
-          aria-label="Message Prism"
+          placeholder="Ask OpenDashboards to build or change a dashboard…"
+          aria-label="Message OpenDashboards"
           className="max-h-40 min-h-7 flex-1 resize-none bg-transparent py-1 text-sm outline-none [field-sizing:content] placeholder:text-muted-foreground"
         />
         {isRunning ? (
@@ -394,7 +394,7 @@ function Composer() {
   );
 }
 
-const lastThreadKey = (appId: string) => `prism:build:last-thread:${appId}`;
+const lastThreadKey = (appId: string) => `opendashboards:build:last-thread:${appId}`;
 
 /**
  * Opening Build on an app reopens the conversation last open there (in this

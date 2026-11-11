@@ -18,7 +18,7 @@ describe("flavorOf", () => {
 });
 
 describe("postgres describe", () => {
-  const base = { port: 5432, database: "postgres", user: "prism_reader", sslMode: "require" as const };
+  const base = { port: 5432, database: "postgres", user: "dashboards_reader", sslMode: "require" as const };
 
   it("labels a connection by the service its host belongs to", () => {
     expect(postgresCatalog.describe({ ...base, host: "aws-0-eu-west-1.pooler.supabase.com" })).toMatchObject({

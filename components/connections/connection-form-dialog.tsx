@@ -105,7 +105,7 @@ export function PostHogFormDialog(props: Props) {
             <DialogDescription>
               {replacing
                 ? `Enter a new personal API key for ${props.connection.name}. The region and project stay the same.`
-                : "Prism runs read-only queries against your PostHog project to build dashboards."}
+                : "OpenDashboards runs read-only queries against your PostHog project to build dashboards."}
             </DialogDescription>
           </DialogHeader>
 

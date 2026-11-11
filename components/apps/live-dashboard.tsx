@@ -1,9 +1,9 @@
 "use client";
 
 import { LiveArtifactRenderer } from "@openuidev/react-ui/cloud";
-import { library } from "@prism/dashboard-kit";
+import { library } from "@opendashboards/dashboard-kit";
 
-import "@prism/dashboard-kit/styles.css";
+import "@opendashboards/dashboard-kit/styles.css";
 
 import { useDashboardResponse } from "./app-workspace";
 import { DashboardTitle } from "./dashboard-title";
@@ -12,7 +12,7 @@ const interpreter = { url: "/api/interpreter" };
 
 /**
  * A live dashboard from OpenUI Cloud, drawn with the dashboard kit, under
- * its title and description (Prism's own, not part of the program). Its data
+ * its title and description (OpenDashboards' own, not part of the program). Its data
  * loads fresh through our interpreter every time it opens. When the Build
  * chat creates or edits it, the renderer gets Cloud's response too, and
  * follows the new version as it's built.

@@ -13,8 +13,8 @@ describe("redact", () => {
   });
 
   it("strips the password from a connection string", () => {
-    expect(redact("connect postgres://prism:hunter2@db.example.com:5432/app failed")).toBe(
-      "connect postgres://prism:[redacted]@db.example.com:5432/app failed",
+    expect(redact("connect postgres://opendashboards:hunter2@db.example.com:5432/app failed")).toBe(
+      "connect postgres://opendashboards:[redacted]@db.example.com:5432/app failed",
     );
   });
 
@@ -35,6 +35,6 @@ describe("logError", () => {
     logError("apps.list", new Error("query failed", { cause: root }));
 
     expect(log.mock.calls[0][0]).not.toContain("secret");
-    expect(metric).toHaveBeenCalledWith("prism.error", 1, { context: "apps.list", cause: "ECONNREFUSED", env: "local" });
+    expect(metric).toHaveBeenCalledWith("opendashboards.error", 1, { context: "apps.list", cause: "ECONNREFUSED", env: "local" });
   });
 });

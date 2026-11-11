@@ -40,7 +40,7 @@ type Step = "data" | "build";
 
 /**
  * What a user with no apps sees in place of the home page: pick or connect
- * data, then build a first app, by letting Prism explore the data and
+ * data, then build a first app, by letting OpenDashboards explore the data and
  * suggest dashboards or by describing one. Creating the app ends it.
  */
 export function Onboarding({
@@ -203,7 +203,7 @@ function DataStep({
     <>
       <Heading
         title={hasData ? "Pick your data" : "Where's your data?"}
-        description="Prism runs read-only queries against your data to build live dashboards from it."
+        description="OpenDashboards runs read-only queries against your data to build live dashboards from it."
       />
 
       {hasData && (
@@ -373,8 +373,8 @@ function BuildStep({
   return (
     <>
       <Heading
-        title="What should Prism build?"
-        description="Prism can look through your data and suggest dashboards, or you can describe one yourself."
+        title="What should OpenDashboards build?"
+        description="OpenDashboards can look through your data and suggest dashboards, or you can describe one yourself."
       />
 
       <div className="mb-6 flex flex-wrap items-center justify-center gap-1.5 text-xs">
@@ -413,7 +413,7 @@ function BuildStep({
         <span className="min-w-0 flex-1">
           <span className="block text-[0.9375rem] font-medium">Explore my data and suggest dashboards</span>
           <span className="mt-0.5 block text-sm text-muted-foreground">
-            Prism looks at what&apos;s in your data and proposes a few dashboards for you to pick from.
+            OpenDashboards looks at what&apos;s in your data and proposes a few dashboards for you to pick from.
           </span>
         </span>
         <ArrowRightIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />

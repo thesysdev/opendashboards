@@ -1,5 +1,5 @@
 /**
- * The only hosts Prism talks to for PostHog. A connection stores a host kind,
+ * The only hosts OpenDashboards talks to for PostHog. A connection stores a host kind,
  * never a URL, so nothing a user types can point requests elsewhere.
  */
 export const POSTHOG_HOSTS = {

@@ -29,7 +29,7 @@ describe("runHogQLQuery", () => {
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer phx_key");
     expect(JSON.parse(String(init?.body))).toEqual({
       query: { kind: "HogQLQuery", query: "SELECT 1" },
-      name: "prism",
+      name: "opendashboards",
     });
   });
 });

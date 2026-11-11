@@ -70,12 +70,12 @@ const SSL_LABELS: Record<SslMode, string> = {
   require: "Encrypt only",
 };
 
-const READ_ONLY_ROLE_SQL = `CREATE ROLE prism_reader LOGIN PASSWORD '…';
-GRANT CONNECT ON DATABASE your_db TO prism_reader;
-GRANT USAGE ON SCHEMA public TO prism_reader;
-GRANT SELECT ON ALL TABLES IN SCHEMA public TO prism_reader;
+const READ_ONLY_ROLE_SQL = `CREATE ROLE dashboards_reader LOGIN PASSWORD '…';
+GRANT CONNECT ON DATABASE your_db TO dashboards_reader;
+GRANT USAGE ON SCHEMA public TO dashboards_reader;
+GRANT SELECT ON ALL TABLES IN SCHEMA public TO dashboards_reader;
 ALTER DEFAULT PRIVILEGES IN SCHEMA public
-  GRANT SELECT ON TABLES TO prism_reader;`;
+  GRANT SELECT ON TABLES TO dashboards_reader;`;
 
 /** Adds a Postgres connection, or changes an existing one's password. */
 export function PostgresFormDialog(props: Props) {
@@ -201,7 +201,7 @@ export function PostgresFormDialog(props: Props) {
             <DialogDescription>
               {replacing
                 ? `Enter the new password for ${props.connection.name}. The host, database and user stay the same.`
-                : "Prism runs read-only queries against your database to build dashboards."}
+                : "OpenDashboards runs read-only queries against your database to build dashboards."}
             </DialogDescription>
             {flavor && <p className="text-sm text-muted-foreground">{flavor.tip}</p>}
           </DialogHeader>
@@ -247,7 +247,7 @@ export function PostgresFormDialog(props: Props) {
 
                 <div className="grid grid-cols-2 gap-3">
                   {textField("database", "Database", flavor?.databasePlaceholder ?? "app")}
-                  {textField("user", "User", flavor?.userPlaceholder ?? "prism_reader")}
+                  {textField("user", "User", flavor?.userPlaceholder ?? "dashboards_reader")}
                 </div>
               </>
             )}
@@ -299,8 +299,8 @@ export function PostgresFormDialog(props: Props) {
                   Use a read-only user (recommended)
                 </summary>
                 <p className="mb-2 text-xs text-muted-foreground">
-                  Prism only reads, but a user that can&apos;t write is safer. Run this as an admin, then connect
-                  as <code>prism_reader</code>:
+                  OpenDashboards only reads, but a user that can&apos;t write is safer. Run this as an admin, then connect
+                  as <code>dashboards_reader</code>:
                 </p>
                 <pre className="overflow-x-auto rounded-md bg-neutral-50 p-2.5 text-[0.6875rem] leading-relaxed">
                   {READ_ONLY_ROLE_SQL}

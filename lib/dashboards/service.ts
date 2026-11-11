@@ -4,7 +4,7 @@ import type { Database } from "@/lib/db";
 import { apps, dashboards } from "@/lib/db/schema";
 
 /**
- * Prism's record of dashboards: which app each OpenUI Cloud artifact belongs
+ * OpenDashboards' record of dashboards: which app each OpenUI Cloud artifact belongs
  * to. Cloud keeps the dashboard itself; this table gives it an app, a title
  * for the sidebar, and an owner check before its data loads. Every query is
  * scoped to the user.

@@ -1,5 +1,5 @@
 /**
- * Every setting Prism has. common.ts sets the ones that are the same
+ * Every setting OpenDashboards has. common.ts sets the ones that are the same
  * everywhere; local.ts and prod.ts set the ones that differ. index.ts picks
  * by Next.js's mode and checks them. Secrets are never here: they stay in
  * environment variables, read in index.ts.
@@ -10,11 +10,10 @@ export const ENVIRONMENTS = ["local", "prod"] as const;
 export type Environment = (typeof ENVIRONMENTS)[number];
 
 /**
- * A sample database Prism offers to users who have no data of their own
+ * A sample database OpenDashboards offers to users who have no data of their own
  * yet. Users install it (a connection row of theirs that points here) and
- * uninstall it. Every demo dataset is a database on Prism's own Neon
- * project, read through one read-only role whose password is the
- * DEMO_DATABASE_PASSWORD secret.
+ * uninstall it. It lives in the shared Demo Data project (see DemoData), not in
+ * our own database.
  */
 export type DemoDataset = {
   /** Stable id, stored on installed connections: "retail". Never reuse one for different data. */
@@ -27,6 +26,19 @@ export type DemoDataset = {
   postgres: { host: string; port: number; database: string; user: string; sslMode: "verify-full" | "require" };
   /** Starting prompts offered on the home page. */
   prompts: string[];
+};
+
+/**
+ * Demo data: a Neon project shared by several apps, holding the demo datasets.
+ * Read-only for us. We connect to it only as its read-only role, whose password
+ * is the DEMO_DATABASE_PASSWORD secret, and never migrate, branch or write to
+ * it. Our own data (users' connections, apps, dashboards) is in our database,
+ * DATABASE_URL.
+ */
+export type DemoData = {
+  /** The Neon project's name, so it's recognizable in the Neon console: "Demo Data". */
+  neonProject: string;
+  datasets: DemoDataset[];
 };
 
 /** The same in every environment. */
@@ -69,7 +81,7 @@ export type CommonSettings = {
     /** Checking a connection when it's added or retested. */
     checkTimeoutMs: number;
     maxRows: { agent: number; dashboard: number };
-    /** The largest response Prism will read from a ClickHouse server. */
+    /** The largest response OpenDashboards will read from a ClickHouse server. */
     maxResponseBytes: number;
   };
   bigquery: {
@@ -83,8 +95,8 @@ export type CommonSettings = {
      */
     maxBytesBilled: number;
   };
-  /** Sample datasets users can install to try Prism without data of their own. */
-  demoDatasets: DemoDataset[];
+  /** Sample datasets users can install to try OpenDashboards without data of their own. Read-only. */
+  demoData: DemoData;
 };
 
 /** Different per environment. */
@@ -97,7 +109,7 @@ export type EnvironmentSettings = {
      */
     devUser: { id: string; email: string } | null;
     /**
-     * The host people use Prism at, when a gateway sits in front of it.
+     * The host people use OpenDashboards at, when a gateway sits in front of it.
      * Cross-site checks accept it alongside the request's own host.
      */
     publicHost: string | null;

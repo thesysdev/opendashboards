@@ -16,7 +16,7 @@ import { getCurrentUserApp, type AppDetail } from "@/lib/apps";
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
   const { appId } = await params;
   const app = await getCurrentUserApp(appId);
-  return { title: { default: app?.name ?? "App", template: "%s · Prism" } };
+  return { title: { default: app?.name ?? "App", template: "%s · OpenDashboards" } };
 }
 
 type Params = Promise<{ appId: string }>;

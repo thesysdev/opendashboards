@@ -47,7 +47,7 @@ export const dataConnections = pgTable(
     credentialHint: text("credential_hint").notNull(),
     /**
      * Set when this is an installed demo dataset: its key in config's
-     * demoDatasets. Where it points and its (shared, read-only) credential
+     * demoData. Where it points and its (shared, read-only) credential
      * then come from config, never from this row, so it has no secret.
      */
     demoDataset: text("demo_dataset"),
@@ -123,7 +123,7 @@ export const dashboards = pgTable(
     /** OpenUI Cloud's artifact id (art_…). */
     artifactId: text("artifact_id").notNull().unique(),
     /**
-     * The dashboard's title and one-line description, drawn above it. Prism
+     * The dashboard's title and one-line description, drawn above it. OpenDashboards
      * keeps them, not the program in Cloud: the agent sets them when it
      * creates the dashboard, and only people change them afterwards.
      */

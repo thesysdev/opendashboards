@@ -12,7 +12,7 @@ import { MysqlError, toMysqlError } from "./errors";
 
 /**
  * MySQL and MariaDB, over their own wire protocol to the user's server.
- * Nothing runs on Prism's side but the driver. What keeps it safe:
+ * Nothing runs on OpenDashboards' side but the driver. What keeps it safe:
  *
  * - The socket only reaches public addresses (lib/net/guarded-socket.ts).
  * - TLS is required; "verify-full" also checks the certificate.
@@ -105,7 +105,7 @@ export function mysqlConnectionOptions(target: MysqlTarget): ConnectionOptions {
     supportBigNumbers: true,
     dateStrings: true,
     charset: "utf8mb4",
-    connectAttributes: { program_name: "prism" },
+    connectAttributes: { program_name: "opendashboards" },
   };
 }
 

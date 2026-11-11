@@ -1,4 +1,4 @@
-import { library } from "@prism/dashboard-kit";
+import { library } from "@opendashboards/dashboard-kit";
 import { createParser } from "@openuidev/react-lang";
 import { describe, expect, it } from "vitest";
 

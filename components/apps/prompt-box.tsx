@@ -95,7 +95,7 @@ export function PromptBox({
               send();
             }
           }}
-          placeholder="Ask Prism to build a dashboard of weekly signups by plan…"
+          placeholder="Ask OpenDashboards to build a dashboard of weekly signups by plan…"
           disabled={pending}
           autoFocus={autoFocus}
           maxLength={4000}

@@ -76,7 +76,7 @@ export const clickhouseSource: ConnectionSource<ClickhouseConfig> = {
         return invalid({
           code: "auth_failed",
           field: "password",
-          message: "ClickHouse didn't accept this user and password. If they're right, the user may not be allowed to connect from Prism's address.",
+          message: "ClickHouse didn't accept this user and password. If they're right, the user may not be allowed to connect from OpenDashboards' address.",
         });
       case "database_not_found":
         return invalid({ code: "database_not_found", field: "database", message: "There's no database with this name on the server." });
@@ -84,7 +84,7 @@ export const clickhouseSource: ConnectionSource<ClickhouseConfig> = {
         return invalid({
           code: "host_blocked",
           field: "host",
-          message: "This host points to a private or reserved address. Prism only connects to servers reachable on the public internet.",
+          message: "This host points to a private or reserved address. OpenDashboards only connects to servers reachable on the public internet.",
         });
       case "host_not_found":
         return invalid({ code: "host_not_found", field: "host", message: "This host name doesn't resolve. Check it for typos." });

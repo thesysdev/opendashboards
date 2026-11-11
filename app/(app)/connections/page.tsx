@@ -25,7 +25,7 @@ export default function ConnectionsPage() {
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
       <PageHeader
         title="Data Connections"
-        description="Connect your analytics and databases. Prism only runs read-only queries against them to build live dashboards."
+        description="Connect your analytics and databases. OpenDashboards only runs read-only queries against them to build live dashboards."
       />
       <Suspense fallback={<ConnectionsSkeleton />}>
         <ConnectionsContent />
@@ -88,7 +88,7 @@ async function ConnectionsContent() {
         <section aria-labelledby="demo-datasets" className="mt-10">
           <SectionLabel id="demo-datasets">Demo datasets</SectionLabel>
           <p className="-mt-1 mb-3 text-sm text-muted-foreground">
-            Sample data to try Prism with. Install one to use it like any connection.
+            Sample data to try OpenDashboards with. Install one to use it like any connection.
           </p>
           <ul className="divide-y rounded-xl border">
             {demos.map((demo) => (

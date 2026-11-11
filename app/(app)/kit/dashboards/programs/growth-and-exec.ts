@@ -1,5 +1,5 @@
 // Mock dashboards for the "Growth metrics" and "Weekly exec summary" apps,
-// written in OpenUI Lang against @prism/dashboard-kit.
+// written in OpenUI Lang against @opendashboards/dashboard-kit.
 // Static data only; weekly series cover Aug 10 – Nov 1, 2026 (12 weeks).
 
 import type { KitProgram } from "@/app/(app)/kit/program";

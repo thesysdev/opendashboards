@@ -72,7 +72,7 @@ async function Home() {
           What do you want to build?
         </h1>
         <p className="mx-auto mt-3 max-w-md text-center text-[0.9375rem] text-muted-foreground">
-          Describe a dashboard. Prism builds it from your data connections.
+          Describe a dashboard. OpenDashboards builds it from your data connections.
         </p>
         <div className="mt-10">
           <PromptBox connections={connections.map(({ id, name, shortSource }) => ({ id, name, source: shortSource }))} />

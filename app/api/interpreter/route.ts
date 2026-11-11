@@ -14,7 +14,7 @@ const requestSchema = z.object({
 
 /**
  * Runs a live dashboard's data calls. The dashboard must be this user's, and
- * the app its tools record usage against comes from Prism's own record of
+ * the app its tools record usage against comes from OpenDashboards' own record of
  * the dashboard, never from the request.
  */
 export const POST = route(async (request, user) => {

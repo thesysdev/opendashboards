@@ -112,7 +112,7 @@ function AppTitle({
 /**
  * An app's workspace, shared by all its dashboards: the header, the selected
  * dashboard (the page, as children), and the Build panel on the right, where
- * you ask Prism to build. The app's dashboards are listed in the main sidebar.
+ * you ask OpenDashboards to build. The app's dashboards are listed in the main sidebar.
  *
  * It lives in the app's layout, so moving between dashboards keeps the Build
  * panel as it was. It starts open when there's nothing to look at yet, and

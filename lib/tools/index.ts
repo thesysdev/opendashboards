@@ -100,7 +100,7 @@ const listConnections: Tool = {
   name: "list_connections",
   description:
     "The user's data connections: id, name, type and what each points at. Pass a connection's id to that source's tools. " +
-    "A demo dataset is sample data Prism provides; its `about` says what's in it and where to look first.",
+    "A demo dataset is sample data OpenDashboards provides; its `about` says what's in it and where to look first.",
   parameters: z.toJSONSchema(z.object({})),
   callers: ["agent"],
   async run(_args, context) {

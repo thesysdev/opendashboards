@@ -1,17 +1,17 @@
 "use client";
 
-import { DashboardHeading, library } from "@prism/dashboard-kit";
+import { DashboardHeading, library } from "@opendashboards/dashboard-kit";
 import { Renderer } from "@openuidev/react-lang";
 import { useSyncExternalStore } from "react";
 
-import "@prism/dashboard-kit/styles.css";
+import "@opendashboards/dashboard-kit/styles.css";
 
 import type { KitProgram } from "./program";
 
 const subscribe = () => () => {};
 
 /**
- * Renders an OpenUI Lang program with Prism's dashboard kit, for the /kit
+ * Renders an OpenUI Lang program with OpenDashboards' dashboard kit, for the /kit
  * development pages, under its title and description as the app draws them.
  *
  * Client-only: react-lang 1.1 sets `$state` defaults in an effect, so a server

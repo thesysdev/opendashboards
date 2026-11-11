@@ -1,5 +1,5 @@
 // Mock dashboards (static OpenUI Lang) for the Marketing attribution and
-// Feature adoption: Search apps, written against @prism/dashboard-kit.
+// Feature adoption: Search apps, written against @opendashboards/dashboard-kit.
 // Generated with consistent numbers: paid channel totals equal campaign sums,
 // landing-page entrances equal channel sessions. "Today" is Fri Nov 6, 2026.
 
