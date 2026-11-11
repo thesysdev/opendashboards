@@ -2,6 +2,7 @@
 
 import { refresh } from "next/cache";
 
+import { track } from "@/lib/analytics";
 import { requireUser } from "@/lib/auth/user";
 import { getConnectionService } from "@/lib/connections";
 import type { Result } from "@/lib/connections/errors";
@@ -23,7 +24,12 @@ async function run<T>(
 }
 
 export async function createConnectionAction(input: unknown) {
-  return run((userId) => getConnectionService().create(userId, input));
+  return run(async (userId) => {
+    const result = await getConnectionService().create(userId, input);
+    const type = (input as { type?: unknown } | null)?.type;
+    trackConnection(userId, typeof type === "string" ? type : "unknown", false, result);
+    return result;
+  });
 }
 
 /** Refreshes on failure too: the check records the new status either way. */
@@ -48,10 +54,19 @@ export async function deleteConnectionAction(input: unknown) {
 
 /** Installs a demo dataset: a connection of the user's that points at it. */
 export async function installDemoAction(input: unknown) {
-  return run((userId) => getConnectionService().installDemo(userId, input));
+  return run(async (userId) => {
+    const result = await getConnectionService().installDemo(userId, input);
+    trackConnection(userId, "postgres", true, result);
+    return result;
+  });
 }
 
 /** Uninstalls a demo dataset, unless an app uses it. */
 export async function uninstallDemoAction(input: unknown) {
   return run((userId) => getConnectionService().uninstallDemo(userId, input));
+}
+
+function trackConnection(userId: string, sourceType: string, isDemo: boolean, result: Result<unknown>) {
+  if (result.ok) track(userId, "connection_created", { source_type: sourceType, is_demo: isDemo });
+  else track(userId, "connection_failed", { source_type: sourceType, is_demo: isDemo, error_code: result.error.code });
 }

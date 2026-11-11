@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 
+import { config } from "@/config";
+import { DISCOVERY_PROMPT } from "@/components/onboarding/discovery-prompt";
+import { track } from "@/lib/analytics";
 import { requireUser } from "@/lib/auth/user";
 import { getAppService } from "@/lib/apps";
 import { getConnectionService } from "@/lib/connections";
@@ -25,6 +28,20 @@ export async function createAppAction(input: unknown): Promise<AppResult<never>>
   const user = await requireUser();
   const result = await getAppService().create(user.id, input);
   if (!result.ok) return result;
+  const { prompt, connectionIds } = input as { prompt: string; connectionIds: string[] };
+  const connections = (await getConnectionService().list(user.id)).filter((connection) => connectionIds.includes(connection.id));
+  track(user.id, "app_created", {
+    app_id: result.data.id,
+    connection_count: connections.length,
+    source_types: [...new Set(connections.map((connection) => connection.type))],
+    uses_demo_data: connections.some((connection) => connection.demo),
+    prompt_kind:
+      prompt.trim() === DISCOVERY_PROMPT
+        ? "discovery"
+        : config().demoData.datasets.some((dataset) => dataset.prompts.includes(prompt.trim()))
+          ? "suggested"
+          : "custom",
+  });
   revalidateShell();
   redirect(`/apps/${result.data.id}`);
 }

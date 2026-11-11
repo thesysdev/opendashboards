@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Suspense } from "react";
 
+import { AnalyticsUser } from "@/components/analytics-user";
 import { AppsTree } from "@/components/shell/apps-tree";
 import { Brand } from "@/components/shell/brand";
 import { Footer } from "@/components/shell/footer";
@@ -8,10 +9,14 @@ import { MobileNav } from "@/components/shell/mobile-nav";
 import { NavLink } from "@/components/shell/nav-link";
 import { SidebarUser, SidebarUserFallback } from "@/components/shell/sidebar-user";
 import { UserAvatar, UserAvatarFallback } from "@/components/shell/user-avatar";
+import { requireUser } from "@/lib/auth/user";
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex h-dvh bg-neutral-50">
+      <Suspense fallback={null}>
+        <IdentifyUser />
+      </Suspense>
       {/* md and up: the sidebar holds the brand, the nav, and the user. */}
       <aside className="hidden w-60 shrink-0 flex-col px-2 py-3 md:flex">
         <HomeLink className="mb-3 flex h-9 shrink-0 items-center px-2" />
@@ -54,6 +59,11 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       </div>
     </div>
   );
+}
+
+async function IdentifyUser() {
+  const user = await requireUser();
+  return <AnalyticsUser id={user.id} email={user.email} />;
 }
 
 function HomeLink({ className }: { className?: string }) {
