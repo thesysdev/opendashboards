@@ -49,14 +49,14 @@ One question, one dashboard, from every tool that has part of the answer.
 
 ## Why OpenDashboards
 
-- 🔒 **Your data, your servers.** Connection credentials stay on your server, and queries run
+- **Your data, your servers.** Connection credentials stay on your server, and queries run
   from it. For complete isolation, OpenUI Cloud can be privately hosted inside your network.
-- 🧠 **Any model.** Use any model the OpenUI Dashboards API supports, or bring your own OpenAI
+- **Any model.** Use any model the OpenUI Dashboards API supports, or bring your own OpenAI
   or Anthropic key.
-- 📊 **Live and interactive.** Dashboards stay connected to your data. Filter them and drill
+- **Live and interactive.** Dashboards stay connected to your data. Filter them and drill
   down, and they update when the data does.
-- ✏️ **Edit one chart.** Ask for a change and only that chart is built again.
-- 🧩 **Open source.** MIT licensed. Read it, fork it, run it.
+- **Edit one chart.** Ask for a change and only that chart is built again.
+- **Open source.** MIT licensed. Read it, fork it, run it.
 
 ## Data sources
 
@@ -76,11 +76,11 @@ through its MCP server.
 
 ## Quick start
 
-### ☁️ Use the hosted version
+### Use the hosted version
 
 Sign up at [opendashboards.com](https://opendashboards.com). Nothing to install.
 
-### 🧑‍💻 Run it yourself
+### Run it yourself
 
 You need Node 20.9 or later, pnpm and Docker, and a Thesys API key from
 [console.thesys.dev](https://console.thesys.dev). OpenUI Cloud has a generous free tier.
@@ -98,7 +98,7 @@ pnpm dev                     # http://localhost:3000
 Locally, every request acts as the dev user in `config/local.ts`, and connection keys are
 stored unencrypted. Production refuses both.
 
-### 🚀 Deploy to production
+### Deploy to production
 
 Fork the repo, implement your auth, and deploy. Auth is one interface, `AuthProvider` in
 [`lib/auth/provider.ts`](lib/auth/provider.ts): add yours to
