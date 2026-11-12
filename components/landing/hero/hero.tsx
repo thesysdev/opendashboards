@@ -90,7 +90,10 @@ function SourcesLine() {
           </li>
         ))}
       </ul>
-      <span>and more</span>
+      <span className="inline-flex items-center gap-1">
+        and more
+        <ArrowRight aria-hidden className="size-3.5 stroke-[2.5]" />
+      </span>
     </div>
   );
 }
