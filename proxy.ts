@@ -1,14 +1,26 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { config as settings } from "@/config";
 import { getAuthProvider, type AuthProvider } from "@/lib/auth";
 import { count } from "@/lib/metrics";
+
+/** Served without a user: the landing page and what crawlers and link previews fetch. */
+const PUBLIC_PATHS = ["/", "/robots.txt", "/sitemap.xml", "/shiro-logo.svg"];
+const PUBLIC_PREFIXES = ["/opengraph-image", "/icon", "/apple-icon"];
+
+const isPublicPath = (pathname: string) =>
+  PUBLIC_PATHS.includes(pathname) || PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
 
 /**
  * Rejects every request the auth provider doesn't recognize, before any page,
  * Route Handler or Server Action runs. `requireUser()` checks again close to
- * the data, as the Next.js docs recommend.
+ * the data, as the Next.js docs recommend. Public paths pass; a signed-in
+ * visitor to the landing page goes on to their apps.
  */
 export async function proxy(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+  if (isPublicPath(pathname) && pathname !== "/") return NextResponse.next();
+
   let provider: AuthProvider;
   try {
     provider = getAuthProvider();
@@ -18,6 +30,12 @@ export async function proxy(request: NextRequest) {
   }
 
   const result = await provider.authenticate(request.headers);
+  if (pathname === "/") {
+    if (!result.ok) return NextResponse.next();
+    // Behind the gateway, the request's own URL isn't the one in the browser.
+    const { publicHost } = settings().auth;
+    return NextResponse.redirect(new URL("/apps", publicHost ? `https://${publicHost}` : request.url));
+  }
   if (!result.ok) {
     // Counted only here: requireUser() re-checks every request that passes.
     count("opendashboards.auth.rejected", { reason: result.reason });
