@@ -34,12 +34,12 @@ One question, one dashboard, from every tool that has part of the answer.
 
 <table>
   <tr>
-    <td width="50%" valign="top"><b>"How was revenue this month?"</b><br />MRR, net new revenue and churn, from Stripe and Postgres.<br /><br /><img src="public/opendashboards/revenue-light.png" alt="A revenue dashboard built from Stripe and PostgreSQL" /></td>
-    <td width="50%" valign="top"><b>"How are my sales looking?"</b><br />Pipeline by stage and rep, from HubSpot and Postgres.<br /><br /><img src="public/opendashboards/pipeline-light.png" alt="A sales pipeline dashboard built from HubSpot and PostgreSQL" /></td>
+    <td width="50%" valign="top"><b>"How was revenue this month?"</b><br />MRR, net new revenue and churn, from Stripe and Postgres.<br /><br /><img src="public/landing/dashboards/revenue-light.png" alt="A revenue dashboard built from Stripe and PostgreSQL" /></td>
+    <td width="50%" valign="top"><b>"How are my sales looking?"</b><br />Pipeline by stage and rep, from HubSpot and Postgres.<br /><br /><img src="public/landing/dashboards/pipeline-light.png" alt="A sales pipeline dashboard built from HubSpot and PostgreSQL" /></td>
   </tr>
   <tr>
-    <td width="50%" valign="top"><b>"Which ads are actually working?"</b><br />Cost per customer by channel, from Google Analytics, HubSpot and Stripe.<br /><br /><img src="public/opendashboards/marketing-light.png" alt="A marketing dashboard built from Google Analytics, HubSpot and Stripe" /></td>
-    <td width="50%" valign="top"><b>"Are signups turning into customers?"</b><br />The signup-to-paid funnel by source, from PostHog, Stripe and Postgres.<br /><br /><img src="public/opendashboards/conversion-light.png" alt="A conversion dashboard built from PostHog, Stripe and PostgreSQL" /></td>
+    <td width="50%" valign="top"><b>"Which ads are actually working?"</b><br />Cost per customer by channel, from Google Analytics, HubSpot and Stripe.<br /><br /><img src="public/landing/dashboards/marketing-light.png" alt="A marketing dashboard built from Google Analytics, HubSpot and Stripe" /></td>
+    <td width="50%" valign="top"><b>"Are signups turning into customers?"</b><br />The signup-to-paid funnel by source, from PostHog, Stripe and Postgres.<br /><br /><img src="public/landing/dashboards/conversion-light.png" alt="A conversion dashboard built from PostHog, Stripe and PostgreSQL" /></td>
   </tr>
 </table>
 

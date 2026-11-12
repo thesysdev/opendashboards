@@ -8,9 +8,9 @@ describe("isPublicPath", () => {
       "/",
       "/icon.svg",
       "/shiro-logo.svg",
-      "/opendashboards/revenue-light.png",
-      "/brand-icons/postgresql-solid.png",
-      "/shaders/faded-dither-light-wide.webp",
+      "/landing/dashboards/revenue-light.png",
+      "/landing/brand-icons/postgresql-solid.png",
+      "/landing/shaders/faded-dither-light-wide.webp",
     ]) {
       expect(isPublicPath(path)).toBe(true);
     }
@@ -32,12 +32,14 @@ describe("isPublicPath", () => {
       "/shiro-logo.svg/",
       "/ICON.SVG",
       "/opendashboards",
-      "/opendashboards/",
-      "/opendashboards/../apps",
-      "/opendashboards/..%2Fapps",
-      "/opendashboards/%2e%2e/apps",
-      "/shaders/..\\apps",
-      "/shaders//apps",
+      "/landing/",
+      "/landing",
+      "/opendashboards/revenue-light.png",
+      "/landing/../apps",
+      "/landing/..%2Fapps",
+      "/landing/%2e%2e/apps",
+      "/landing/..\\apps",
+      "/landing//apps",
     ]) {
       expect(isPublicPath(path)).toBe(false);
     }

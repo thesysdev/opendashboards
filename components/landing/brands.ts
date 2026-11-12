@@ -26,7 +26,7 @@ const iconMask = (icon: SimpleIcon) =>
 export const BRANDS = {
   posthog: { name: "PostHog", mask: iconMask(siPosthog), color: "#1d4aff", shimmer: "#f54e00" },
   // Simple Icons draws Postgres as an outline; this is a solid mark.
-  postgres: { name: "PostgreSQL", mask: 'url("/brand-icons/postgresql-solid.png")', color: "#2f6feb", shimmer: "#2f6feb" },
+  postgres: { name: "PostgreSQL", mask: 'url("/landing/brand-icons/postgresql-solid.png")', color: "#2f6feb", shimmer: "#2f6feb" },
   stripe: { name: "Stripe", mask: iconMask(siStripe), color: "#635bff", shimmer: "#635bff" },
   hubspot: { name: "HubSpot", mask: iconMask(siHubspot), color: "#ff5c35", shimmer: "#ff5c35" },
   googleAnalytics: { name: "Google Analytics", mask: iconMask(siGoogleanalytics), color: "#e37400", shimmer: "#e37400" },

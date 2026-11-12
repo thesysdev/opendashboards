@@ -92,7 +92,7 @@ function BuiltWith() {
             >
               {/* The hero's dither, mirrored and fading out to the left. */}
               <Image
-                src="/shaders/faded-dither-light-wide.webp"
+                src="/landing/shaders/faded-dither-light-wide.webp"
                 alt=""
                 fill
                 unoptimized

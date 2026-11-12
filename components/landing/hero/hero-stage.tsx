@@ -66,8 +66,8 @@ export function HeroStage() {
         className="relative aspect-[358/290] overflow-hidden rounded-xl border border-[#f8f8f8] bg-[#f4f4f5] [container-type:size] after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:z-1 after:h-[22%] after:bg-linear-to-b after:from-transparent after:to-[rgb(10_10_11/0.05)] md:aspect-[1584/820] md:rounded-3xl"
       >
         {/* Stills of a dither shader; served as they are, since recompressing would smear the pattern. */}
-        <Image src="/shaders/faded-dither-light-compact.webp" alt="" fill unoptimized className="object-cover md:hidden" />
-        <Image src="/shaders/faded-dither-light-wide.webp" alt="" fill unoptimized className="object-cover max-md:hidden" />
+        <Image src="/landing/shaders/faded-dither-light-compact.webp" alt="" fill unoptimized className="object-cover md:hidden" />
+        <Image src="/landing/shaders/faded-dither-light-wide.webp" alt="" fill unoptimized className="object-cover max-md:hidden" />
         <div
           key={item.id}
           aria-hidden
