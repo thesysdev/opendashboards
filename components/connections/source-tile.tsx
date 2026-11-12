@@ -4,6 +4,7 @@ import {
   siGoogleanalytics,
   siGooglebigquery,
   siGooglesearchconsole,
+  siModelcontextprotocol,
   siMysql,
   siNeon,
   siPostgresql,
@@ -25,6 +26,7 @@ const LOGOS: Record<string, SimpleIcon> = {
   BQ: siGooglebigquery,
   GA: siGoogleanalytics,
   SC: siGooglesearchconsole,
+  MC: siModelcontextprotocol,
 };
 
 /** The square tile at the start of a source or connection row: the source's logo. */

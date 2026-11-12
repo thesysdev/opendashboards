@@ -46,6 +46,8 @@ export function config(): Settings & { env: Environment } {
 export const secrets = {
   /** Our database: OpenDashboards' own Neon project. The only database we write to or migrate. */
   databaseUrl: () => process.env.DATABASE_URL,
+  /** The same database's direct (unpooled) URL, for migrations. Set by Neon on Vercel. */
+  databaseUrlUnpooled: () => process.env.DATABASE_URL_UNPOOLED,
   /** OpenUI Cloud and Gateway. */
   thesysApiKey: () => process.env.THESYS_API_KEY,
   /** Seals data-source keys with AWS KMS. */

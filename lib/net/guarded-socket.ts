@@ -5,6 +5,8 @@ import net from "node:net";
 
 import ipaddr from "ipaddr.js";
 
+import { isOwnHost } from "./own-hosts";
+
 /**
  * SSRF protection for connections to hosts a user typed in (a Postgres
  * server, say). Only public unicast addresses are allowed: never private
@@ -56,6 +58,8 @@ export function createGuardedLookup() {
     options: LookupOneOptions | LookupAllOptions,
     callback: LookupCallback,
   ): void {
+    // Our own database is publicly reachable, so it's refused by name before any lookup.
+    if (isOwnHost(hostname)) return callback(new BlockedAddressError(hostname, "our own infrastructure"), []);
     dns.lookup(hostname, { ...options, all: true }, (error, addresses) => {
       if (error) return callback(error, []);
       const blocked = addresses.find(({ address }) => !isPublicAddress(address));
@@ -82,7 +86,7 @@ export function createGuardedSocket(): net.Socket {
 
   socket.connect = ((port: number, host: string) => {
     // Node skips the lookup for IP literals, so check those directly.
-    if (net.isIP(host) && !isPublicAddress(host)) {
+    if ((net.isIP(host) && !isPublicAddress(host)) || isOwnHost(host)) {
       process.nextTick(() => socket.destroy(new BlockedAddressError(host, host)));
       return socket;
     }

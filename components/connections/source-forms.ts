@@ -62,7 +62,7 @@ const CREATE_SERVICE_ACCOUNT = [
   "Open the account → Keys → Add key → Create new key → JSON.",
 ];
 
-export const SOURCE_FORMS: Record<"mysql" | "clickhouse" | "bigquery" | "ga4" | "searchconsole", FormSpec> = {
+export const SOURCE_FORMS: Record<"mysql" | "clickhouse" | "bigquery" | "ga4" | "searchconsole" | "mcp", FormSpec> = {
   mysql: {
     title: "Connect MySQL",
     description: "OpenDashboards runs read-only queries against your MySQL or MariaDB database to build dashboards.",
@@ -204,6 +204,37 @@ GRANT SELECT ON your_db.* TO dashboards_reader;`,
         "In Search Console: open the property → Settings → Users and permissions → Add user, with the account's email and Restricted permission.",
       ],
     },
+    secretNoun: "keys",
+  },
+  mcp: {
+    title: "Connect an MCP server",
+    description: "OpenDashboards calls the server's tools to explore data and build dashboards. Only remote servers over HTTPS.",
+    fields: [
+      { name: "name", label: "Name", kind: "text", placeholder: "Billing MCP" },
+      {
+        name: "url",
+        label: "Server URL",
+        kind: "text",
+        placeholder: "https://mcp.example.com/mcp",
+        description: "The server's Streamable HTTP endpoint. Local (stdio) servers aren't supported.",
+      },
+      {
+        name: "headerName",
+        label: "Key header",
+        kind: "text",
+        initial: "Authorization",
+        description: "Authorization sends the key as Bearer <key>. Use another header, like X-API-Key, if the server expects one.",
+      },
+    ],
+    credential: {
+      name: "apiKey",
+      label: "API key",
+      kind: "password",
+      optional: true,
+      description: "Leave empty for a public server. Prefer a key that can only read: dashboards call tools every time they open.",
+    },
+    replaceTitle: "Replace key",
+    replaceAction: "Test & replace",
     secretNoun: "keys",
   },
 };
