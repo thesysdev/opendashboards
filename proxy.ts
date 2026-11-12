@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { getAuthProvider, type AuthProvider } from "@/lib/auth";
+import { isPublicPath } from "@/lib/auth/public-paths";
 import { count } from "@/lib/metrics";
 
 /**
@@ -9,6 +10,9 @@ import { count } from "@/lib/metrics";
  * the data, as the Next.js docs recommend.
  */
 export async function proxy(request: NextRequest) {
+  // The landing page is for people who haven't signed in yet.
+  if (isPublicPath(request.nextUrl.pathname)) return NextResponse.next();
+
   let provider: AuthProvider;
   try {
     provider = getAuthProvider();
