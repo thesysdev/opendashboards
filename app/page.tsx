@@ -28,7 +28,7 @@ const JSON_LD = {
   applicationCategory: "BusinessApplication",
   operatingSystem: "Web",
   offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-  publisher: { "@type": "Organization", name: "Thesys", url: "https://www.openui.com" },
+  publisher: { "@type": "Organization", name: "Thesys", url: "https://www.thesys.dev" },
 };
 
 /**
