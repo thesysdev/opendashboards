@@ -149,7 +149,7 @@ export function AppWorkspace({
   return (
     // One Cloud connection for the workspace: the chat and the dashboard
     // share its token and artifact cache.
-    <OpenUICloudProvider token="/api/frontend-token" apiBaseUrl="https://api.dev.thesys.dev">
+    <OpenUICloudProvider token="/api/frontend-token">
     <DashboardResponsesContext value={dashboardResponses}>
     <BuildPanelContext value={{ open, setOpen }}>
     <RenameAppContext value={startRename}>
