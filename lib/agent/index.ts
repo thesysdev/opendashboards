@@ -14,7 +14,7 @@ import {
 } from "@/lib/dashboards";
 import { track } from "@/lib/analytics";
 import { logError } from "@/lib/log";
-import spec from "@/lib/dashboards/generated/kit.spec.json";
+import spec from "@/lib/dashboards/generated/dashboard.spec.json";
 import { ToolError, toolsFor, type ToolContext } from "@/lib/tools";
 
 /**
@@ -104,14 +104,14 @@ const listDashboards = define(
 /** Enough for any dashboard so far (10–15K characters), without flooding the context. */
 const MAX_PROGRAM_CHARS = 60_000;
 
-const kitComponents = (spec as unknown as { components: Record<string, { signature: string; description: string }> })
+const libraryComponents = (spec as unknown as { components: Record<string, { signature: string; description: string }> })
   .components;
 
-/** The dashboard kit's own description of each component a program uses. */
+/** The dashboard library's own description of each component a program uses. */
 function componentsUsed(program: string): Record<string, string> {
   const used: Record<string, string> = {};
   for (const [, name] of program.matchAll(/\b([A-Z][A-Za-z0-9]*)\(/g)) {
-    const component = kitComponents[name];
+    const component = libraryComponents[name];
     if (component && !used[name]) used[name] = component.description;
   }
   return used;
