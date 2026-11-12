@@ -1,5 +1,4 @@
 import { ArrowUpRight } from "lucide-react";
-import Image from "next/image";
 
 import { ShiroMark } from "./shiro-mark";
 import { svgPaths } from "./svg-paths";
@@ -88,16 +87,8 @@ function BuiltWith() {
               href={card.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="group relative isolate flex h-full items-center gap-3.5 overflow-hidden rounded-2xl bg-[#f8f8f8] p-5 focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-neutral-950 md:gap-5 md:p-6"
+              className="group relative flex h-full items-center gap-3.5 rounded-2xl bg-[#f8f8f8] p-5 focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-neutral-950 md:gap-5 md:p-6"
             >
-              {/* The hero's dither, mirrored and fading out to the left. */}
-              <Image
-                src="/landing/shaders/faded-dither-light-wide.webp"
-                alt=""
-                fill
-                unoptimized
-                className="pointer-events-none -z-1 -scale-x-100 object-cover opacity-70 brightness-[0.669] contrast-[3.14] [mask-image:linear-gradient(to_left,black_20px,transparent_96px)] md:[mask-image:linear-gradient(to_left,black_24px,transparent_112px)]"
-              />
               <span aria-hidden className="grid h-11 shrink-0 place-items-center md:h-14">
                 {card.mark}
               </span>

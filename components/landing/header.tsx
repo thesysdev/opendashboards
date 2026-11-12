@@ -4,7 +4,7 @@ import { siGithub } from "simple-icons";
 
 import { LINKS } from "./links";
 
-/** The landing page's top bar: Shiro and the product name on the left, the GitHub star button and Sign Up on the right. */
+/** The landing page's top bar: Shiro and the product name on the left, Sign Up and the GitHub star button on the right. */
 export function Header() {
   return (
     <header className="sticky top-0 z-50 bg-white px-4">
@@ -14,19 +14,18 @@ export function Header() {
           <a
             href={LINKS.openui}
             aria-label="OpenUI"
-            className="block rounded-full transition-[scale] duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-[1.18] focus-visible:scale-[1.18] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-950"
+            className="block shrink-0 rounded-full transition-[scale] duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-[1.18] focus-visible:scale-[1.18] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-950"
           >
             <Image src="/shiro-logo.svg" alt="" width={32} height={32} className="size-8 object-contain" />
           </a>
           <Link
             href="/"
-            className="rounded-sm font-(family-name:--font-geist) text-[15px] leading-6 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-950"
+            className="rounded-sm font-(family-name:--font-geist) text-[15px] leading-6 font-semibold focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-950 max-[21.5rem]:hidden"
           >
             OpenDashboards
           </Link>
         </div>
         <div className="flex items-center gap-2">
-          <StarButton />
           {/* The app is behind sign-in: there's nothing to prefetch. */}
           <Link
             href={LINKS.app}
@@ -35,13 +34,17 @@ export function Header() {
           >
             Sign Up
           </Link>
+          <StarButton />
         </div>
       </div>
     </header>
   );
 }
 
-/** A black pill with a glowing GitHub mark: "Star". */
+/**
+ * A black pill with a glowing GitHub mark: "Star". Below 388px there isn't room
+ * for the name, Sign Up and both labels, so it's the round mark alone there.
+ */
 function StarButton() {
   return (
     <a
@@ -49,7 +52,7 @@ function StarButton() {
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Star OpenDashboards on GitHub"
-      className="inline-flex h-10 items-center gap-1.5 rounded-full border border-white/14 whitespace-nowrap bg-[#0a0a0a] px-3.5 text-[15px] font-medium text-white shadow-[inset_0_7px_12px_-6px_rgb(255_255_255/0.16),inset_0_-5px_8px_-2px_rgb(0_0_0/0.6),inset_0_8px_12px_-6px_rgb(255_255_255/0.14)] focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-neutral-950"
+      className="inline-flex h-10 items-center gap-1.5 rounded-full border border-white/14 whitespace-nowrap bg-[#0a0a0a] px-3.5 text-[15px] font-medium text-white shadow-[inset_0_7px_12px_-6px_rgb(255_255_255/0.16),inset_0_-5px_8px_-2px_rgb(0_0_0/0.6),inset_0_8px_12px_-6px_rgb(255_255_255/0.14)] focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-neutral-950 max-[24.25rem]:w-10 max-[24.25rem]:justify-center max-[24.25rem]:px-0"
     >
       <svg
         aria-hidden
@@ -58,7 +61,7 @@ function StarButton() {
       >
         <path d={siGithub.path} />
       </svg>
-      Star
+      <span className="max-[24.25rem]:hidden">Star</span>
     </a>
   );
 }

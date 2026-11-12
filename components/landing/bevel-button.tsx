@@ -1,4 +1,4 @@
-import { ArrowUpRight } from "lucide-react";
+import { ArrowRight, ArrowUpRight } from "lucide-react";
 import Link from "next/link";
 
 import { cn } from "@/lib/utils";
@@ -18,34 +18,41 @@ const VARIANTS = {
 
 /**
  * The landing page's pill button. A link that leaves the site gets a round
- * arrow badge; one into the app is the label alone. Full width (up to 320px)
- * on phones.
+ * badge with an up-right arrow; one into the app is the label alone unless
+ * `arrow` asks for the badge, which then points right. Full width (up to
+ * 320px) on phones.
  */
 export function BevelButton({
   href,
   label,
   variant,
   external = false,
+  arrow = external,
 }: {
   href: string;
   label: string;
   variant: keyof typeof VARIANTS;
   external?: boolean;
+  arrow?: boolean;
 }) {
   const styles = VARIANTS[variant];
   const className = cn(
     "inline-flex h-12 items-center gap-2.5 rounded-full border pl-5 font-(family-name:--font-display) text-base font-medium",
     "focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-neutral-950",
     "max-md:w-full max-md:max-w-80",
-    external ? "pr-2 max-md:justify-between" : "pr-5 justify-center",
+    arrow ? "pr-2 max-md:justify-between" : "pr-5 justify-center",
     styles.button,
   );
   const content = (
     <>
       <span className="leading-6">{label}</span>
-      {external && (
+      {arrow && (
         <span aria-hidden className={cn("grid size-8 shrink-0 place-items-center rounded-full", styles.badge)}>
-          <ArrowUpRight className="size-4" strokeWidth={2.25} />
+          {external ? (
+            <ArrowUpRight className="size-4" strokeWidth={2.25} />
+          ) : (
+            <ArrowRight className="size-4" strokeWidth={2.25} />
+          )}
         </span>
       )}
     </>
