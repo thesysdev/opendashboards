@@ -41,5 +41,5 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 
-# generated from packages/dashboard-kit by `pnpm kit:spec`
+# generated from @openuidev/dashboard-library by `pnpm dashboard:spec`
 /lib/dashboards/generated/

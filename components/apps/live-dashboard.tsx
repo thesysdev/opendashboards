@@ -3,8 +3,6 @@
 import { LiveArtifactRenderer } from "@openuidev/react-ui/cloud";
 import { library } from "@openuidev/dashboard-library";
 
-import "@opendashboards/dashboard-kit/styles.css";
-
 import { useDashboardResponse } from "./app-workspace";
 import { DashboardTitle } from "./dashboard-title";
 

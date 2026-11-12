@@ -62,7 +62,7 @@ export const secrets = {
 
 /**
  * What can't be true of an environment's settings. Only local may act as a
- * user without the gateway, store keys unencrypted, serve the /kit pages or
+ * user without the gateway, store keys unencrypted or
  * change Node's connection defaults.
  */
 export function settingsProblems(name: Environment, settings: Settings): string[] {
@@ -71,7 +71,6 @@ export function settingsProblems(name: Environment, settings: Settings): string[
   if (settings.auth.devUser !== null) problems.push(`${name}: auth.devUser must be null; only local may skip the gateway`);
   if (settings.auth.publicHost === null) problems.push(`${name}: auth.publicHost must be set; it sits behind the gateway`);
   if (settings.secrets.allowPlaintext) problems.push(`${name}: secrets.allowPlaintext must be false; keys are never stored unencrypted outside local`);
-  if (settings.kitPages) problems.push(`${name}: kitPages must be false; the /kit pages are for local development`);
   if (settings.network.connectAttemptTimeoutMs !== null) {
     problems.push(`${name}: network.connectAttemptTimeoutMs must be null; only local changes Node's connection defaults`);
   }

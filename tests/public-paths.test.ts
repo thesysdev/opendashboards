@@ -17,7 +17,7 @@ describe("isPublicPath", () => {
   });
 
   it("keeps the app and the API behind sign-in", () => {
-    for (const path of ["/apps", "/apps/123", "/connections", "/kit", "/api/interpreter", "/api/frontend-token", "/api/apps/123/chat"]) {
+    for (const path of ["/apps", "/apps/123", "/connections", "/api/interpreter", "/api/frontend-token", "/api/apps/123/chat"]) {
       expect(isPublicPath(path)).toBe(false);
     }
   });

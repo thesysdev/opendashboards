@@ -4,6 +4,5 @@ import type { EnvironmentSettings } from "./settings";
 export const prod: EnvironmentSettings = {
   auth: { devUser: null, publicHost: "opendashboards.com" },
   secrets: { allowPlaintext: false },
-  kitPages: false,
   network: { connectAttemptTimeoutMs: null },
 };

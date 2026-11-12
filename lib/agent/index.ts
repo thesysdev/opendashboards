@@ -140,7 +140,7 @@ const readDashboardTool = define(
       description: result.description,
       program: truncated ? result.program.slice(0, MAX_PROGRAM_CHARS) : result.program,
       ...(truncated ? { truncated: true } : {}),
-      // What each kit component it uses draws, e.g. that GeoMap is a map with a ranked list.
+      // What each component it uses draws, e.g. that GeoMap is a map with a ranked list.
       components: componentsUsed(result.program),
     };
   },
