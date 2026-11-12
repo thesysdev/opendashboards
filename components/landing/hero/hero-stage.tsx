@@ -34,7 +34,7 @@ function SourceLogo({ brand }: { brand: Brand }) {
  * The hero's stage: the OpenDashboards app answering one question at a time,
  * on a light dither ground, with tabs under it that rotate through the
  * examples. The app is drawn on a fixed 1584×820 scene scaled to the stage's
- * width; phones zoom in on its left side.
+ * width; phones zoom in on its left side, with the app flush against the stage's edge.
  */
 export function HeroStage() {
   const [active, setActive] = useState(0);
@@ -72,7 +72,7 @@ export function HeroStage() {
         <div
           key={item.id}
           aria-hidden
-          className="absolute top-0 left-0 z-1 h-205 w-396 origin-top-left [--k:tan(atan2(var(--stage-width),1584px))] [--stage-width:100cqw] [transform:scale(var(--k))] max-md:[--k:calc(tan(atan2(var(--stage-width),1280px))*1.3)] max-md:[transform:scale(var(--k))_translateX(calc(16px/var(--k)_-_202px))]"
+          className="absolute top-0 left-0 z-1 h-205 w-396 origin-top-left [--k:tan(atan2(var(--stage-width),1584px))] [--stage-width:100cqw] [transform:scale(var(--k))] max-md:[--k:calc(tan(atan2(var(--stage-width),1280px))*1.3)] max-md:[transform:scale(var(--k))_translateX(-202px)]"
         >
           <AppMock item={item} />
         </div>
@@ -150,8 +150,8 @@ function StepButton({ label, onClick, children }: { label: string; onClick: () =
 /** The app itself, at scene size: sidebar, the open dashboard, and the Build thread. */
 function AppMock({ item }: { item: HeroCase }) {
   return (
-    <div className="absolute top-16 left-16 h-200 w-364 rounded-t-[30px] bg-white px-[11px] pt-[11px] shadow-[0_0_0_1px_rgb(0_0_0/0.04),0_1px_2px_1px_rgb(0_0_0/0.04),0_16px_40px_-14px_rgb(0_0_0/0.12)] max-md:left-[202px]">
-      <div className="relative grid h-full grid-cols-[184px_minmax(0,1fr)_300px] overflow-hidden rounded-t-[19px] bg-[#fafafa] text-left text-sm leading-[1.35] text-[#0a0a0b] after:pointer-events-none after:absolute after:inset-0 after:z-3 after:rounded-[inherit] after:border after:border-b-0 after:border-[rgb(10_10_11/0.08)] [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:stroke-[1.75]">
+    <div className="absolute top-16 left-16 h-200 w-364 rounded-t-[30px] bg-white px-[11px] pt-[11px] shadow-[0_0_0_1px_rgb(0_0_0/0.04),0_1px_2px_1px_rgb(0_0_0/0.04),0_16px_40px_-14px_rgb(0_0_0/0.12)] max-md:top-0 max-md:left-[202px] max-md:rounded-none max-md:p-0 max-md:shadow-none">
+      <div className="relative grid h-full grid-cols-[184px_minmax(0,1fr)_300px] overflow-hidden rounded-t-[19px] bg-[#fafafa] max-md:rounded-none max-md:after:hidden text-left text-sm leading-[1.35] text-[#0a0a0b] after:pointer-events-none after:absolute after:inset-0 after:z-3 after:rounded-[inherit] after:border after:border-b-0 after:border-[rgb(10_10_11/0.08)] [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:stroke-[1.75]">
         <Sidebar active={item.id} />
         <Dashboard item={item} />
         <BuildThread item={item} />

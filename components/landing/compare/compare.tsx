@@ -33,8 +33,8 @@ function Verdict({ pass }: { pass: boolean }) {
 
 /**
  * "Why not Claude Dashboards?": the question and its answer on the left, a
- * table on the right (under it below 1200px). Phones get the table grouped
- * by column instead, all of Claude Dashboards first, then all of ours.
+ * table on the right (under it below 1200px). Below 900px each row is its
+ * label over the two answers side by side, under the two names once.
  */
 export function Compare() {
   return (
@@ -102,39 +102,40 @@ export function Compare() {
           </tbody>
         </table>
 
-        {/* Phones: grouped by column. */}
-        <div className="grid gap-8 min-[56.25rem]:hidden">
-          {[
-            { name: "Claude Dashboards", pass: false, key: "without" as const },
-            { name: "OpenDashboards", pass: true, key: "with" as const },
-          ].map((group) => (
-            <div key={group.name}>
-              <h3 className="mb-1 flex items-center gap-2.5 text-[15px] leading-normal font-medium">
-                {group.pass && <Image src="/shiro-logo.svg" alt="" width={20} height={20} className="size-5 object-contain" />}
-                {group.name}
-              </h3>
-              <dl>
-                {ROWS.map((row, i) => (
-                  <div
-                    key={row.label}
-                    className={cn(
-                      "grid grid-cols-[6.5rem_minmax(0,1fr)] items-center gap-x-4 py-3",
-                      i > 0 &&
-                        "bg-[linear-gradient(to_right,transparent,rgb(0_0_0/0.09)_18%,rgb(0_0_0/0.09)_82%,transparent)] bg-size-[100%_1px] bg-top bg-no-repeat",
-                    )}
-                  >
-                    <dt className="relative text-[13px] leading-normal text-neutral-950/60 after:absolute after:top-1/2 after:-right-2 after:h-[1.5em] after:-translate-y-1/2 after:border-l after:border-black/9">
-                      {row.label}
-                    </dt>
-                    <dd className="flex items-center gap-2">
-                      <Verdict pass={group.pass} />
-                      {row[group.key]}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            </div>
-          ))}
+        {/* Phones: the two names once, then each row's label over the pair, so they read across. */}
+        <div className="min-[56.25rem]:hidden">
+          <div aria-hidden className="grid grid-cols-2 gap-x-4 border-b border-black/9 pb-3 text-[15px] leading-normal font-medium">
+            <span className="text-neutral-950/60">Claude Dashboards</span>
+            <span className="flex items-center gap-2">
+              <Image src="/shiro-logo.svg" alt="" width={20} height={20} className="size-5 object-contain" />
+              OpenDashboards
+            </span>
+          </div>
+          <dl>
+            {ROWS.map((row) => (
+              <div key={row.label} className="border-b border-black/6 py-4 last:border-b-0">
+                <dt className="font-(family-name:--font-display) text-sm leading-normal font-semibold tracking-[-0.01em] text-neutral-950">
+                  {row.label}
+                </dt>
+                <div className="mt-2 grid grid-cols-2 gap-x-4 text-[15px] leading-[1.35]">
+                  <dd className="flex items-start gap-2 text-neutral-950/50">
+                    <X aria-hidden className="mt-[3px] size-3.5 shrink-0 text-neutral-950/35" strokeWidth={2.5} />
+                    <span>
+                      <span className="sr-only">Claude Dashboards: </span>
+                      {row.without}
+                    </span>
+                  </dd>
+                  <dd className="flex items-start gap-2 text-neutral-950">
+                    <Check aria-hidden className="mt-[3px] size-3.5 shrink-0 text-[#049156]" strokeWidth={2.75} />
+                    <span>
+                      <span className="sr-only">OpenDashboards: </span>
+                      {row.with}
+                    </span>
+                  </dd>
+                </div>
+              </div>
+            ))}
+          </dl>
         </div>
       </div>
     </section>
