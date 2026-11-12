@@ -1,5 +1,5 @@
 import { getAppService } from "@/lib/apps";
-import { requireUser } from "@/lib/auth/user";
+import { getUser } from "@/lib/auth/user";
 
 import { AppsTreeNav } from "./apps-tree-nav";
 
@@ -9,8 +9,9 @@ import { AppsTreeNav } from "./apps-tree-nav";
  * Reads the request, so it renders behind Suspense.
  */
 export async function AppsTree() {
-  const user = await requireUser();
-  const apps = await getAppService().tree(user.id);
+  // A signed-out visitor sees the shell too, with no apps in it.
+  const user = await getUser();
+  const apps = user ? await getAppService().tree(user.id) : [];
 
   if (!apps.length) {
     return <p className="py-1.5 pl-7 text-xs text-muted-foreground">No apps yet</p>;

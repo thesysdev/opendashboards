@@ -18,8 +18,6 @@ type Props = {
   exact?: boolean;
   /** Smaller, for items nested under another one. */
   nested?: boolean;
-  /** Passed to the link; false where the target is behind sign-in. */
-  prefetch?: boolean;
 };
 
 /**
@@ -43,12 +41,11 @@ function ActiveNavLink(props: Props) {
   return <NavLinkView {...props} active={active} />;
 }
 
-function NavLinkView({ href, label, icon, nested, prefetch, active }: Props & { active: boolean }) {
+function NavLinkView({ href, label, icon, nested, active }: Props & { active: boolean }) {
   const Icon = icon ? ICONS[icon] : null;
   return (
     <Link
       href={href}
-      prefetch={prefetch}
       aria-current={active ? "page" : undefined}
       title={nested ? label : undefined}
       className={cn(

@@ -10,9 +10,9 @@ import { MobileNav } from "@/components/shell/mobile-nav";
 import { NavLink } from "@/components/shell/nav-link";
 import { SidebarUser, SidebarUserFallback } from "@/components/shell/sidebar-user";
 import { UserAvatar, UserAvatarFallback } from "@/components/shell/user-avatar";
-import { requireUser } from "@/lib/auth/user";
+import { getUser } from "@/lib/auth/user";
 
-/** Everything in here is a signed-in user's own; only the landing page is for crawlers. */
+/** Everything in here is a signed-in user's own, except the home page, which says so itself. */
 export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
@@ -26,7 +26,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         <HomeLink className="mb-3 flex h-9 shrink-0 items-center px-2" />
         <nav aria-label="Main" className="flex min-h-0 flex-1 flex-col">
           {/* The home page is where an app starts: its composer, then the app grid. */}
-          <NavLink href="/apps" label="New App" icon="new" exact />
+          <NavLink href="/" label="New App" icon="new" exact />
           {/* The apps, flat below it, take the leftover height and scroll, so what's below always shows. */}
           <div className="-mx-1 mt-2 min-h-0 flex-1 overflow-y-auto px-1 pb-2">
             <Suspense fallback={null}>
@@ -66,14 +66,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 }
 
 async function IdentifyUser() {
-  const user = await requireUser();
-  return <AnalyticsUser id={user.id} email={user.email} />;
+  const user = await getUser();
+  return user && <AnalyticsUser id={user.id} email={user.email} />;
 }
 
 function HomeLink({ className }: { className?: string }) {
   return (
     <Link
-      href="/connections"
+      href="/"
       aria-label="OpenDashboards home"
       className={`rounded-md focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${className ?? ""}`}
     >

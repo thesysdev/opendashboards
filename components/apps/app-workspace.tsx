@@ -156,7 +156,7 @@ export function AppWorkspace({
       <div className="flex h-full flex-col">
         <header className="flex h-12 shrink-0 items-center gap-2 border-b px-2">
           <Link
-            href="/apps"
+            href="/"
             aria-label="All apps"
             className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-neutral-100 hover:text-foreground"
           >

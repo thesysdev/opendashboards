@@ -74,7 +74,7 @@ export async function deleteAppAction(input: unknown): Promise<AppResult<never>>
   const result = await getAppService().remove(user.id, input);
   if (!result.ok) return result;
   revalidateShell();
-  redirect("/apps");
+  redirect("/");
 }
 
 /**

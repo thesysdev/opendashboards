@@ -1,21 +1,26 @@
 import { NextResponse, type NextRequest } from "next/server";
 
-import { config as settings } from "@/config";
 import { getAuthProvider, type AuthProvider } from "@/lib/auth";
 import { count } from "@/lib/metrics";
 
-/** Served without a user: the landing page and what crawlers and link previews fetch. */
-const PUBLIC_PATHS = ["/", "/robots.txt", "/sitemap.xml", "/opengraph-image", "/icon.svg", "/shiro-logo.svg"];
+/** Served without a user: what crawlers and link previews fetch. */
+const PUBLIC_FILES = ["/robots.txt", "/sitemap.xml", "/opengraph-image", "/icon.svg", "/shiro-logo.svg"];
+
+const isRead = (method: string) => method === "GET" || method === "HEAD";
 
 /**
  * Rejects every request the auth provider doesn't recognize, before any page,
  * Route Handler or Server Action runs. `requireUser()` checks again close to
- * the data, as the Next.js docs recommend. Public paths pass; a signed-in
- * visitor to the landing page goes on to their apps.
+ * the data, as the Next.js docs recommend.
+ *
+ * Anyone may read the home page: signed out, it shows the composer and
+ * nothing of a user's, and sign-in comes when they send a prompt. Only
+ * reading it: a Server Action posted to it still needs a user.
  */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (pathname !== "/" && PUBLIC_PATHS.includes(pathname)) return NextResponse.next();
+  const read = isRead(request.method);
+  if (read && PUBLIC_FILES.includes(pathname)) return NextResponse.next();
 
   let provider: AuthProvider;
   try {
@@ -26,13 +31,7 @@ export async function proxy(request: NextRequest) {
   }
 
   const result = await provider.authenticate(request.headers);
-  if (pathname === "/") {
-    if (!result.ok) return NextResponse.next();
-    // Behind the gateway, the request's own URL isn't the one in the browser.
-    const { publicHost } = settings().auth;
-    return NextResponse.redirect(new URL("/apps", publicHost ? `https://${publicHost}` : request.url));
-  }
-  if (!result.ok) {
+  if (!result.ok && !(read && pathname === "/")) {
     // Counted only here: requireUser() re-checks every request that passes.
     count("opendashboards.auth.rejected", { reason: result.reason });
     if (result.reason === "unavailable") return new NextResponse("Service unavailable", { status: 503 });
