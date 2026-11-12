@@ -108,7 +108,13 @@ export function BuildChat({
   return (
     <ThemeProvider mode="light">
       <ChatProvider llm={llm} storage={storage}>
-        <div className="dashboards-build-chat flex min-h-0 flex-1 flex-col">
+        {/* Local fix for an OpenUI bug (reported upstream, 2026-11-06): react-ui's
+            tool-call timeline sets `overscroll-behavior: contain` on its step
+            list even when it doesn't overflow, which swallows wheel scrolling
+            over it. Let the scroll pass to the Build chat; `!` because
+            react-ui's stylesheet isn't in a cascade layer. Delete once
+            react-ui fixes it. */}
+        <div className="flex min-h-0 flex-1 flex-col [&_.openui-behind-the-scenes\_\_items]:overscroll-auto!">
           <ThreadBar />
           <ThreadMessages hasDashboards={dashboards.length > 0} />
           <Composer />

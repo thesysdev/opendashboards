@@ -25,8 +25,8 @@ export function Hero() {
               id="hero-title"
               className="text-[40px] leading-[1.15] font-semibold text-balance md:text-[52px] min-[56.25rem]:text-6xl min-[56.25rem]:tracking-[-1px]"
             >
-              {/* One sentence for crawlers and screen readers; phones show it without "any question". */}
-              Ask<span className="max-md:hidden"> any question</span>. Get a live dashboard.
+              {/* The same sentence at every width, for people, crawlers and screen readers alike. */}
+              Ask any question. Get a live dashboard.
             </h1>
           </div>
           <p className="font-(family-name:--font-display) text-lg leading-[1.4] font-medium text-pretty text-neutral-950/60 md:text-[22px] md:leading-normal md:tracking-[-0.2px] min-[56.25rem]:mt-10 min-[56.25rem]:w-100 min-[56.25rem]:shrink-0 min-[56.25rem]:pt-3">
@@ -41,7 +41,7 @@ export function Hero() {
 
         <div className="order-2 mt-7 flex w-full flex-col items-center gap-3 md:flex-row md:justify-center min-[56.25rem]:order-3 min-[56.25rem]:mt-[49px] min-[56.25rem]:-ml-2 min-[56.25rem]:w-auto">
           <BevelButton href={LINKS.github} label="Star on GitHub" variant="primary" external />
-          <BevelButton href={LINKS.app} label="Sign Up" variant="secondary" />
+          <BevelButton href={LINKS.app} label="Sign Up" variant="secondary" arrow />
         </div>
       </div>
 

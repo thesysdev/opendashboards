@@ -88,6 +88,23 @@
   }
 }
 
+/* The feature scenes' pointer dipping once as it clicks. */
+@keyframes landing-cursor-click {
+  40% {
+    scale: 0.82;
+  }
+}
+
+/* A highlight sweeping across a widget while it refreshes. */
+@keyframes landing-sweep {
+  from {
+    background-position: 130% 0;
+  }
+  to {
+    background-position: -30% 0;
+  }
+}
+
 /* An FAQ answer easing in as its question opens. */
 @keyframes landing-faq-in {
   from {

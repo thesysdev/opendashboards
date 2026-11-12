@@ -1,10 +1,15 @@
 import type { Metadata } from "next";
 
+import { Compare } from "@/components/landing/compare/compare";
+import { Connectors } from "@/components/landing/connectors/connectors";
 import { Faq } from "@/components/landing/faq";
+import { Features } from "@/components/landing/features/features";
 import { Footer } from "@/components/landing/footer";
 import { Header } from "@/components/landing/header";
 import { Hero } from "@/components/landing/hero/hero";
 import { LINKS } from "@/components/landing/links";
+import { Story } from "@/components/landing/story/story";
+import { Ways } from "@/components/landing/ways/ways";
 import { SITE_URL } from "@/lib/site";
 
 import { alt as OG_ALT } from "../opengraph-image";
@@ -48,6 +53,11 @@ export default function LandingPage() {
       <Header />
       <main>
         <Hero />
+        <Story />
+        <Connectors />
+        <Features />
+        <Ways />
+        <Compare />
         <Faq />
       </main>
       <Footer />
