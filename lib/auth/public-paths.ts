@@ -1,9 +1,16 @@
 /**
- * The only paths served without signing in: the landing page and its images
- * in public/. Nothing under the app or the API is here. Anything added must
+ * The only paths served without signing in: the landing page, its images in
+ * public/, and what crawlers and link previews fetch. Nothing under the app or the API is here. Anything added must
  * work without a user and read nothing that belongs to one.
  */
-const PUBLIC_PATHS: ReadonlySet<string> = new Set(["/", "/icon.svg", "/shiro-logo.svg"]);
+const PUBLIC_PATHS: ReadonlySet<string> = new Set([
+  "/",
+  "/icon.svg",
+  "/shiro-logo.svg",
+  "/robots.txt",
+  "/sitemap.xml",
+  "/opengraph-image",
+]);
 
 /** The folder in public/ that holds only the landing page's images. No route lives under it. */
 const PUBLIC_ASSET_FOLDER = "/landing/";

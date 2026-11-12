@@ -65,9 +65,10 @@ export function HeroStage() {
         aria-label={`OpenDashboards answering "${item.ask}" with a live ${item.label.toLowerCase()} dashboard built from ${item.sources.map((s) => s.name).join(", ")}`}
         className="relative aspect-[358/290] overflow-hidden rounded-xl border border-[#f8f8f8] bg-[#f4f4f5] [container-type:size] after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:z-1 after:h-[22%] after:bg-linear-to-b after:from-transparent after:to-[rgb(10_10_11/0.05)] md:aspect-[1584/820] md:rounded-3xl"
       >
-        {/* Stills of a dither shader; served as they are, since recompressing would smear the pattern. */}
-        <Image src="/landing/shaders/faded-dither-light-compact.webp" alt="" fill unoptimized className="object-cover md:hidden" />
-        <Image src="/landing/shaders/faded-dither-light-wide.webp" alt="" fill unoptimized className="object-cover max-md:hidden" />
+        {/* Stills of a dither shader; served as they are, since recompressing would smear the pattern.
+            Loaded up front: on phones this is the largest thing in the first screen, and each is a few KB. */}
+        <Image src="/landing/shaders/faded-dither-light-compact.webp" alt="" fill unoptimized loading="eager" fetchPriority="high" className="object-cover md:hidden" />
+        <Image src="/landing/shaders/faded-dither-light-wide.webp" alt="" fill unoptimized loading="eager" fetchPriority="high" className="object-cover max-md:hidden" />
         <div
           key={item.id}
           aria-hidden

@@ -56,7 +56,8 @@ export function BevelButton({
       {content}
     </a>
   ) : (
-    <Link href={href} className={className}>
+    // Into the app, which is behind sign-in: there's nothing to prefetch.
+    <Link href={href} prefetch={false} className={className}>
       {content}
     </Link>
   );

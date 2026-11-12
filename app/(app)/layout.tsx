@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { Suspense } from "react";
 
@@ -10,6 +11,9 @@ import { NavLink } from "@/components/shell/nav-link";
 import { SidebarUser, SidebarUserFallback } from "@/components/shell/sidebar-user";
 import { UserAvatar, UserAvatarFallback } from "@/components/shell/user-avatar";
 import { requireUser } from "@/lib/auth/user";
+
+/** Everything in here is a signed-in user's own; only the landing page is for crawlers. */
+export const metadata: Metadata = { robots: { index: false, follow: false } };
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   return (

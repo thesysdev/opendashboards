@@ -27,8 +27,10 @@ export function Header() {
         </div>
         <div className="flex items-center gap-2">
           <StarButton />
+          {/* The app is behind sign-in: there's nothing to prefetch. */}
           <Link
             href={LINKS.app}
+            prefetch={false}
             className="inline-flex h-10 items-center rounded-full whitespace-nowrap border border-black/8 bg-[#f7f7f8] px-3.5 text-[15px] font-medium text-[#0a0a0a] shadow-[inset_0_2px_1px_-0.5px_#fff,inset_0_-3px_6px_-1px_rgb(0_0_0/0.1)] focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-neutral-950"
           >
             Sign Up
