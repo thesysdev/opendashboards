@@ -2,6 +2,6 @@
 export const LINKS = {
   github: "https://github.com/thesysdev/opendashboards",
   app: "/apps",
-  gateway: "https://www.openui.com/cloud/gateway",
+  dashboards: "https://www.openui.com/dashboards",
   openui: "https://www.openui.com",
 } as const;

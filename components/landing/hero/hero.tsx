@@ -52,7 +52,7 @@ export function Hero() {
   );
 }
 
-/** "Open source · powered by OpenUI Gateway". On phones it stays on one line and the link goes quiet. */
+/** "Open source · powered by OpenUI Dashboards". On phones it stays on one line and the link goes quiet. */
 function Eyebrow() {
   return (
     <p className="flex items-baseline gap-1.5 text-[13px] leading-none font-medium whitespace-nowrap md:ml-0.5 md:gap-2 md:text-[17px]">
@@ -62,10 +62,10 @@ function Eyebrow() {
       <span className="text-neutral-950/60">
         powered by{" "}
         <a
-          href={LINKS.gateway}
+          href={LINKS.dashboards}
           className="group inline-flex items-center gap-[0.3rem] rounded-md transition-colors hover:text-neutral-950 focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-neutral-950 max-md:pointer-events-none"
         >
-          OpenUI Gateway
+          OpenUI Dashboards
           <ArrowRight aria-hidden className="size-[1em] stroke-3 transition-transform group-hover:translate-x-0.5 max-md:hidden" />
         </a>
       </span>
