@@ -5,11 +5,7 @@ import { getAuthProvider, type AuthProvider } from "@/lib/auth";
 import { count } from "@/lib/metrics";
 
 /** Served without a user: the landing page and what crawlers and link previews fetch. */
-const PUBLIC_PATHS = ["/", "/robots.txt", "/sitemap.xml", "/shiro-logo.svg"];
-const PUBLIC_PREFIXES = ["/opengraph-image", "/icon", "/apple-icon"];
-
-const isPublicPath = (pathname: string) =>
-  PUBLIC_PATHS.includes(pathname) || PUBLIC_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+const PUBLIC_PATHS = ["/", "/robots.txt", "/sitemap.xml", "/opengraph-image", "/icon.svg", "/shiro-logo.svg"];
 
 /**
  * Rejects every request the auth provider doesn't recognize, before any page,
@@ -19,7 +15,7 @@ const isPublicPath = (pathname: string) =>
  */
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
-  if (isPublicPath(pathname) && pathname !== "/") return NextResponse.next();
+  if (pathname !== "/" && PUBLIC_PATHS.includes(pathname)) return NextResponse.next();
 
   let provider: AuthProvider;
   try {

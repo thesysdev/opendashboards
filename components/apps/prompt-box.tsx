@@ -5,6 +5,7 @@ import { useState, useTransition } from "react";
 
 import { createAppAction } from "@/app/(app)/apps/actions";
 import { Button } from "@/components/ui/button";
+import { clearPendingPrompt, usePendingPrompt } from "@/lib/pending-prompt";
 import { cn } from "@/lib/utils";
 
 import { DataSourcePicker, type PickerConnection } from "./data-source-picker";
@@ -23,7 +24,10 @@ export function PromptBox({
   initiallySelected?: string[];
   autoFocus?: boolean;
 }) {
-  const [prompt, setPrompt] = useState("");
+  // Starts with what they wrote on the landing page before signing in, if anything.
+  const saved = usePendingPrompt();
+  const [edited, setPrompt] = useState<string | null>(null);
+  const prompt = edited ?? saved ?? "";
   // Track what was unticked rather than what's ticked, so a newly added
   // source starts out selected.
   const [unticked, setUnticked] = useState<Set<string>>(
@@ -53,6 +57,9 @@ export function PromptBox({
   function send() {
     if (!canSend) return;
     setError(null);
+    // Keep the text on screen once the saved copy is gone.
+    setPrompt(prompt);
+    clearPendingPrompt();
     startTransition(async () => {
       // Only returns when creating failed; on success it navigates to the app.
       const result = await createAppAction({ prompt, connectionIds: [...selected] });
