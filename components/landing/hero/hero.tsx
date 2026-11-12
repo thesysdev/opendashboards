@@ -25,8 +25,8 @@ export function Hero() {
               id="hero-title"
               className="text-[40px] leading-[1.15] font-semibold text-balance md:text-[52px] min-[56.25rem]:text-6xl min-[56.25rem]:tracking-[-1px]"
             >
-              <span className="md:hidden">Ask. Get a live dashboard.</span>
-              <span className="max-md:hidden">Ask any question. Get a live dashboard.</span>
+              {/* One sentence for crawlers and screen readers; phones show it without "any question". */}
+              Ask<span className="max-md:hidden"> any question</span>. Get a live dashboard.
             </h1>
           </div>
           <p className="font-(family-name:--font-display) text-lg leading-[1.4] font-medium text-pretty text-neutral-950/60 md:text-[22px] md:leading-normal md:tracking-[-0.2px] min-[56.25rem]:mt-10 min-[56.25rem]:w-100 min-[56.25rem]:shrink-0 min-[56.25rem]:pt-3">
@@ -76,10 +76,7 @@ function Eyebrow() {
 /** "Brings together data from" and the source marks, each briefly taking its brand colour in turn. */
 function SourcesLine() {
   return (
-    <a
-      href="#connectors"
-      className="group flex flex-wrap items-center justify-center gap-2 rounded-lg text-sm leading-5 font-medium text-neutral-950/60 focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-neutral-950 md:inline-flex md:gap-x-3 min-[56.25rem]:justify-start"
-    >
+    <div className="flex flex-wrap items-center justify-center gap-2 text-sm leading-5 font-medium text-neutral-950/60 md:inline-flex md:gap-x-3 min-[56.25rem]:justify-start">
       <span className="max-md:basis-full max-md:text-center">Brings together data from</span>
       <ul className="flex flex-wrap items-center gap-1.5 max-md:gap-2">
         {PROOF_SOURCES.map((brand, index) => (
@@ -93,10 +90,7 @@ function SourcesLine() {
           </li>
         ))}
       </ul>
-      <span className="inline-flex items-center gap-1 transition-colors group-hover:text-neutral-950">
-        and more
-        <ArrowRight aria-hidden className="size-3.5 stroke-[2.5] transition-transform group-hover:translate-x-0.5" />
-      </span>
-    </a>
+      <span>and more</span>
+    </div>
   );
 }
