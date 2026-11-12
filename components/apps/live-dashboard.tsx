@@ -1,9 +1,7 @@
 "use client";
 
 import { LiveArtifactRenderer } from "@openuidev/react-ui/cloud";
-import { library } from "@opendashboards/dashboard-kit";
-
-import "@opendashboards/dashboard-kit/styles.css";
+import { library } from "@openuidev/dashboard-library";
 
 import { useDashboardResponse } from "./app-workspace";
 import { DashboardTitle } from "./dashboard-title";
@@ -11,7 +9,7 @@ import { DashboardTitle } from "./dashboard-title";
 const interpreter = { url: "/api/interpreter" };
 
 /**
- * A live dashboard from OpenUI Cloud, drawn with the dashboard kit, under
+ * A live dashboard from OpenUI Cloud, drawn with @openuidev/dashboard-library, under
  * its title and description (OpenDashboards' own, not part of the program). Its data
  * loads fresh through our interpreter every time it opens. When the Build
  * chat creates or edits it, the renderer gets Cloud's response too, and

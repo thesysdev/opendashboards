@@ -12,8 +12,6 @@ const baseConfig: NextConfig = {
   experimental: {
     agentFeedback: true,
   },
-  // The dashboard kit is a workspace package consumed from source.
-  transpilePackages: ["@opendashboards/dashboard-kit"],
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

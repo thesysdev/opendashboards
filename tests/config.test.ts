@@ -42,7 +42,7 @@ describe("the settings files", () => {
     expect(settingsProblems("prod", settingsFor("prod"))).toEqual([]);
   });
 
-  it("change the connect timeout, allow a dev user, plaintext and /kit only locally", () => {
+  it("change the connect timeout, allow a dev user and plaintext only locally", () => {
     const local = settingsFor("local");
     const prod = settingsFor("prod");
     expect(local.network.connectAttemptTimeoutMs).toBe(2_000);
@@ -50,7 +50,6 @@ describe("the settings files", () => {
     expect(local.auth.devUser).toEqual({ id: "dev-user", email: "user@example.dev" });
     expect(prod.auth.devUser).toBeNull();
     expect([local.secrets.allowPlaintext, prod.secrets.allowPlaintext]).toEqual([true, false]);
-    expect([local.kitPages, prod.kitPages]).toEqual([true, false]);
   });
 
   it("share common settings", () => {
@@ -63,7 +62,6 @@ describe("settingsProblems", () => {
     ["a dev user", (s: Settings) => (s.auth.devUser = { id: "dev-user", email: "user@example.dev" }), "auth.devUser"],
     ["no public host", (s: Settings) => (s.auth.publicHost = null), "auth.publicHost"],
     ["plaintext secrets", (s: Settings) => (s.secrets.allowPlaintext = true), "secrets.allowPlaintext"],
-    ["the /kit pages", (s: Settings) => (s.kitPages = true), "kitPages"],
     ["a connect timeout", (s: Settings) => (s.network.connectAttemptTimeoutMs = 2_000), "connectAttemptTimeoutMs"],
   ])("refuses prod with %s", (_label, change, setting) => {
     const problems = settingsProblems("prod", editedProd(change));

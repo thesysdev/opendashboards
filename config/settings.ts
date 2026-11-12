@@ -140,8 +140,6 @@ export type EnvironmentSettings = {
     /** Store data-source keys unencrypted when no KMS key is configured. Local only. */
     allowPlaintext: boolean;
   };
-  /** The /kit pages: the dashboard kit's gallery, edge cases and mock dashboards. */
-  kitPages: boolean;
   network: {
     /**
      * How long Node waits on each of a host's addresses before trying the

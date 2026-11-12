@@ -1,6 +1,5 @@
 "use client";
 
-import { DashboardHeading } from "@opendashboards/dashboard-kit";
 import { useState } from "react";
 
 import { updateDashboardAction } from "@/app/(app)/apps/actions";
@@ -9,8 +8,9 @@ import { InlineRename } from "@/components/inline-rename";
 type Field = "title" | "description";
 
 /**
- * A dashboard's title and description, above it: OpenDashboards' own record, drawn
- * the way the dashboard kit draws headings. Click either to change it in
+ * A dashboard's title and description, above it: OpenDashboards' own record, set to
+ * the width, padding and ink of the @openuidev/dashboard-library dashboard below (whose
+ * own top padding is the gap under it). Click either to change it in
  * place; a saved change shows straight away.
  */
 export function DashboardTitle({
@@ -58,13 +58,17 @@ export function DashboardTitle({
   }
 
   return (
-    <DashboardHeading
-      title={editing === "title" ? editor("title", 120) : display("title", shown("title"))}
-      description={
-        editing === "description"
-          ? editor("description", 300)
-          : display("description", shown("description"), "Add a description")
-      }
-    />
+    <div className="@container bg-white text-[#0d0d0d]">
+      <header className="mx-auto max-w-[1440px] px-4 pt-5 @min-[721px]:px-9 @min-[721px]:pt-6">
+        <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.015em]">
+          {editing === "title" ? editor("title", 120) : display("title", shown("title"))}
+        </h1>
+        <p className="mt-1.5 max-w-[64ch] text-[13.5px] leading-normal text-[#0d0d0d]/64">
+          {editing === "description"
+            ? editor("description", 300)
+            : display("description", shown("description"), "Add a description")}
+        </p>
+      </header>
+    </div>
   );
 }
