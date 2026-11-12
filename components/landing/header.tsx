@@ -8,13 +8,13 @@ import { LINKS } from "./links";
 export function Header() {
   return (
     <header className="sticky top-0 z-50 bg-white px-4">
-      <div className="mx-auto flex min-h-16 max-w-390 items-center justify-between gap-4">
+      <div className="mx-auto flex min-h-16 max-w-390 items-center justify-between gap-2 sm:gap-4">
         <div className="flex items-center gap-0.5">
           {/* Shiro is OpenUI's mascot: it grows on hover and goes to OpenUI. */}
           <a
             href={LINKS.openui}
             aria-label="OpenUI"
-            className="block rounded-full transition-[scale] duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-[1.18] focus-visible:scale-[1.18] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-950"
+            className="block shrink-0 rounded-full transition-[scale] duration-200 ease-[cubic-bezier(0.34,1.56,0.64,1)] hover:scale-[1.18] focus-visible:scale-[1.18] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-950"
           >
             <Image src="/shiro-logo.svg" alt="" width={32} height={32} className="size-8 object-contain" />
           </a>
@@ -49,7 +49,7 @@ function StarButton() {
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Star OpenDashboards on GitHub"
-      className="inline-flex h-10 items-center gap-1.5 rounded-full border border-white/14 whitespace-nowrap bg-[#0a0a0a] px-3.5 text-[15px] font-medium text-white shadow-[inset_0_7px_12px_-6px_rgb(255_255_255/0.16),inset_0_-5px_8px_-2px_rgb(0_0_0/0.6),inset_0_8px_12px_-6px_rgb(255_255_255/0.14)] focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-neutral-950"
+      className="inline-flex h-10 items-center gap-1.5 rounded-full border border-white/14 whitespace-nowrap bg-[#0a0a0a] px-3.5 text-[15px] font-medium text-white shadow-[inset_0_7px_12px_-6px_rgb(255_255_255/0.16),inset_0_-5px_8px_-2px_rgb(0_0_0/0.6),inset_0_8px_12px_-6px_rgb(255_255_255/0.14)] focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-neutral-950 max-[359px]:hidden"
     >
       <svg
         aria-hidden
@@ -58,7 +58,7 @@ function StarButton() {
       >
         <path d={siGithub.path} />
       </svg>
-      Star
+      <span className="max-[384px]:hidden">Star</span>
     </a>
   );
 }
