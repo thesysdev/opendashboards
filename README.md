@@ -41,10 +41,6 @@ One question, one dashboard, from every tool that has part of the answer.
     <td width="50%" valign="top"><b>"Which ads are actually working?"</b><br />Cost per customer by channel, from Google Analytics, HubSpot and Stripe.<br /><br /><img src="public/opendashboards/marketing-light.png" alt="A marketing dashboard built from Google Analytics, HubSpot and Stripe" /></td>
     <td width="50%" valign="top"><b>"Are signups turning into customers?"</b><br />The signup-to-paid funnel by source, from PostHog, Stripe and Postgres.<br /><br /><img src="public/opendashboards/conversion-light.png" alt="A conversion dashboard built from PostHog, Stripe and PostgreSQL" /></td>
   </tr>
-  <tr>
-    <td width="50%" valign="top"><b>"Are customers sticking around?"</b><br />Weekly retention by cohort, from PostHog and Postgres.<br /><br /><img src="public/opendashboards/retention-light.png" alt="A retention dashboard built from PostHog and PostgreSQL" /></td>
-    <td width="50%" valign="top"></td>
-  </tr>
 </table>
 
 ## Why OpenDashboards
