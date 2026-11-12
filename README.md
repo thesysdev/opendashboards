@@ -71,7 +71,8 @@ One question, one dashboard, from every tool that has part of the answer.
 | Search Console | ✅ Supported | Property and a service account key |
 | Any MCP server | ⚠️ Limited | A remote (HTTPS) server URL. API key auth only, no OAuth |
 
-Queries are read-only. Anything without a built-in connector, like Stripe or HubSpot, connects
+Give OpenDashboards read-only credentials: a read-only database user, and API keys that can only
+read. Anything without a built-in connector, like Stripe or HubSpot, connects
 through its MCP server.
 
 ## Quick start
