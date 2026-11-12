@@ -36,7 +36,7 @@ const WAYS: {
     name: "Cloud",
     line: "Hosted by us at opendashboards.com.",
     points: ["Nothing to install", "Sign up and connect your tools", "Dashboards and chats saved for you"],
-    cta: { label: "Try for free", href: LINKS.app },
+    cta: { label: "Sign Up", href: LINKS.app },
   },
 ];
 

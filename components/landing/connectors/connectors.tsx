@@ -109,7 +109,7 @@ export function Connectors() {
       <SectionHeader
         id="connectors-title"
         title="Connect the tools you already use."
-        subtitle="Your dashboards stay where they are. OpenDashboards reads across all of them."
+        subtitle="Your data stays where it is. OpenDashboards reads across all of them."
       />
 
       <div className="mx-auto box-border w-full max-w-[calc(75rem+2*var(--fold-gutter))] px-(--fold-gutter) [--fold-gutter:clamp(1.25rem,3vw,2.5rem)]">

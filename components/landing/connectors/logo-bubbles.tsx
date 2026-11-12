@@ -3,6 +3,8 @@
 import { useEffect, useState, type CSSProperties } from "react";
 import type { SimpleIcon } from "simple-icons";
 
+import { useReducedMotion } from "../use-reduced-motion";
+
 /** A connector's logo: its Simple Icons mark, and the colour it's drawn in. */
 export type Logo = { icon: SimpleIcon; name: string; color: string };
 
@@ -37,6 +39,7 @@ export function LogoBubbles({ logos, stagger = 0 }: { logos: Logo[]; stagger?: n
   const [{ slots, hub }, setLayout] = useState(() => ({ slots: logos.map((_, i) => i), hub: 0 }));
   /* Bumped on every click, so the rotation restarts its full hold instead of swapping the picked logo straight back out. */
   const [picks, setPicks] = useState(0);
+  const reducedMotion = useReducedMotion();
 
   const swapInto = (target: number) =>
     setLayout((prev) => {
@@ -47,8 +50,7 @@ export function LogoBubbles({ logos, stagger = 0 }: { logos: Logo[]; stagger?: n
     });
 
   useEffect(() => {
-    if (logos.length < 2) return;
-    if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    if (logos.length < 2 || reducedMotion) return;
 
     let interval: number | undefined;
     const start = window.setTimeout(
@@ -70,7 +72,7 @@ export function LogoBubbles({ logos, stagger = 0 }: { logos: Logo[]; stagger?: n
       window.clearTimeout(start);
       window.clearInterval(interval);
     };
-  }, [logos.length, stagger, picks]);
+  }, [logos.length, stagger, picks, reducedMotion]);
 
   return (
     <div aria-hidden className="relative mb-4 h-31 w-full md:mb-6">

@@ -10,8 +10,9 @@ import {
   Play,
   RefreshCw,
 } from "lucide-react";
-import { useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 
+import { useReducedMotion } from "../use-reduced-motion";
 import { FILM_LENGTH, FILM_STEPS, FILM_STILL, StoryFilm } from "./story-film";
 
 /** One point per film step, in the film's order. */
@@ -22,26 +23,84 @@ const POINTS = [
   { id: "live", Icon: RefreshCw, title: "Always current", description: "When your data changes, the dashboard updates. No regeneration." },
 ];
 
-const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
-const readReducedMotion = () => window.matchMedia(REDUCED_MOTION).matches;
-const subscribeReducedMotion = (onChange: () => void) => {
-  const query = window.matchMedia(REDUCED_MOTION);
-  query.addEventListener("change", onChange);
-  return () => query.removeEventListener("change", onChange);
+const subscribeTab = (onChange: () => void) => {
+  document.addEventListener("visibilitychange", onChange);
+  return () => document.removeEventListener("visibilitychange", onChange);
 };
 
-/** How far into its own step the film is, from 0 to 1. */
-const stepProgress = (T: number, index: number) => {
-  const step = FILM_STEPS[index];
-  return Math.min(1, Math.max(0, (T - step.start) / step.length));
-};
+/** Where the film is: the step on screen, the film time it became active at, and a count that changes with every new step or jump. */
+type Step = { index: number; from: number; n: number };
+
+/**
+ * The film's clock. Only this re-renders every frame; the section around it
+ * hears only when the step changes. It starts at `start`, so a jump remounts
+ * it with a new key.
+ */
+function FilmClock({
+  start,
+  still,
+  running,
+  onStep,
+}: {
+  start: number;
+  still: boolean;
+  running: boolean;
+  onStep: (index: number, at: number) => void;
+}) {
+  const [time, setTime] = useState(start);
+  const T = still ? FILM_STILL : time;
+  const index = FILM_STEPS.findIndex((step) => T < step.start + step.length);
+  // The first step starts wherever the clock did; every later one from its own start.
+  const mounted = useRef(false);
+  useEffect(() => {
+    onStep(index, mounted.current ? FILM_STEPS[index].start : still ? FILM_STILL : start);
+    mounted.current = true;
+  }, [index, onStep, start, still]);
+
+  useEffect(() => {
+    if (!running) return;
+    let frame = 0;
+    let last: number | null = null;
+    const tick = (at: number) => {
+      // Cap the step so a slow frame doesn't jump the film forward.
+      const dt = last === null ? 0 : Math.min(0.1, (at - last) / 1000);
+      last = at;
+      setTime((t) => (t + dt) % FILM_LENGTH);
+      frame = requestAnimationFrame(tick);
+    };
+    frame = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(frame);
+  }, [running]);
+
+  return <StoryFilm T={T} />;
+}
+
+/**
+ * A step's progress bar: a CSS fill over the step's length, started from how
+ * far in the step was when it became active, and paused with the film.
+ */
+function Fill({ step, running, className }: { step: Step; running: boolean; className: string }) {
+  const { start, length } = FILM_STEPS[step.index];
+  return (
+    <span
+      className={`${className} origin-left animate-[landing-tab-fill_var(--length)_linear_var(--delay)_forwards]`}
+      style={
+        {
+          "--length": `${length}s`,
+          "--delay": `${-Math.max(0, step.from - start)}s`,
+          animationPlayState: running ? "running" : "paused",
+        } as CSSProperties
+      }
+    />
+  );
+}
 
 /**
  * "All your data. One question away." The heading and lead, then the film on
  * a flat stage with its four steps under it. The film plays only while it's on
- * screen and not paused, and each step's rule tracks its clock; choosing a
- * step jumps the film to it. Under reduced motion the film rests on one
- * frame until the reader presses play.
+ * screen, in a visible tab and not paused, and each step's rule tracks its
+ * clock; choosing a step jumps the film to it. Under reduced motion the film
+ * rests on one frame until the reader presses play.
  *
  * Below 1200px the steps become a swipeable rail that keeps the active one in
  * view; phones show one step at a time, with segments and arrows.
@@ -51,36 +110,25 @@ export function Story() {
   const rail = useRef<HTMLOListElement>(null);
   // A reader's own swipe holds the rail where they put it for a few seconds.
   const railHeldUntil = useRef(0);
-  const [time, setTime] = useState(0);
+  // Each jump remounts the clock at `at`.
+  const [jump, setJump] = useState({ at: 0, n: 0 });
+  const [step, setStep] = useState<Step>({ index: 0, from: 0, n: 0 });
   const [started, setStarted] = useState(false);
-  const reducedMotion = useSyncExternalStore(subscribeReducedMotion, readReducedMotion, () => false);
+  const reducedMotion = useReducedMotion();
+  const tabVisible = useSyncExternalStore(subscribeTab, () => !document.hidden, () => true);
   const [pausedChoice, setPausedChoice] = useState<boolean | null>(null);
   const paused = pausedChoice ?? reducedMotion;
   const [visible, setVisible] = useState(false);
-  const running = visible && !paused;
-  const T = reducedMotion && !started ? FILM_STILL : time;
-  const active = FILM_STEPS.findIndex((step) => T < step.start + step.length);
+  const running = visible && tabVisible && !paused;
+  const active = step.index;
+
+  const onStep = useCallback((index: number, from: number) => setStep((s) => ({ index, from, n: s.n + 1 })), []);
 
   useEffect(() => {
     const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { threshold: 0.35 });
     if (stage.current) observer.observe(stage.current);
     return () => observer.disconnect();
   }, []);
-
-  useEffect(() => {
-    if (!running) return;
-    let frame = 0;
-    let last: number | null = null;
-    const tick = (now: number) => {
-      // Cap the step so a background tab doesn't jump the film forward.
-      const dt = last === null ? 0 : Math.min(0.1, (now - last) / 1000);
-      last = now;
-      setTime((t) => (t + dt) % FILM_LENGTH);
-      frame = requestAnimationFrame(tick);
-    };
-    frame = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(frame);
-  }, [running]);
 
   // Keep the active step in view on the rail as the film advances, unless the reader is scrolling it.
   useEffect(() => {
@@ -98,7 +146,7 @@ export function Story() {
 
   /** Jump to a step and play it from its start. */
   const goTo = (index: number) => {
-    setTime(FILM_STEPS[index].start);
+    setJump((j) => ({ at: FILM_STEPS[index].start, n: j.n + 1 }));
     setStarted(true);
     setPausedChoice(false);
   };
@@ -128,14 +176,20 @@ export function Story() {
           className="relative -mx-(--gutter) mt-8 aspect-[900/600] overflow-hidden border-y border-[#f8f8f8] bg-[#f8f8f8] [container-type:inline-size] md:mx-0 md:mt-16 md:aspect-[1200/600] md:rounded-3xl md:border"
         >
           <div className="absolute inset-0 z-1 overflow-hidden">
-            <StoryFilm T={T} />
+            <FilmClock
+              key={jump.n}
+              start={jump.at}
+              still={reducedMotion && !started}
+              running={running}
+              onStep={onStep}
+            />
           </div>
           <button
             type="button"
             aria-label={paused ? "Play" : "Pause"}
             onClick={() => {
               if (paused && reducedMotion && !started) {
-                setTime(FILM_STILL);
+                setJump((j) => ({ at: FILM_STILL, n: j.n + 1 }));
                 setStarted(true);
               }
               setPausedChoice(!paused);
@@ -150,10 +204,11 @@ export function Story() {
         <span aria-hidden className="mt-6 grid auto-cols-fr grid-flow-col gap-1.5 md:hidden">
           {POINTS.map(({ id }, index) => (
             <span key={id} className="relative h-0.5 overflow-hidden rounded-[1px] bg-[rgb(127_127_132/0.25)]">
-              <span
-                className="absolute inset-0 origin-left bg-neutral-950"
-                style={{ transform: `scaleX(${index < active ? 1 : index > active ? 0 : stepProgress(T, index)})` }}
-              />
+              {index < active ? (
+                <span className="absolute inset-0 bg-neutral-950" />
+              ) : index === active ? (
+                <Fill key={step.n} step={step} running={running} className="absolute inset-0 bg-neutral-950" />
+              ) : null}
             </span>
           ))}
         </span>
@@ -178,10 +233,7 @@ export function Story() {
                 className="block w-full cursor-pointer pb-1 text-left focus-visible:rounded-sm focus-visible:outline-2 focus-visible:outline-offset-[6px] focus-visible:outline-[oklch(0.546_0.215_262.881/0.3)]"
               >
                 <span aria-hidden className="block h-0.5 overflow-hidden rounded-[1px] bg-black/9 max-md:hidden">
-                  <span
-                    className="block size-full origin-left bg-neutral-950"
-                    style={{ transform: `scaleX(${index === active ? stepProgress(T, index) : 0})` }}
-                  />
+                  {index === active ? <Fill key={step.n} step={step} running={running} className="block size-full bg-neutral-950" /> : null}
                 </span>
                 <Icon
                   aria-hidden

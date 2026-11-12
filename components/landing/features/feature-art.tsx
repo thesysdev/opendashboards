@@ -2,7 +2,9 @@
 
 import { ArrowUp, Check, MousePointer2 } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type ReactNode } from "react";
+
+import { useReducedMotion } from "../use-reduced-motion";
 
 /*
  * The four feature scenes. Every dashboard in them was rendered once with the
@@ -10,18 +12,6 @@ import { useEffect, useState, useSyncExternalStore, type CSSProperties, type Rea
  * 1180px wide); these scenes only frame, crossfade and point. Each is a
  * 588×360 scene scaled to its card's width.
  */
-
-const REDUCED_MOTION = "(prefers-reduced-motion: reduce)";
-const useReducedMotion = () =>
-  useSyncExternalStore(
-    (onChange) => {
-      const query = window.matchMedia(REDUCED_MOTION);
-      query.addEventListener("change", onChange);
-      return () => query.removeEventListener("change", onChange);
-    },
-    () => window.matchMedia(REDUCED_MOTION).matches,
-    () => false,
-  );
 
 /** A looping script: `step` counts through `durations` (seconds each) and wraps. Reduced motion rests on `still`. */
 function useSteps(durations: readonly number[], still: number) {

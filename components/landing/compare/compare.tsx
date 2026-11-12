@@ -4,9 +4,10 @@ import Image from "next/image";
 import { cn } from "@/lib/utils";
 
 const ROWS = [
-  { label: "Your data", without: "Goes through Anthropic", with: "Can stay in your network" },
-  { label: "Models", without: "Claude only", with: "Any model" },
+  { label: "Source code", without: "Closed", with: "Open source (MIT)" },
+  { label: "Models", without: "Claude only", with: "Any model, or your own key" },
   { label: "Hosting", without: "Anthropic’s cloud", with: "Your servers or ours" },
+  { label: "Your data", without: "Goes through Anthropic", with: "Stays in your network, with private deployment" },
   { label: "Speed", without: "Baseline", with: "Up to 10× faster" },
 ];
 
@@ -50,7 +51,7 @@ export function Compare() {
             Why not Claude Dashboards?
           </h2>
           <p className="mt-5 max-w-136 text-base leading-normal text-pretty text-neutral-950/60 md:text-[17px]">
-            It only works inside Claude, and it isn’t built for your team.
+            It only works inside Claude, with Claude’s models, on Anthropic’s cloud.
           </p>
         </div>
 
@@ -90,8 +91,8 @@ export function Compare() {
                     {row.without}
                   </span>
                 </td>
-                <td className="px-4.5 py-4 text-center whitespace-nowrap text-neutral-950/60">
-                  <span className="inline-flex w-[13.5em] items-center gap-2 text-left">
+                <td className="px-4.5 py-4 text-center text-neutral-950/60">
+                  <span className="inline-flex w-[13.5em] items-center gap-2 text-left text-pretty">
                     <Verdict pass />
                     {row.with}
                   </span>
