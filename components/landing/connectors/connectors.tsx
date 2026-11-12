@@ -117,7 +117,7 @@ export function Connectors() {
           {GROUPS.map((group, index) => (
             <li
               key={group.title}
-              className="flex flex-col border-black/6 px-7 pt-[clamp(2rem,4vw,3.25rem)] pb-[clamp(2rem,4vw,3rem)] text-pretty max-md:flex-[0_0_82%] max-md:snap-start max-md:rounded-[20px] max-md:border max-md:bg-white max-md:px-5 max-md:py-7 md:max-lg:even:border-l md:max-lg:nth-[n+3]:border-t lg:not-first:border-l"
+              className="relative flex flex-col border-black/6 px-7 pt-[clamp(2rem,4vw,3.25rem)] pb-[clamp(2rem,4vw,3rem)] text-pretty max-md:flex-[0_0_82%] max-md:snap-start max-md:rounded-[20px] max-md:border max-md:bg-white max-md:px-5 max-md:py-7 md:max-lg:even:border-l md:max-lg:nth-[n+3]:border-t lg:not-first:border-l"
             >
               {/* Logos lead each column as its picture. */}
               <LogoBubbles logos={group.logos} stagger={index} />
@@ -125,7 +125,9 @@ export function Connectors() {
                 {group.title}
               </h3>
               <p className="text-center text-[15px] leading-normal text-neutral-950/60">{group.description}</p>
-              {/* The names stay for screen readers; the logos carry them visually. */}
+              {/* The names stay for screen readers; the logos carry them visually. The card is
+                  `relative` so this absolutely positioned text stays inside the swipeable row on
+                  phones instead of widening the page. */}
               <p className="sr-only">{group.logos.map((logo) => logo.name).join(", ")}</p>
             </li>
           ))}

@@ -47,15 +47,19 @@ const KPI_STRIP: Rect = { x: 57, y: 107, w: 1067, h: 120 };
 const CHART_CARD: Rect = { x: 56, y: 252, w: 526, h: 400 };
 const FUNNEL_CARD: Rect = { x: 598, y: 252, w: 526, h: 400 };
 
+/**
+ * The device frame. On phones the scene shifts by SCREEN (97, 41) so the screen
+ * starts at the card's corner and fills it, with no rim or stage around it.
+ */
 function Device({ children, overlay }: { children: ReactNode; overlay?: ReactNode }) {
   return (
     <div
       aria-hidden
-      className="absolute top-0 left-0 h-90 w-147 origin-top-left [--stage-width:100cqw] [transform:scale(tan(atan2(var(--stage-width),588px)))]"
+      className="absolute top-0 left-0 h-90 w-147 origin-top-left [--stage-width:100cqw] [transform:scale(tan(atan2(var(--stage-width),588px)))] max-md:[transform:scale(tan(atan2(var(--stage-width),588px)))_translate(-97px,-41px)]"
     >
       <div className="absolute top-8 left-22 box-border h-120 w-160 rounded-tl-[22px] bg-white pt-[9px] pl-[9px] shadow-[0_0_0_1px_rgb(0_0_0/0.07),0_22px_44px_rgb(0_0_0/0.1)]">
         {/* The screen takes the captures' own page colour, so a zoomed-out shot meets it without an edge. */}
-        <div className="relative h-full overflow-hidden rounded-tl-[14px] bg-white shadow-[inset_0_0_0_1px_rgb(0_0_0/0.06)]">
+        <div className="relative h-full overflow-hidden rounded-tl-[14px] bg-white shadow-[inset_0_0_0_1px_rgb(0_0_0/0.06)] max-md:rounded-none max-md:shadow-none">
           {children}
         </div>
       </div>
