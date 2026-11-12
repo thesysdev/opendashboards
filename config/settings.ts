@@ -107,6 +107,16 @@ export type CommonSettings = {
     /** Rows a report may return. */
     maxRows: { agent: number; dashboard: number };
   };
+  mcp: {
+    /** One MCP call (connect, initialize, call), end to end. */
+    requestTimeoutMs: number;
+    /** Largest response read from an MCP server, per request. */
+    maxResponseBytes: number;
+    /** Tools listed from one server, across pages. */
+    maxTools: number;
+    /** Characters of text kept from one tool result. */
+    maxTextChars: number;
+  };
   /** Sample datasets users can install to try OpenDashboards without data of their own. Read-only. */
   demoData: DemoData;
 };

@@ -42,6 +42,7 @@ describe("SOURCE_OPTIONS", () => {
       ["bigquery", "bigquery", null],
       ["ga4", "ga4", null],
       ["searchconsole", "searchconsole", null],
+      ["mcp", "mcp", null],
     ]);
   });
 });

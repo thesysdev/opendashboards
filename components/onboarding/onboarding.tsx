@@ -329,6 +329,7 @@ function DataStep({
       <SourceFormDialog {...dialog} type="bigquery" open={adding?.type === "bigquery"} />
       <SourceFormDialog {...dialog} type="ga4" open={adding?.type === "ga4"} />
       <SourceFormDialog {...dialog} type="searchconsole" open={adding?.type === "searchconsole"} />
+      <SourceFormDialog {...dialog} type="mcp" open={adding?.type === "mcp"} />
       {/* Keyed by flavor so each opens with its own defaults. */}
       <PostgresFormDialog
         key={postgresFlavor ?? "postgres"}
