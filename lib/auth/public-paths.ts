@@ -5,13 +5,13 @@
  */
 const PUBLIC_PATHS: ReadonlySet<string> = new Set(["/", "/icon.svg", "/shiro-logo.svg"]);
 
-/** Folders in public/ that hold only the landing page's images. No route lives under them. */
-const PUBLIC_ASSET_FOLDERS = ["/brand-icons/", "/opendashboards/", "/shaders/"];
+/** The folder in public/ that holds only the landing page's images. No route lives under it. */
+const PUBLIC_ASSET_FOLDER = "/landing/";
 
 /** A plain file path: no dot segments, encoded characters or backslashes that could resolve somewhere else. */
 const PLAIN_FILE = /^(?:\/[A-Za-z0-9_-]+(?:\.[A-Za-z0-9_-]+)*)+$/;
 
 export function isPublicPath(pathname: string): boolean {
   if (PUBLIC_PATHS.has(pathname)) return true;
-  return PLAIN_FILE.test(pathname) && PUBLIC_ASSET_FOLDERS.some((folder) => pathname.startsWith(folder));
+  return PLAIN_FILE.test(pathname) && pathname.startsWith(PUBLIC_ASSET_FOLDER);
 }
