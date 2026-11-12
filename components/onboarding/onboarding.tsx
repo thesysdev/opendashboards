@@ -11,7 +11,6 @@ import { PostgresFormDialog } from "@/components/connections/postgres-form-dialo
 import { SourceFormDialog } from "@/components/connections/source-form-dialog";
 import { SourceTile } from "@/components/connections/source-tile";
 import { Button } from "@/components/ui/button";
-import { clearPendingPrompt, usePendingPrompt } from "@/lib/pending-prompt";
 import type { SourceOption } from "@/lib/sources/catalog";
 import { cn } from "@/lib/utils";
 
@@ -330,6 +329,7 @@ function DataStep({
       <SourceFormDialog {...dialog} type="bigquery" open={adding?.type === "bigquery"} />
       <SourceFormDialog {...dialog} type="ga4" open={adding?.type === "ga4"} />
       <SourceFormDialog {...dialog} type="searchconsole" open={adding?.type === "searchconsole"} />
+      <SourceFormDialog {...dialog} type="mcp" open={adding?.type === "mcp"} />
       {/* Keyed by flavor so each opens with its own defaults. */}
       <PostgresFormDialog
         key={postgresFlavor ?? "postgres"}
@@ -352,8 +352,6 @@ function BuildStep({
   demos: OnboardingDemo[];
   onBack: () => void;
 }) {
-  // Someone who wrote a prompt on the landing page gets the composer open, with it filled in.
-  const hasPendingPrompt = usePendingPrompt() !== null;
   const [writing, setWriting] = useState(false);
   const [started, setStarted] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -365,7 +363,6 @@ function BuildStep({
   function build(prompt: string) {
     setError(null);
     setStarted(prompt);
-    clearPendingPrompt();
     startTransition(async () => {
       // Only returns when creating failed; on success it opens the new app.
       const result = await createAppAction({ prompt, connectionIds: ids });
@@ -451,7 +448,7 @@ function BuildStep({
       )}
 
       <section className="mt-8">
-        {writing || hasPendingPrompt ? (
+        {writing ? (
           <>
             <Label>Describe a dashboard</Label>
             <PromptBox

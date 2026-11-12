@@ -7,49 +7,18 @@ import { PromptBox } from "@/components/apps/prompt-box";
 import { Onboarding } from "@/components/onboarding/onboarding";
 import { SectionLabel } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
-import { config } from "@/config";
 import { getAppService, type AppSummary } from "@/lib/apps";
-import { getUser } from "@/lib/auth/user";
+import { requireUser } from "@/lib/auth/user";
 import { getConnectionService } from "@/lib/connections";
 import { formatRelative } from "@/lib/format";
 import { getSecretMode } from "@/lib/secrets";
-import { SITE_URL } from "@/lib/site";
 import { SOURCE_OPTIONS } from "@/lib/sources/catalog";
 
-const TITLE = "OpenDashboards: live dashboards from your data, built by chatting";
-const DESCRIPTION =
-  "Connect PostHog, Postgres, MySQL, ClickHouse, BigQuery, Google Analytics or Search Console, describe what you want to see, and refine the dashboard by chatting. Free to use.";
+export const metadata: Metadata = { title: "Apps" };
 
-/** The one page for crawlers: the layout's noindex covers everything else in the app. */
-export const metadata: Metadata = {
-  title: { absolute: TITLE },
-  description: DESCRIPTION,
-  alternates: { canonical: "/" },
-  openGraph: { title: TITLE, description: DESCRIPTION, url: "/" },
-  robots: { index: true, follow: true },
-};
-
-const JSON_LD = {
-  "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  name: "OpenDashboards",
-  url: SITE_URL,
-  description: DESCRIPTION,
-  applicationCategory: "BusinessApplication",
-  operatingSystem: "Web",
-  offers: { "@type": "Offer", price: "0", priceCurrency: "USD" },
-  publisher: { "@type": "Organization", name: "Thesys", url: "https://www.thesys.dev" },
-};
-
-/**
- * The home page, for everyone. Signed out, it's the composer alone, and
- * sending a prompt leads to sign-in; signed in, it's onboarding or the
- * composer and the user's apps.
- */
-export default function HomePage() {
+export default function AppsPage() {
   return (
     <div className="relative min-h-full">
-      <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(JSON_LD) }} />
       {/* A soft glow behind the hero, like a build-anything home page. */}
       <div
         aria-hidden
@@ -64,9 +33,7 @@ export default function HomePage() {
 
 /** With no apps yet, onboarding takes the whole page; otherwise the composer and the apps. */
 async function Home() {
-  // The only page that renders without a user: nothing below this line runs for a signed-out visitor.
-  const user = await getUser();
-  if (!user) return <SignedOutHome />;
+  const user = await requireUser();
   const connectionService = getConnectionService();
   const [apps, connections] = await Promise.all([
     getAppService().list(user.id),
@@ -124,25 +91,6 @@ async function Home() {
         </ul>
       </section>
     </>
-  );
-}
-
-/** What a signed-out visitor sees: the composer, with the sample datasets' prompts to start from. */
-function SignedOutHome() {
-  const examples = config().demoData.datasets.flatMap((dataset) => dataset.prompts);
-  return (
-    <div className="relative mx-auto w-full max-w-3xl px-6 pt-20 pb-16 sm:pt-28">
-      <h1 className="text-center text-3xl font-bold tracking-tight sm:text-[2.5rem] sm:leading-tight">
-        What do you want to build?
-      </h1>
-      <p className="mx-auto mt-3 max-w-xl text-center text-[0.9375rem] text-pretty text-muted-foreground">
-        Describe a dashboard. OpenDashboards builds it live from your PostHog, Postgres, MySQL, ClickHouse, BigQuery,
-        Google Analytics or Search Console data, and you refine it by chatting.
-      </p>
-      <div className="mt-10">
-        <PromptBox signedOut connections={[]} examples={examples} />
-      </div>
-    </div>
   );
 }
 

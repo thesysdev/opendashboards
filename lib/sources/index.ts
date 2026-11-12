@@ -4,6 +4,7 @@ import type { ConnectionType } from "./catalog";
 import { bigquerySource } from "./bigquery/source";
 import { clickhouseSource } from "./clickhouse/source";
 import { ga4Source } from "./ga4/source";
+import { mcpSource } from "./mcp/source";
 import { mysqlSource } from "./mysql/source";
 import { postgresSource } from "./postgres/source";
 import { posthogSource } from "./posthog/source";
@@ -22,6 +23,7 @@ const SOURCES: Record<ConnectionType, ConnectionSource> = {
   bigquery: bigquerySource as unknown as ConnectionSource,
   ga4: ga4Source as unknown as ConnectionSource,
   searchconsole: searchConsoleSource as unknown as ConnectionSource,
+  mcp: mcpSource as unknown as ConnectionSource,
 };
 
 export function sourceFor(type: ConnectionType): ConnectionSource {

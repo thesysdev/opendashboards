@@ -2,7 +2,7 @@ import { ImageResponse } from "next/og";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 
-export const alt = "OpenDashboards: live dashboards from your data, built by chatting";
+export const alt = "OpenDashboards: ask any question, get a live dashboard";
 export const size = { width: 1200, height: 630 };
 export const contentType = "image/png";
 
@@ -31,10 +31,10 @@ export default async function Image() {
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 24 }}>
           <div style={{ fontSize: 72, fontWeight: 700, lineHeight: 1.05, letterSpacing: -2 }}>
-            Live dashboards from your data, built by chatting.
+            Ask any question. Get a live dashboard.
           </div>
           <div style={{ fontSize: 32, color: "#525252", lineHeight: 1.3 }}>
-            Connect PostHog, Postgres, BigQuery or Google Analytics and describe what you want to see.
+            The open-source alternative to Claude Dashboards, across PostHog, your database and any MCP server.
           </div>
         </div>
         <div style={{ display: "flex", fontSize: 28, color: "#737373" }}>opendashboards.com</div>

@@ -4,10 +4,6 @@ import { PHASE_DEVELOPMENT_SERVER, PHASE_PRODUCTION_SERVER } from "next/constant
 import { config, validateConfig } from "./config";
 
 const baseConfig: NextConfig = {
-  // The home page used to be /apps.
-  async redirects() {
-    return [{ source: "/apps", destination: "/", permanent: false }];
-  },
   logging: {
     // Dev logs every Server Function's arguments, and connection actions
     // receive API keys. Never print them.

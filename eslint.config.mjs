@@ -11,6 +11,19 @@ const eslintConfig = defineConfig([
         "warn",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+      // Connectors only talk to remote servers: the MCP SDK's stdio transport starts
+      // a program on our side, and its SSE transport lets the server pick the URL we post to.
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            {
+              group: ["@modelcontextprotocol/sdk/client/stdio*", "@modelcontextprotocol/sdk/client/sse*", "@modelcontextprotocol/sdk/client/websocket*"],
+              message: "Only the Streamable HTTP transport, through lib/sources/mcp, is allowed.",
+            },
+          ],
+        },
+      ],
     },
   },
   // Override default ignores of eslint-config-next.

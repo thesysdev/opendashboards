@@ -22,6 +22,13 @@
       "when": 1794332991145,
       "tag": "0002_sad_spyke",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1794479480817,
+      "tag": "0003_daffy_luckman",
+      "breakpoints": true
     }
   ]
 }

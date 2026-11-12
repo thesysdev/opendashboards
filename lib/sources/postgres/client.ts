@@ -39,24 +39,39 @@ const WRITE_ACCESS_SQL = `
   WHERE r.rolname = current_user`;
 
 /**
+ * Driver settings for a user's server, without the socket. Exported for tests.
+ *
+ * The password is a function on purpose. Given a string, pg treats an empty
+ * one as missing and falls back to the PGPASSWORD environment variable, then
+ * ~/.pgpass, which on our servers can hold the password to OUR database. It
+ * would then send it to whatever server the user named. A function is never
+ * second-guessed: the server gets exactly the user's stored password, empty or not.
+ */
+export function postgresClientConfig(target: PostgresTarget): pg.ClientConfig {
+  // pg fills an empty host, user or database from PGHOST, PGUSER, PGDATABASE: ours. Validation already
+  // refuses empty ones; this makes sure no path around it can reach the driver.
+  if (!target.host || !target.user || !target.database) throw new Error("Postgres host, user and database must be set");
+  return {
+    host: target.host,
+    port: target.port,
+    database: target.database,
+    user: target.user,
+    password: () => target.password,
+    ssl: sslOptions(target.sslMode),
+    connectionTimeoutMillis: appConfig().postgres.connectTimeoutMs,
+    statement_timeout: appConfig().postgres.statementTimeoutMs,
+    query_timeout: appConfig().postgres.statementTimeoutMs + 2_000,
+    application_name: "opendashboards",
+  };
+}
+
+/**
  * Opens a connection, runs `fn` inside a READ ONLY transaction, rolls back and
  * disconnects. The socket only reaches public addresses (see
  * lib/net/guarded-socket.ts), and TLS follows the SSL mode.
  */
 async function withReadOnly<T>(target: PostgresTarget, fn: (client: pg.Client) => Promise<T>): Promise<T> {
-  const client = new pg.Client({
-    host: target.host,
-    port: target.port,
-    database: target.database,
-    user: target.user,
-    password: target.password,
-    ssl: sslOptions(target.sslMode),
-    stream: () => createGuardedSocket(),
-    connectionTimeoutMillis: appConfig().postgres.connectTimeoutMs,
-    statement_timeout: appConfig().postgres.statementTimeoutMs,
-    query_timeout: appConfig().postgres.statementTimeoutMs + 2_000,
-    application_name: "opendashboards",
-  });
+  const client = new pg.Client({ ...postgresClientConfig(target), stream: () => createGuardedSocket() });
   // A dropped connection emits 'error' on the client; without a listener it would crash the process.
   client.on("error", () => {});
 

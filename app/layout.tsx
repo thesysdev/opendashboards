@@ -3,7 +3,6 @@ import { Geist_Mono, Inter } from "next/font/google";
 
 import { Toaster } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-
 import { SITE_URL } from "@/lib/site";
 
 import "./globals.css";
@@ -15,7 +14,7 @@ export const metadata: Metadata = {
   metadataBase: new URL(SITE_URL),
   title: { default: "OpenDashboards", template: "%s · OpenDashboards" },
   description:
-    "Connect your data and describe what you want to see. OpenDashboards builds live dashboards from it, and you refine them by chatting.",
+    "Connect PostHog or Postgres and describe what you want to see. OpenDashboards builds live dashboards from your data, and you refine them by chatting.",
   applicationName: "OpenDashboards",
   openGraph: { type: "website", siteName: "OpenDashboards" },
   twitter: { card: "summary_large_image" },

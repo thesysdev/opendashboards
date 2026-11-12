@@ -1,8 +1,6 @@
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { getUser } from "@/lib/auth/user";
+import { requireUser } from "@/lib/auth/user";
 import { cn } from "@/lib/utils";
-
-import { SignInLink } from "./sign-in-link";
 
 export function initialsFor(name: string): string {
   return name.replace(/[^A-Za-z0-9]/g, "").slice(0, 2).toUpperCase() || "?";
@@ -22,10 +20,9 @@ export function AvatarCircle({ name, className }: { name: string; className?: st
   );
 }
 
-/** The compact avatar for the mobile top bar, or the way to sign in. Reads the request, so it renders behind Suspense. */
+/** The compact avatar for the mobile top bar. Reads the request, so it renders behind Suspense. */
 export async function UserAvatar() {
-  const user = await getUser();
-  if (!user) return <SignInLink />;
+  const user = await requireUser();
   return (
     <Tooltip>
       <TooltipTrigger asChild>
