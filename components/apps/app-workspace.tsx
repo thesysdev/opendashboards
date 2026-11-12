@@ -1,7 +1,7 @@
 "use client";
 
 import { OpenUICloudProvider } from "@openuidev/react-ui/cloud";
-import { ChevronLeftIcon, PanelRightCloseIcon, PanelRightOpenIcon, SparklesIcon } from "lucide-react";
+import { ChevronLeftIcon, SparklesIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, use, useCallback, useMemo, useState } from "react";
@@ -149,69 +149,58 @@ export function AppWorkspace({
   return (
     // One Cloud connection for the workspace: the chat and the dashboard
     // share its token and artifact cache.
-    <OpenUICloudProvider token="/api/frontend-token">
+    <OpenUICloudProvider token="/api/frontend-token" apiBaseUrl="https://api.dev.thesys.dev">
     <DashboardResponsesContext value={dashboardResponses}>
     <BuildPanelContext value={{ open, setOpen }}>
     <RenameAppContext value={startRename}>
-      <div className="flex h-full flex-col">
-        <header className="flex h-12 shrink-0 items-center gap-2 border-b px-2">
-          <Link
-            href="/apps"
-            aria-label="All apps"
-            className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-neutral-100 hover:text-foreground"
-          >
-            <ChevronLeftIcon className="size-4" aria-hidden />
-          </Link>
-          <AppTitle appId={appId} name={name} renaming={renaming} onRenamingChange={setRenaming} />
-          <div className="ml-1 hidden min-w-0 flex-1 items-center gap-1.5 overflow-hidden sm:flex">{badges}</div>
-          <div className="ml-auto flex shrink-0 items-center gap-1">
-            <Button
-              variant={open ? "secondary" : "ghost"}
-              size="sm"
-              onClick={() => setOpen(!open)}
-              aria-expanded={open}
-              aria-controls="app-builder"
+      {/* The Build panel runs the full height beside the dashboard column, header included. */}
+      <div className="relative flex h-full min-h-0">
+        <div className="flex min-w-0 flex-1 flex-col">
+          <header className="flex h-12 shrink-0 items-center gap-2 border-b px-2">
+            <Link
+              href="/apps"
+              aria-label="All apps"
+              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-neutral-100 hover:text-foreground"
             >
-              {open ? <PanelRightCloseIcon aria-hidden /> : <PanelRightOpenIcon aria-hidden />}
-              Build
-            </Button>
-            {menu}
-          </div>
-        </header>
-
-        <div className="relative flex min-h-0 flex-1">
-          <div className="flex min-w-0 flex-1 flex-col">
-            <MobileDashboardTabs appId={appId} dashboards={dashboards} />
-            {children}
-          </div>
-
-          <aside
-            id="app-builder"
-            aria-label="Build"
-            className={cn(
-              "min-h-0 flex-col border-l bg-background",
-              // Beside the dashboard on wide screens, over it below 1024px.
-              "absolute inset-y-0 right-0 z-10 w-full shadow-xl sm:w-[380px] lg:static lg:shadow-none",
-              open ? "flex" : "hidden",
-            )}
-          >
-            <div className="flex h-11 shrink-0 items-center justify-between border-b pr-1.5 pl-4">
-              <span className="flex items-center gap-2 text-sm font-medium">
-                <SparklesIcon className="size-4 text-muted-foreground" aria-hidden />
-                Build
-              </span>
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                onClick={() => setOpen(false)}
-                aria-label="Collapse the Build panel"
-              >
-                <PanelRightCloseIcon aria-hidden />
-              </Button>
+              <ChevronLeftIcon className="size-4" aria-hidden />
+            </Link>
+            <AppTitle appId={appId} name={name} renaming={renaming} onRenamingChange={setRenaming} />
+            <div className="ml-1 hidden min-w-0 flex-1 items-center gap-1.5 overflow-hidden sm:flex">{badges}</div>
+            <div className="ml-auto flex shrink-0 items-center gap-1">
+              {/* One Build control at a time: this opens the panel, and the panel's own header closes it. */}
+              {!open && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setOpen(true)}
+                  aria-expanded={false}
+                  aria-controls="app-builder"
+                >
+                  <SparklesIcon aria-hidden />
+                  Build
+                </Button>
+              )}
+              {menu}
             </div>
-            {builder}
-          </aside>
+          </header>
+
+          <MobileDashboardTabs appId={appId} dashboards={dashboards} />
+          {children}
         </div>
+
+        <aside
+          id="app-builder"
+          aria-label="Build"
+          className={cn(
+            "min-h-0 flex-col border-l bg-background",
+            // Beside the dashboard on wide screens, over it (and its header) below 1024px.
+            "absolute inset-y-0 right-0 z-10 w-full shadow-xl sm:w-[380px] lg:static lg:shadow-none",
+            open ? "flex" : "hidden",
+          )}
+        >
+          {/* The chat's thread bar is the panel's header: chat picker, new chat, close. */}
+          {builder}
+        </aside>
       </div>
     </RenameAppContext>
     </BuildPanelContext>

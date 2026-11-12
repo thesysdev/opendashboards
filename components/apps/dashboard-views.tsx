@@ -1,6 +1,6 @@
 "use client";
 
-import { PanelRightOpenIcon, SparklesIcon } from "lucide-react";
+import { SparklesIcon } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 
@@ -22,7 +22,7 @@ export function NoDashboards({ hasPendingPrompt }: { hasPendingPrompt: boolean }
       </p>
       {!buildPanel.open && (
         <Button variant="outline" size="sm" className="mt-3" onClick={() => buildPanel.setOpen(true)}>
-          <PanelRightOpenIcon aria-hidden />
+          <SparklesIcon aria-hidden />
           Open Build panel
         </Button>
       )}
