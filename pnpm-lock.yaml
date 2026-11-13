@@ -18,8 +18,8 @@ importers:
         specifier: 1.32.2
         version: 1.32.2(zod@4.6.7)
       '@openuidev/dashboard-library':
-        specifier: 1.0.0
-        version: 1.0.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(csstype@3.2.3)(react-dom@19.3.0(react@19.3.0))(react-is@16.13.1)(react@19.3.0)(redux@5.0.1)(zod@4.6.7)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))
+        specifier: 1.0.1
+        version: 1.0.1(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(csstype@3.2.3)(react-dom@19.3.0(react@19.3.0))(react-is@16.13.1)(react@19.3.0)(redux@5.0.1)(zod@4.6.7)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))
       '@openuidev/lang-core':
         specifier: 1.1.0
         version: 1.1.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(zod@4.6.7)
@@ -1231,8 +1231,8 @@ packages:
     resolution: {integrity: sha512-nn5ozdjYQpUCZlWGuxcJY/KpxkWQs4DcbMCmKojjyrYDEAGy4Ce19NN4v5MduafTwJlbKc99UA8YhSVqq9yPZA==}
     engines: {node: '>=12.4.0'}
 
-  '@openuidev/dashboard-library@1.0.0':
-    resolution: {integrity: sha512-dAip+vRUpudodNj6aGM1/ohV+8FYlyxE35vadRlkH9kajly5HVef3Lv0ZYzXwMszPw8misB9CwowR9oErS1jFw==}
+  '@openuidev/dashboard-library@1.0.1':
+    resolution: {integrity: sha512-AlX7Jo/yhOZvD7/ynHD54Guft0ceia1NNxz5PL2G86U84jmQukgOxpij2m4tB/ge+pJP4RCagdtYjCrcDST9iw==}
     engines: {node: ^20.19.0 || >=22.12.0}
     peerDependencies:
       react: ^18.3.1 || ^19.0.0
@@ -6951,7 +6951,7 @@ snapshots:
 
   '@nolyfill/is-core-module@1.0.39': {}
 
-  '@openuidev/dashboard-library@1.0.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(csstype@3.2.3)(react-dom@19.3.0(react@19.3.0))(react-is@16.13.1)(react@19.3.0)(redux@5.0.1)(zod@4.6.7)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))':
+  '@openuidev/dashboard-library@1.0.1(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(csstype@3.2.3)(react-dom@19.3.0(react@19.3.0))(react-is@16.13.1)(react@19.3.0)(redux@5.0.1)(zod@4.6.7)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))':
     dependencies:
       '@openuidev/react-components': 0.0.2(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(csstype@3.2.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))
       '@openuidev/react-lang': 1.1.1(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)
