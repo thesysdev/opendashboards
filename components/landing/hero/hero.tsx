@@ -18,15 +18,23 @@ export function Hero() {
   return (
     <section aria-labelledby="hero-title" className="px-4 pt-6 pb-10 md:px-8 md:pt-24">
       <div className="mx-auto flex max-w-300 flex-col items-center text-center min-[56.25rem]:items-start min-[56.25rem]:pt-20 min-[56.25rem]:text-left">
-        <div className="order-1 flex w-full flex-col items-center gap-4 min-[56.25rem]:flex-row min-[56.25rem]:items-start min-[56.25rem]:justify-between min-[56.25rem]:gap-8">
+        {/* A size container, so the title can shrink to keep "Claude Dashboards" on one line. */}
+        <div className="order-1 flex w-full flex-col items-center gap-4 [container-type:inline-size] min-[56.25rem]:flex-row min-[56.25rem]:items-start min-[56.25rem]:justify-between min-[56.25rem]:gap-8">
           <div className="flex flex-col items-center gap-3 font-(family-name:--font-display) min-[56.25rem]:items-start min-[56.25rem]:gap-5">
             <Eyebrow />
+            {/*
+              Always two lines. "Claude Dashboards" is about 8.9 times the font size wide, so
+              on small phones the size follows the width (11cqw), and from 900px it follows
+              the room left beside the 400px subtitle and the 32px gap.
+            */}
             <h1
               id="hero-title"
-              className="text-[40px] leading-[1.15] font-semibold text-balance md:text-[52px] min-[56.25rem]:text-6xl min-[56.25rem]:tracking-[-1px]"
+              className="text-[length:min(40px,11cqw)] leading-[1.15] font-semibold text-balance md:text-[52px] min-[56.25rem]:text-[length:min(60px,calc((100cqw_-_432px)*0.114))] min-[56.25rem]:tracking-[-1px]"
             >
-              {/* The same sentence at every width, for people, crawlers and screen readers alike. */}
-              Ask any question. Get a live dashboard.
+              {/* The space keeps the words apart for crawlers and screen readers. */}
+              Open-source{" "}
+              <br />
+              Claude Dashboards
             </h1>
           </div>
           <p className="font-(family-name:--font-display) text-lg leading-[1.4] font-medium text-pretty text-neutral-950/60 md:text-[22px] md:leading-normal md:tracking-[-0.2px] min-[56.25rem]:mt-10 min-[56.25rem]:w-100 min-[56.25rem]:shrink-0 min-[56.25rem]:pt-3">
@@ -41,34 +49,39 @@ export function Hero() {
 
         <div className="order-2 mt-7 flex w-full flex-col items-center gap-3 md:flex-row md:justify-center min-[56.25rem]:order-3 min-[56.25rem]:mt-[49px] min-[56.25rem]:-ml-2 min-[56.25rem]:w-auto">
           <BevelButton href={LINKS.github} label="Star on GitHub" variant="primary" external />
-          <BevelButton href={LINKS.app} label="Sign Up" variant="secondary" arrow />
+          <BevelButton href={LINKS.app} label="Try for free" variant="secondary" arrow />
         </div>
       </div>
 
-      <div className="mx-auto mt-12 max-w-320 min-[56.25rem]:mt-15">
+      {/* Phones: the stage runs edge to edge, out past the section's 16px sides. */}
+      <div className="mx-auto mt-12 max-w-320 max-md:-mx-4 min-[56.25rem]:mt-15">
         <HeroStage />
       </div>
     </section>
   );
 }
 
-/** "Open source · powered by OpenUI Dashboards". On phones it stays on one line and the link goes quiet. */
+/**
+ * "Built with OpenUI [Dashboards]", the last word in an outlined chip, linking to
+ * OpenUI Dashboards. On phones it stays on one line and the link goes quiet.
+ */
 function Eyebrow() {
   return (
-    <p className="flex items-baseline gap-1.5 text-[13px] leading-none font-medium whitespace-nowrap md:ml-0.5 md:gap-2 md:text-[17px]">
-      <span className="rounded-[4px] border border-current px-[5px] pt-0.5 pb-[3px] md:rounded-[5px] md:px-1.5">
-        Open source
-      </span>
-      <span className="text-neutral-950/60">
-        powered by{" "}
-        <a
-          href={LINKS.dashboards}
-          className="group inline-flex items-center gap-[0.3rem] rounded-md transition-colors hover:text-neutral-950 focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-neutral-950 max-md:pointer-events-none"
-        >
-          OpenUI Dashboards
-          <ArrowRight aria-hidden className="size-[1em] stroke-3 transition-transform group-hover:translate-x-0.5 max-md:hidden" />
-        </a>
-      </span>
+    <p className="flex text-[13px] leading-none font-medium whitespace-nowrap md:ml-0.5 md:text-[17px]">
+      <a
+        href={LINKS.dashboards}
+        className="group inline-flex items-baseline gap-1.5 rounded-md focus-visible:outline-2 focus-visible:outline-offset-[3px] focus-visible:outline-neutral-950 max-md:pointer-events-none md:gap-2"
+      >
+        {/* The space keeps "OpenUI Dashboards" two words for screen readers. */}
+        Built with OpenUI{" "}
+        <span className="rounded-[4px] border border-current px-[5px] pt-0.5 pb-[3px] md:rounded-[5px] md:px-1.5">
+          Dashboards
+        </span>
+        <ArrowRight
+          aria-hidden
+          className="size-[1em] self-center stroke-3 transition-transform group-hover:translate-x-0.5 max-md:hidden"
+        />
+      </a>
     </p>
   );
 }
