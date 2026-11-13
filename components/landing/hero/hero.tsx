@@ -45,7 +45,8 @@ export function Hero() {
         </div>
       </div>
 
-      <div className="mx-auto mt-12 max-w-320 min-[56.25rem]:mt-15">
+      {/* Phones: the stage runs edge to edge, out past the section's 16px sides. */}
+      <div className="mx-auto mt-12 max-w-320 max-md:-mx-4 min-[56.25rem]:mt-15">
         <HeroStage />
       </div>
     </section>

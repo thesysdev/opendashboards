@@ -33,8 +33,8 @@ function Verdict({ pass }: { pass: boolean }) {
 
 /**
  * "Why not Claude Dashboards?": the question and its answer on the left, a
- * table on the right (under it below 1200px). Below 900px each row is its
- * label over the two answers side by side, under the two names once.
+ * table on the right (under it below 1200px). Below 900px each topic is a
+ * grey strip over its two answers side by side, under the two names once.
  */
 export function Compare() {
   return (
@@ -102,37 +102,36 @@ export function Compare() {
           </tbody>
         </table>
 
-        {/* Phones: the two names once, then each row's label over the pair, so they read across. */}
-        <div className="min-[56.25rem]:hidden">
-          <div aria-hidden className="grid grid-cols-2 gap-x-4 border-b border-black/9 pb-3 text-[15px] leading-normal font-medium">
-            <span className="text-neutral-950/60">Claude Dashboards</span>
-            <span className="flex items-center gap-2">
+        {/* Phones, edge to edge: the two names once, then each topic as a slim grey strip over its
+            two answers, each answer its mark over its words, with a hairline between the two. */}
+        <div className="-mx-(--gutter) min-[56.25rem]:hidden">
+          <div aria-hidden className="grid grid-cols-2 pb-3 text-[15px] leading-normal font-medium">
+            <span className="px-3 text-center text-neutral-950/60">Claude Dashboards</span>
+            <span className="flex items-center justify-center gap-2 border-l border-black/8 px-3">
               <Image src="/shiro-logo.svg" alt="" width={20} height={20} className="size-5 object-contain" />
               OpenDashboards
             </span>
           </div>
           <dl>
             {ROWS.map((row) => (
-              <div key={row.label} className="border-b border-black/6 py-4 last:border-b-0">
-                <dt className="font-(family-name:--font-display) text-sm leading-normal font-semibold tracking-[-0.01em] text-neutral-950">
+              <div key={row.label} className="grid grid-cols-2 text-[13px] leading-[1.4]">
+                <dt className="col-span-2 bg-neutral-100 px-(--gutter) py-1 text-center font-(family-name:--font-display) text-[13px] leading-5 font-semibold tracking-[-0.01em] text-neutral-950">
                   {row.label}
                 </dt>
-                <div className="mt-2 grid grid-cols-2 gap-x-4 text-[15px] leading-[1.35]">
-                  <dd className="flex items-start gap-2 text-neutral-950/50">
-                    <X aria-hidden className="mt-[3px] size-3.5 shrink-0 text-neutral-950/35" strokeWidth={2.5} />
-                    <span>
-                      <span className="sr-only">Claude Dashboards: </span>
-                      {row.without}
-                    </span>
-                  </dd>
-                  <dd className="flex items-start gap-2 text-neutral-950">
-                    <Check aria-hidden className="mt-[3px] size-3.5 shrink-0 text-[#049156]" strokeWidth={2.75} />
-                    <span>
-                      <span className="sr-only">OpenDashboards: </span>
-                      {row.with}
-                    </span>
-                  </dd>
-                </div>
+                <dd className="flex flex-col items-center gap-2 px-3 py-4 text-center text-balance text-neutral-950/50">
+                  <Verdict pass={false} />
+                  <span>
+                    <span className="sr-only">Claude Dashboards: </span>
+                    {row.without}
+                  </span>
+                </dd>
+                <dd className="flex flex-col items-center gap-2 border-l border-black/8 px-3 py-4 text-center text-balance text-neutral-950">
+                  <Verdict pass />
+                  <span>
+                    <span className="sr-only">OpenDashboards: </span>
+                    {row.with}
+                  </span>
+                </dd>
               </div>
             ))}
           </dl>

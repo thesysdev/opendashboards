@@ -19,8 +19,7 @@ const VARIANTS = {
 /**
  * The landing page's pill button. A link that leaves the site gets a round
  * badge with an up-right arrow; one into the app is the label alone unless
- * `arrow` asks for the badge, which then points right. Full width (up to
- * 320px) on phones.
+ * `arrow` asks for the badge, which then points right. Full width on phones.
  */
 export function BevelButton({
   href,
@@ -39,7 +38,7 @@ export function BevelButton({
   const className = cn(
     "inline-flex h-12 items-center gap-2.5 rounded-full border pl-5 font-(family-name:--font-display) text-base font-medium",
     "focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-neutral-950",
-    "max-md:w-full max-md:max-w-80",
+    "max-md:w-full",
     arrow ? "pr-2 max-md:justify-between" : "pr-5 justify-center",
     styles.button,
   );

@@ -44,7 +44,8 @@ export function Features() {
         <div className="mt-10 grid grid-cols-1 gap-10 md:mt-16 md:grid-cols-2 md:gap-x-4 md:gap-y-12 min-[56.25rem]:gap-x-6 min-[56.25rem]:gap-y-16">
           {FEATURES.map((feature) => (
             <article key={feature.title} className="min-w-0">
-              <div className="relative aspect-[358/260] w-full overflow-hidden rounded-xl border border-[#f8f8f8] [container-type:inline-size] md:aspect-[588/360] md:rounded-3xl">
+              {/* Phones: the scene runs edge to edge, out past the section's gutter, with square sides. */}
+              <div className="relative aspect-[358/260] w-full overflow-hidden border border-[#f8f8f8] [container-type:inline-size] max-md:-mx-(--gutter) max-md:w-auto max-md:border-x-0 md:aspect-[588/360] md:rounded-3xl">
                 {/* Stills of the hero's dither shader, served as they are. */}
                 <Image src="/landing/shaders/faded-dither-light-compact.webp" alt="" fill unoptimized className="object-cover md:hidden" />
                 <Image src="/landing/shaders/faded-dither-light-wide.webp" alt="" fill unoptimized className="object-cover max-md:hidden" />

@@ -1,8 +1,8 @@
 "use client";
 
-import { ArrowUp, Check, ChevronLeft, ChevronRight, Database, PanelRightClose, Pause, Play, Plus } from "lucide-react";
+import { ArrowUp, Check, Database, PanelRightClose, Pause, Play, Plus } from "lucide-react";
 import Image from "next/image";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useState, type AnimationEvent, type CSSProperties } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -22,48 +22,58 @@ const delay = (seconds: number): CSSProperties => ({ animationDelay: `${seconds}
 const sourceAt = (i: number) => 0.25 + i * 0.12;
 
 /** A source's mark, white on its brand colour, as the app shows it in chips and the Build thread. */
-function SourceLogo({ brand }: { brand: Brand }) {
+function SourceLogo({ brand, className, markClassName }: { brand: Brand; className?: string; markClassName?: string }) {
   return (
-    <span className="grid size-5 shrink-0 place-items-center rounded-full" style={{ background: brand.color }}>
-      <BrandMark brand={brand} className="size-[11px] bg-white" />
+    <span className={cn("grid size-5 shrink-0 place-items-center rounded-full", className)} style={{ background: brand.color }}>
+      <BrandMark brand={brand} className={cn("size-[11px] bg-white", markClassName)} />
+    </span>
+  );
+}
+
+/** A source the example reads from, as a chip: its mark and name, arriving in turn. */
+function SourceChip({ source, index }: { source: Brand; index: number }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-[26px] items-center gap-1.5 rounded-full border border-[rgb(10_10_11/0.08)] bg-white pr-2.5 pl-[3px] text-[13px] font-medium whitespace-nowrap",
+        POP,
+      )}
+      style={delay(sourceAt(index))}
+    >
+      <SourceLogo brand={source} />
+      {source.name}
     </span>
   );
 }
 
 /**
  * The hero's stage: the OpenDashboards app answering one question at a time,
- * on a light dither ground, with tabs under it that rotate through the
- * examples. The app is drawn on a fixed 1584×820 scene scaled to the stage's
- * width; phones zoom in on its left side, with the app flush against the stage's edge.
+ * on a light dither ground. The app is drawn on a fixed 1584×820 scene scaled
+ * to the stage's width.
+ *
+ * Desktop: the whole app, with tabs under it that rotate through the examples.
+ * Phones: a square stage with the example's sources as logos along its top,
+ * the dashboard alone under them (972px wide, 16px in from the sides, 64px
+ * down), and the example's question as a chat bubble where the tabs sit on
+ * desktop. Either way an 8s clock moves on to the next example, and the pause
+ * button stops it.
  */
 export function HeroStage() {
   const [active, setActive] = useState(0);
   const [paused, setPaused] = useState(false);
   const item = HERO_CASES[active];
   const go = (index: number) => setActive((index + HERO_CASES.length) % HERO_CASES.length);
-
-  // Phones scroll the tab row: keep the active tab in its middle, at once on load and gliding after.
-  const tabRefs = useRef<(HTMLButtonElement | null)[]>([]);
-  const centred = useRef(false);
-  useEffect(() => {
-    const tab = tabRefs.current[active];
-    const row = tab?.parentElement;
-    if (!tab || !row || row.scrollWidth <= row.clientWidth) return;
-    const t = tab.getBoundingClientRect();
-    const r = row.getBoundingClientRect();
-    row.scrollTo({
-      left: row.scrollLeft + t.left + t.width / 2 - (r.left + r.width / 2),
-      behavior: centred.current ? "smooth" : "instant",
-    });
-    centred.current = true;
-  }, [active]);
+  /** The clock's 8s fill ended: on to the next example. */
+  const advance = (event: AnimationEvent) => {
+    if (event.animationName === "landing-tab-fill") go(active + 1);
+  };
 
   return (
     <div className="relative" style={{ "--fill-play": paused ? "paused" : "running" } as CSSProperties}>
       <div
         role="img"
         aria-label={`OpenDashboards answering "${item.ask}" with a live ${item.label.toLowerCase()} dashboard built from ${item.sources.map((s) => s.name).join(", ")}`}
-        className="relative aspect-[358/290] overflow-hidden rounded-xl border border-[#f8f8f8] bg-[#f4f4f5] [container-type:size] after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:z-1 after:h-[22%] after:bg-linear-to-b after:from-transparent after:to-[rgb(10_10_11/0.05)] md:aspect-[1584/820] md:rounded-3xl"
+        className="relative aspect-square overflow-hidden border border-[#f8f8f8] bg-[#f4f4f5] max-md:border-x-0 [container-type:size] after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:z-1 after:h-[22%] after:bg-linear-to-b after:from-transparent after:to-[rgb(10_10_11/0.05)] md:aspect-[1584/820] md:rounded-3xl"
       >
         {/* Stills of a dither shader; served as they are, since recompressing would smear the pattern.
             Loaded up front: on phones this is the largest thing in the first screen, and each is a few KB. */}
@@ -72,9 +82,21 @@ export function HeroStage() {
         <div
           key={item.id}
           aria-hidden
-          className="absolute top-0 left-0 z-1 h-205 w-396 origin-top-left [--k:tan(atan2(var(--stage-width),1584px))] [--stage-width:100cqw] [transform:scale(var(--k))] max-md:[--k:calc(tan(atan2(var(--stage-width),1280px))*1.3)] max-md:[transform:scale(var(--k))_translateX(-202px)]"
+          className="absolute top-0 left-0 z-1 h-205 w-396 origin-top-left [--k:tan(atan2(var(--stage-width),1584px))] [--stage-width:100cqw] [transform:scale(var(--k))] max-md:[--k:tan(atan2(calc(var(--stage-width)_-_32px),972px))] max-md:[transform:scale(var(--k))_translate(calc(16px/var(--k)_-_64px),calc(64px/var(--k)_-_64px))]"
         >
           <AppMock item={item} />
+        </div>
+        {/* Phones: the sources' logos above the app; the app's own top bar, with the names, is hidden there. */}
+        <div key={`sources-${item.id}`} aria-hidden className="absolute inset-x-0 top-3.5 z-2 flex justify-center gap-2 px-4 md:hidden">
+          {item.sources.map((source, i) => (
+            <span
+              key={source.name}
+              className={cn("grid size-9 place-items-center rounded-full border border-[rgb(10_10_11/0.08)] bg-white", POP)}
+              style={delay(sourceAt(i))}
+            >
+              <SourceLogo brand={source} className="size-7" markClassName="size-[15px]" />
+            </span>
+          ))}
         </div>
       </div>
 
@@ -91,14 +113,12 @@ export function HeroStage() {
         )}
       </button>
 
-      <div className="pointer-events-none absolute inset-x-0 -bottom-[7px] z-2 flex translate-y-1/2 justify-center px-4">
-        <StepButton label="Previous example" onClick={() => go(active - 1)}>
-          <ChevronLeft aria-hidden className="size-[18px]" strokeWidth={2.25} />
-        </StepButton>
+      {/* Desktop: a tab per example. */}
+      <div className="pointer-events-none absolute inset-x-0 -bottom-[7px] z-2 flex translate-y-1/2 justify-center px-4 max-md:hidden">
         <div
           role="tablist"
           aria-label="Example questions"
-          className="pointer-events-auto flex max-w-full gap-1 overflow-x-auto rounded-full bg-white p-1.5 shadow-[0_0_0_1px_rgb(0_0_0/0.04),0_1px_2px_1px_rgb(0_0_0/0.04),0_8px_20px_-6px_rgb(0_0_0/0.12)] [scrollbar-width:none] max-md:mx-2 max-md:min-w-0 max-md:flex-1 max-md:before:flex-[0_0_calc(50%-2.5rem)] max-md:after:flex-[0_0_calc(50%-2.5rem)]"
+          className="pointer-events-auto flex max-w-full gap-1 overflow-x-auto rounded-full bg-white p-1.5 shadow-[0_0_0_1px_rgb(0_0_0/0.04),0_1px_2px_1px_rgb(0_0_0/0.04),0_8px_20px_-6px_rgb(0_0_0/0.12)] [scrollbar-width:none]"
         >
           {HERO_CASES.map((c, i) => (
             <button
@@ -106,15 +126,10 @@ export function HeroStage() {
               type="button"
               role="tab"
               aria-selected={i === active}
-              ref={(node) => {
-                tabRefs.current[i] = node;
-              }}
               onClick={() => go(i)}
-              onAnimationEnd={(event) => {
-                if (event.animationName === "landing-tab-fill") go(i + 1);
-              }}
+              onAnimationEnd={advance}
               className={cn(
-                "relative shrink-0 overflow-hidden rounded-full px-3.5 py-1 text-sm leading-normal font-medium text-neutral-950/50 transition-colors hover:text-neutral-950 max-md:px-3 max-md:py-1.5 max-md:text-[13px]",
+                "relative shrink-0 overflow-hidden rounded-full px-3.5 py-1 text-sm leading-normal font-medium text-neutral-950/50 transition-colors hover:text-neutral-950",
                 // The active tab fills left to right over 8s, inverting its label as it goes, then hands over to the next.
                 "aria-selected:isolate aria-selected:bg-neutral-100 aria-selected:text-neutral-950",
                 "aria-selected:before:pointer-events-none aria-selected:before:absolute aria-selected:before:inset-0 aria-selected:before:origin-left aria-selected:before:bg-white aria-selected:before:mix-blend-difference aria-selected:before:[transform:scaleX(0)]",
@@ -125,33 +140,35 @@ export function HeroStage() {
             </button>
           ))}
         </div>
-        <StepButton label="Next example" onClick={() => go(active + 1)}>
-          <ChevronRight aria-hidden className="size-[18px]" strokeWidth={2.25} />
-        </StepButton>
+      </div>
+
+      {/* Phones: the question as a chat bubble, popping in with each example. The stage's
+          label already reads it out, so it's hidden from screen readers. */}
+      <div aria-hidden className="pointer-events-none absolute inset-x-0 -bottom-[7px] z-2 flex translate-y-1/2 justify-center px-6 md:hidden">
+        <span
+          key={item.id}
+          className={cn(
+            "max-w-full rounded-[16px_16px_4px_16px] bg-white px-3.5 py-1.5 text-sm leading-5 text-balance text-neutral-950 shadow-[0_0_0_1px_rgb(0_0_0/0.04),0_1px_2px_1px_rgb(0_0_0/0.04),0_8px_20px_-6px_rgb(0_0_0/0.12)]",
+            POP,
+          )}
+        >
+          {item.ask}
+          {/* The phones' clock: the same 8s fill as the active tab's, on an empty span. */}
+          <span
+            onAnimationEnd={advance}
+            className="block size-0 animate-[landing-tab-fill_8s_linear_forwards] [animation-play-state:var(--fill-play)] motion-reduce:animate-none"
+          />
+        </span>
       </div>
     </div>
   );
 }
 
-/** The arrows either side of the tabs: phones only. */
-function StepButton({ label, onClick, children }: { label: string; onClick: () => void; children: React.ReactNode }) {
-  return (
-    <button
-      type="button"
-      aria-label={label}
-      onClick={onClick}
-      className="pointer-events-auto grid size-9 shrink-0 place-items-center self-center rounded-full bg-white text-neutral-950 shadow-[0_0_0_1px_rgb(0_0_0/0.04),0_1px_2px_1px_rgb(0_0_0/0.04),0_8px_20px_-6px_rgb(0_0_0/0.12)] md:hidden"
-    >
-      {children}
-    </button>
-  );
-}
-
-/** The app itself, at scene size: sidebar, the open dashboard, and the Build thread. */
+/** The app itself, at scene size: sidebar, the open dashboard, and the Build thread. Phones show the dashboard alone. */
 function AppMock({ item }: { item: HeroCase }) {
   return (
-    <div className="absolute top-16 left-16 h-200 w-364 rounded-t-[30px] bg-white px-[11px] pt-[11px] shadow-[0_0_0_1px_rgb(0_0_0/0.04),0_1px_2px_1px_rgb(0_0_0/0.04),0_16px_40px_-14px_rgb(0_0_0/0.12)] max-md:top-0 max-md:left-[202px] max-md:rounded-none max-md:p-0 max-md:shadow-none">
-      <div className="relative grid h-full grid-cols-[184px_minmax(0,1fr)_300px] overflow-hidden rounded-t-[19px] bg-[#fafafa] max-md:rounded-none max-md:after:hidden text-left text-sm leading-[1.35] text-[#0a0a0b] after:pointer-events-none after:absolute after:inset-0 after:z-3 after:rounded-[inherit] after:border after:border-b-0 after:border-[rgb(10_10_11/0.08)] [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:stroke-[1.75]">
+    <div className="absolute top-16 left-16 h-200 w-364 max-md:h-300 max-md:w-243 rounded-t-[30px] bg-white px-[11px] pt-[11px] shadow-[0_0_0_1px_rgb(0_0_0/0.04),0_1px_2px_1px_rgb(0_0_0/0.04),0_16px_40px_-14px_rgb(0_0_0/0.12)]">
+      <div className="relative grid h-full grid-cols-[184px_minmax(0,1fr)_300px] overflow-hidden max-md:grid-cols-1 rounded-t-[19px] bg-[#fafafa] text-left text-sm leading-[1.35] text-[#0a0a0b] after:pointer-events-none after:absolute after:inset-0 after:z-3 after:rounded-[inherit] after:border after:border-b-0 after:border-[rgb(10_10_11/0.08)] [&_svg]:size-4 [&_svg]:shrink-0 [&_svg]:stroke-[1.75]">
         <Sidebar active={item.id} />
         <Dashboard item={item} />
         <BuildThread item={item} />
@@ -162,7 +179,7 @@ function AppMock({ item }: { item: HeroCase }) {
 
 function Sidebar({ active }: { active: string }) {
   return (
-    <div className="flex flex-col gap-1 border-r border-[rgb(10_10_11/0.06)] bg-[#f6f6f7] px-3.5 pt-2.5">
+    <div className="flex flex-col gap-1 border-r border-[rgb(10_10_11/0.06)] bg-[#f6f6f7] px-3.5 pt-2.5 max-md:hidden">
       <span className="mx-0.5 mb-3.5 flex h-8 items-center gap-1 text-[15px] font-semibold tracking-[-0.01em]">
         <Image src="/shiro-logo.svg" alt="" width={28} height={28} />
         OpenDashboards
@@ -203,20 +220,10 @@ function NavItem({ active = false, children }: { active?: boolean; children: Rea
 function Dashboard({ item }: { item: HeroCase }) {
   return (
     <div className="flex min-w-0 flex-col bg-[#fafafa]">
-      <div className="flex h-[52px] shrink-0 items-center gap-3 bg-white pr-3.5 pl-3">
+      <div className="flex h-[52px] shrink-0 items-center gap-3 bg-white pr-3.5 pl-3 max-md:hidden">
         <span className="flex min-w-0 items-center gap-1.5">
           {item.sources.map((source, i) => (
-            <span
-              key={source.name}
-              className={cn(
-                "inline-flex h-[26px] items-center gap-1.5 rounded-full border border-[rgb(10_10_11/0.08)] bg-white pr-2.5 pl-[3px] text-[13px] font-medium whitespace-nowrap",
-                POP,
-              )}
-              style={delay(sourceAt(i))}
-            >
-              <SourceLogo brand={source} />
-              {source.name}
-            </span>
+            <SourceChip key={source.name} source={source} index={i} />
           ))}
           <span className="ml-1 inline-flex items-center gap-1 text-[13px] whitespace-nowrap text-[rgb(10_10_11/0.45)]">
             <Plus className="size-3.5!" />
@@ -241,7 +248,7 @@ function Dashboard({ item }: { item: HeroCase }) {
 
 function BuildThread({ item }: { item: HeroCase }) {
   return (
-    <div className="relative flex flex-col border-l border-[rgb(10_10_11/0.06)] bg-white px-[18px]">
+    <div className="relative flex flex-col border-l border-[rgb(10_10_11/0.06)] bg-white px-[18px] max-md:hidden">
       <span className="flex h-[52px] items-center">
         <span className="grid size-[30px] place-items-center rounded-lg bg-[rgb(10_10_11/0.05)] text-[rgb(10_10_11/0.7)]">
           <PanelRightClose className="stroke-2!" />
