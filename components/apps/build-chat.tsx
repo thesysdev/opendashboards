@@ -16,7 +16,16 @@ import {
   type Message,
   type TimelineStep,
 } from "@openuidev/react-ui";
-import { ArrowUpIcon, CheckIcon, ChevronDownIcon, PlusIcon, SparklesIcon, SquareIcon } from "lucide-react";
+import {
+  ArrowUpIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  PanelRightCloseIcon,
+  PlusIcon,
+  SparklesIcon,
+  SquareIcon,
+  XIcon,
+} from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { parseMessage } from "@openuidev/lang-core";
@@ -36,7 +45,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { dashboardPath, parseAppPath } from "@/lib/apps/paths";
-import { usePublishDashboardResponse } from "./app-workspace";
+import { useBuildPanel, usePublishDashboardResponse } from "./app-workspace";
 import { scopeStorageToApp } from "@/lib/apps/thread-storage";
 import { cn } from "@/lib/utils";
 
@@ -127,8 +136,12 @@ export function BuildChat({
   );
 }
 
-/** The thread in view, the app's other threads, and a new one. */
+/**
+ * The Build panel's one header row: the thread in view (and the app's other
+ * threads), a new one, and closing the panel.
+ */
 function ThreadBar() {
+  const buildPanel = useBuildPanel();
   const threads = useThreadList((s) => s.threads);
   const selectedId = useThreadList((s) => s.selectedThreadId);
   const loadThreads = useThreadList((s) => s.loadThreads);
@@ -141,12 +154,14 @@ function ThreadBar() {
   const current = threads.find((thread) => thread.id === selectedId);
 
   return (
-    <div className="flex h-10 shrink-0 items-center gap-1 border-b px-2">
+    // Same height as the app header beside it, so the two read as one top bar.
+    <div className="flex h-12 shrink-0 items-center gap-1 border-b pr-1.5 pl-2">
       <DropdownMenu>
         <DropdownMenuTrigger
           disabled={isRunning || threads.length === 0}
-          className="flex min-w-0 flex-1 items-center gap-1 rounded-md px-2 py-1 text-left text-sm text-muted-foreground hover:bg-neutral-100 hover:text-foreground disabled:pointer-events-none"
+          className="flex min-w-0 flex-1 items-center gap-2 rounded-md px-2 py-1 text-left text-sm font-medium hover:bg-neutral-100 disabled:pointer-events-none"
         >
+          <SparklesIcon className="size-4 shrink-0 text-muted-foreground" aria-hidden />
           <span className="truncate">{current?.title ?? "New chat"}</span>
           {threads.length > 0 && <ChevronDownIcon className="size-3.5 shrink-0" aria-hidden />}
         </DropdownMenuTrigger>
@@ -169,6 +184,11 @@ function ThreadBar() {
         aria-label="New chat"
       >
         <PlusIcon aria-hidden />
+      </Button>
+      <Button variant="ghost" size="icon-sm" onClick={() => buildPanel.setOpen(false)} aria-label="Close the Build panel">
+        {/* Over the dashboard (below lg) it closes like a sheet; beside it, it collapses the side panel. */}
+        <XIcon className="lg:hidden" aria-hidden />
+        <PanelRightCloseIcon className="hidden lg:block" aria-hidden />
       </Button>
     </div>
   );
