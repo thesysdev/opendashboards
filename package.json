@@ -21,7 +21,7 @@
     "@ag-ui/core": "0.0.53",
     "@aws-sdk/client-kms": "^3.1164.0",
     "@modelcontextprotocol/sdk": "1.32.2",
-    "@openuidev/dashboard-library": "1.0.0",
+    "@openuidev/dashboard-library": "1.0.1",
     "@openuidev/lang-core": "1.1.0",
     "@openuidev/react-headless": "0.18.7",
     "@openuidev/react-lang": "^1.1.1",
