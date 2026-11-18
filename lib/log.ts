@@ -57,6 +57,18 @@ export function logError(context: string, error: unknown): void {
   count("opendashboards.error", { context, cause: causeLabel(rootCause) });
 }
 
+/**
+ * Logs something worth knowing that isn't a failure of ours (a user hitting a
+ * limit, say), with the request's ids. Fields are names and numbers only:
+ * never put a secret, a credential or user content in them.
+ */
+export function logWarning(context: string, fields: Record<string, string | number>): void {
+  const details = Object.entries(fields)
+    .map(([key, value]) => `${key}=${value}`)
+    .join(" ");
+  console.warn(`[opendashboards] ${context}${describeContext()}: ${redact(details)}`);
+}
+
 /** A low-cardinality name for a failure: a code (`ECONNREFUSED`, `23505`) or the error's name. */
 function causeLabel(error: unknown): string {
   if (!(error instanceof Error)) return "unknown";

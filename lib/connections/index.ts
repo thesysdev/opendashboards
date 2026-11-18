@@ -18,6 +18,7 @@ export function getConnectionService(): ConnectionService {
     secrets: () => getSecretBox(),
     sources: sourceFor,
     demo: { datasets: () => config().demoData.datasets, password: secrets.demoDataPassword },
+    signInTtlMs: config().mcp.oauthSignInTtlMs,
   });
   return service;
 }

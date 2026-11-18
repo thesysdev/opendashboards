@@ -1,10 +1,10 @@
 "use client";
 
 import { Loader2Icon, TriangleAlertIcon, UploadIcon } from "lucide-react";
-import { useId, useRef, useState, useTransition } from "react";
+import { Fragment, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { createConnectionAction, replaceCredentialAction } from "@/app/(app)/connections/actions";
+import { createConnectionAction, replaceCredentialAction, startMcpSignInAction } from "@/app/(app)/connections/actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -35,9 +35,14 @@ export function SourceFormDialog(props: Props) {
   const { type, open, onOpenChange, secretMode } = props;
   const spec = SOURCE_FORMS[type];
   const replacing = props.mode === "replace";
-  const fields = replacing ? [spec.credential] : [...spec.fields, spec.credential];
+  const allFields = replacing ? [spec.credential] : [...spec.fields, spec.credential];
+  // MCP servers: sign in with OAuth (the server's own page) or give an API key.
+  const offersOAuth = Boolean(spec.oauth) && !replacing;
+  const [auth, setAuth] = useState<"oauth" | "key">(offersOAuth ? "oauth" : "key");
+  const signingIn = offersOAuth && auth === "oauth";
+  const fields = signingIn ? allFields.filter((field) => !field.keyOnly && field !== spec.credential) : allFields;
 
-  const initial = (): Record<string, string> => Object.fromEntries(fields.map((field) => [field.name, field.initial ?? ""]));
+  const initial = (): Record<string, string> => Object.fromEntries(allFields.map((field) => [field.name, field.initial ?? ""]));
   const [values, setValues] = useState<Record<string, string>>(initial);
   const [pasted, setPasted] = useState("");
   const [pasteNote, setPasteNote] = useState<string | null>(null);
@@ -50,6 +55,7 @@ export function SourceFormDialog(props: Props) {
 
   function reset() {
     setValues(initial());
+    setAuth(offersOAuth ? "oauth" : "key");
     setPasted("");
     setPasteNote(null);
     setFieldErrors({});
@@ -72,8 +78,25 @@ export function SourceFormDialog(props: Props) {
     setPasteNote("Filled in the fields below. Check them, then test.");
   }
 
+  /** OAuth instead of a key: the server's own sign-in page, then back to Data Connections. */
+  function signIn() {
+    startTransition(async () => {
+      const result = await startMcpSignInAction({ name: values.name ?? "", url: values.url ?? "" });
+      if (!result.ok) {
+        if (result.error.field && fields.some((field) => field.name === result.error.field)) {
+          setFieldErrors({ [result.error.field]: result.error.message });
+        } else {
+          setFormError(result.error.message);
+        }
+        return;
+      }
+      window.location.assign(result.data.authorizationUrl);
+    });
+  }
+
   function submit(event: React.FormEvent) {
     event.preventDefault();
+    if (signingIn) return signIn();
     startTransition(async () => {
       const result =
         props.mode === "replace"
@@ -194,15 +217,45 @@ export function SourceFormDialog(props: Props) {
               </Field>
             )}
 
-            {rows.map((row) =>
-              row.length === 1 ? (
-                renderField(row[0])
-              ) : (
-                <div key={row.map((field) => field.name).join()} className="grid grid-cols-2 gap-3">
-                  {row.map(renderField)}
-                </div>
-              ),
-            )}
+            {rows.map((row) => (
+              <Fragment key={row.map((field) => field.name).join()}>
+                {row.length === 1 ? (
+                  renderField(row[0])
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">{row.map(renderField)}</div>
+                )}
+                {offersOAuth && row.some((field) => field.name === spec.oauth?.after) && (
+                  <Field>
+                    <FieldLabel id={id("auth")}>Authentication</FieldLabel>
+                    <ToggleGroup
+                      type="single"
+                      variant="outline"
+                      aria-labelledby={id("auth")}
+                      value={auth}
+                      onValueChange={(value) => {
+                        if (value !== "oauth" && value !== "key") return;
+                        setAuth(value);
+                        setFieldErrors({});
+                        setFormError(null);
+                      }}
+                      className="w-full"
+                    >
+                      <ToggleGroupItem value="oauth" className="flex-1">
+                        OAuth
+                      </ToggleGroupItem>
+                      <ToggleGroupItem value="key" className="flex-1">
+                        API key
+                      </ToggleGroupItem>
+                    </ToggleGroup>
+                    <FieldDescription>
+                      {signingIn
+                        ? "You sign in on the server's own page. OpenDashboards keeps the sign-in, never your password."
+                        : "A key or token the server gave you, sent with every request."}
+                    </FieldDescription>
+                  </Field>
+                )}
+              </Fragment>
+            ))}
 
             {!replacing && spec.help && (
               <details className="group rounded-lg border px-3 py-2 text-sm">
@@ -246,7 +299,7 @@ export function SourceFormDialog(props: Props) {
             </Button>
             <Button type="submit" disabled={pending || storageMissing}>
               {pending && <Loader2Icon className="animate-spin" aria-hidden />}
-              {pending ? "Testing…" : replacing ? spec.replaceAction : "Test & save"}
+              {signingIn ? (pending ? "Opening sign-in…" : "Sign in") : pending ? "Testing…" : replacing ? spec.replaceAction : "Test & save"}
             </Button>
           </DialogFooter>
         </form>

@@ -116,6 +116,10 @@ export type CommonSettings = {
     maxTools: number;
     /** Characters of text kept from one tool result. */
     maxTextChars: number;
+    /** How long a started OAuth sign-in stays valid, waiting for the server's callback. */
+    oauthSignInTtlMs: number;
+    /** Refresh an OAuth access token when it has less than this left. */
+    oauthRefreshMarginMs: number;
   };
   /** Sample datasets users can install to try OpenDashboards without data of their own. Read-only. */
   demoData: DemoData;
@@ -136,6 +140,11 @@ export type EnvironmentSettings = {
      */
     publicHost: string | null;
   };
+  /**
+   * Where people's browsers reach OpenDashboards: "https://opendashboards.com".
+   * OAuth sign-ins come back here, so it must be exactly what the browser uses.
+   */
+  appOrigin: string;
   secrets: {
     /** Store data-source keys unencrypted when no KMS key is configured. Local only. */
     allowPlaintext: boolean;

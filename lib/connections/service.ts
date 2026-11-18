@@ -1,13 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import { and, asc, eq, isNull } from "drizzle-orm";
+import { and, asc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 
 import type { DemoDataset } from "@/config";
 import type { Database } from "@/lib/db";
-import { appConnections, apps, dataConnections, type ConnectionStatus, type DataConnectionRow } from "@/lib/db/schema";
-import { logError } from "@/lib/log";
+import { appConnections, apps, dataConnections, mcpOAuthSignIns, type ConnectionStatus, type DataConnectionRow } from "@/lib/db/schema";
+import { logError, logWarning } from "@/lib/log";
+import { count } from "@/lib/metrics";
 import type { SecretBox, SecretContext } from "@/lib/secrets";
-import type { SealedSecret } from "@/lib/secrets/types";
+import { MAX_SECRET_BYTES, SecretTooLargeError, secretBytes, type SealedSecret } from "@/lib/secrets/types";
 import {
   CONNECTION_TYPES,
   connectionConfigSchema,
@@ -54,6 +55,8 @@ export type ConnectionSummary = {
   status: ConnectionStatus;
   lastCheckedAt: Date;
   apps: { id: string; name: string }[];
+  /** "oauth" for a connection signed in with OAuth, which can be signed in to again. */
+  signIn: "oauth" | null;
   /** Set for an installed demo dataset: which one, and what's in it. */
   demo: { key: string; description: string } | null;
 };
@@ -79,6 +82,8 @@ export type ConnectionServiceDeps = {
   now?: () => Date;
   /** How long a decrypted credential stays in memory. */
   keyCacheTtlMs?: number;
+  /** How long a started OAuth sign-in waits for its callback. */
+  signInTtlMs?: number;
   /** Demo datasets on offer, and the shared read-only password. No password: none on offer. */
   demo?: { datasets: () => DemoDataset[]; password: () => string | undefined };
 };
@@ -87,6 +92,15 @@ export type ConnectionServiceDeps = {
 function describeDemo(dataset: DemoDataset) {
   return { ...describeConnection({ type: "postgres", ...dataset.postgres }), source: "Demo dataset", shortSource: "Demo", tile: "DM" };
 }
+
+/** How each source's credential field reads in a message. */
+const CREDENTIAL_NAMES: Record<string, string> = {
+  password: "password",
+  apiKey: "API key",
+  serviceAccountKey: "service account key",
+};
+
+const DEFAULT_SIGN_IN_TTL_MS = 10 * 60 * 1000;
 
 const DEFAULT_KEY_CACHE_TTL_MS = 5 * 60 * 1000;
 
@@ -106,6 +120,24 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     userId,
     connectionId,
   });
+
+  /**
+   * Refuses a credential too large to encrypt, on its form field, before any
+   * secret store sees it. Logged and counted (never the value: only its source
+   * and size), so we know if real credentials ever hit the limit.
+   */
+  function refuseIfTooLarge(type: ConnectionType, credential: string, operation: "create" | "replace"): Result<never> | null {
+    const bytes = secretBytes(credential);
+    if (bytes <= MAX_SECRET_BYTES) return null;
+    const field = deps.sources(type).credential.field;
+    logWarning("secrets.too_large", { source: type, field, operation, bytes, limit: MAX_SECRET_BYTES });
+    count("opendashboards.secret.too_large", { source: type, operation });
+    return fail({
+      code: "credential_too_large",
+      field,
+      message: `This ${CREDENTIAL_NAMES[field] ?? "credential"} is too large to store securely: ${bytes.toLocaleString("en-US")} bytes, and the most OpenDashboards can store is ${MAX_SECRET_BYTES.toLocaleString("en-US")}. Check you pasted only the ${CREDENTIAL_NAMES[field] ?? "credential"}.`,
+    });
+  }
 
   /** An empty credential (a server with no password) is recorded as "none": nothing to encrypt. */
   const sealCredential = (credential: string, ctx: SecretContext): Promise<SealedSecret> =>
@@ -151,6 +183,54 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       .innerJoin(apps, eq(apps.id, appConnections.appId))
       .where(and(eq(appConnections.connectionId, connectionId), eq(apps.userId, userId)))
       .orderBy(asc(apps.name));
+  }
+
+  /** Pending sign-ins are sealed for their user and their own (hashed) state. */
+  const signInContext = (userId: string, stateHash: string): SecretContext => ({ purpose: "mcp-oauth-sign-in", userId, connectionId: stateHash });
+
+  /**
+   * Changes a connection's stored credential (new OAuth tokens, say), one
+   * change at a time per connection. Under a Postgres advisory lock, it reads
+   * the credential as stored now (another request may have just refreshed it),
+   * lets `change` decide, and writes the result in the same transaction, so two
+   * dashboard queries can't both refresh and spend a rotating refresh token twice.
+   */
+  async function updateCredential(
+    userId: string,
+    connectionId: string,
+    type: ConnectionType,
+    change: (current: string) => Promise<{ credential: string; status?: "ok" | "invalid" }>,
+  ): Promise<string> {
+    const ctx = context(type, userId, connectionId);
+    try {
+      return await db.transaction(async (tx) => {
+        await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${connectionId}, 0))`);
+        const [row] = await tx
+          .select()
+          .from(dataConnections)
+          .where(and(eq(dataConnections.id, connectionId), eq(dataConnections.userId, userId)))
+          .limit(1);
+        if (!row) throw new Error("Connection disappeared while its credential was being updated");
+        const current = await openCredential(row.secret, ctx);
+        const next = await change(current);
+        if (next.credential === current && !next.status) return current;
+        const tooLarge = refuseIfTooLarge(type, next.credential, "replace");
+        if (tooLarge) throw new SecretTooLargeError(secretBytes(next.credential));
+        await tx
+          .update(dataConnections)
+          .set({
+            secret: await sealCredential(next.credential, ctx),
+            credentialHint: deps.sources(type).credential.hint(next.credential),
+            status: next.status ?? "ok",
+            lastCheckedAt: now(),
+            updatedAt: now(),
+          })
+          .where(and(eq(dataConnections.id, connectionId), eq(dataConnections.userId, userId)));
+        return next.credential;
+      });
+    } finally {
+      keyCache.delete(connectionId);
+    }
   }
 
   /** Runs `fn`, turning anything unexpected into a logged internal error. */
@@ -224,7 +304,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       for (const { config, demoDataset, ...row } of rows) {
         const used = appRows.filter((app) => app.connectionId === row.id).map(({ id, name }) => ({ id, name }));
         if (demoDataset === null) {
-          summaries.push({ ...row, ...describeConnection(configOf({ config })), apps: used, demo: null });
+          const parsed = configOf({ config });
+          const signIn = "oauth" in parsed && parsed.oauth ? "oauth" : null;
+          summaries.push({ ...row, ...describeConnection(parsed), signIn, apps: used, demo: null });
           continue;
         }
         // A demo dataset no longer on offer reads as gone, like a deleted connection.
@@ -233,6 +315,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         summaries.push({
           ...row,
           ...describeDemo(dataset),
+          signIn: null,
           apps: used,
           demo: { key: dataset.key, description: dataset.description },
         });
@@ -322,6 +405,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!settings.success) return fromValidation(settings.error);
         const credential = source.credential.schema.safeParse(rawCredential);
         if (!credential.success) return fromValidation(credential.error, () => source.credential.field);
+        const tooLarge = refuseIfTooLarge(type, credential.data, "create");
+        if (tooLarge) return tooLarge;
 
         const config = { type, ...settings.data } as ConnectionConfig;
         const id = randomUUID();
@@ -395,6 +480,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         const source = deps.sources(config.type);
         const credential = source.credential.schema.safeParse(parsed.data.credential);
         if (!credential.success) return fromValidation(credential.error, () => source.credential.field);
+        const tooLarge = refuseIfTooLarge(config.type, credential.data, "replace");
+        if (tooLarge) return tooLarge;
 
         let warnings: ConnectionWarning[];
         try {
@@ -467,7 +554,113 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       }
       const { type: _type, ...settings } = configOf(row);
       const credential = await keyCache.get(row.id, () => openCredential(row.secret, context(type, userId, row.id)));
-      return { id: row.id, name: row.name, config: settings, credential };
+      return {
+        id: row.id,
+        name: row.name,
+        config: settings,
+        credential,
+        updateCredential: (change) => updateCredential(userId, row.id, type, change),
+      };
+    },
+
+    /**
+     * Keeps a started OAuth sign-in until the browser comes back: the user it
+     * belongs to, the connection it will become, and (sealed) the PKCE verifier
+     * and client registration. Found later by the state's hash only.
+     */
+    startSignIn(
+      userId: string,
+      sign: { stateHash: string; connectionId: string | null; name: string; config: ConnectionConfig; pending: string },
+    ): Promise<Result<undefined>> {
+      return guard("startSignIn", async () => {
+        if (sign.connectionId && !(await findOwned(userId, sign.connectionId))) return notFound();
+        const tooLarge = refuseIfTooLarge(sign.config.type, sign.pending, "create");
+        if (tooLarge) return tooLarge;
+        // Old, abandoned sign-ins go first.
+        await db.delete(mcpOAuthSignIns).where(lt(mcpOAuthSignIns.expiresAt, now()));
+        const secret = await deps.secrets().seal(sign.pending, signInContext(userId, sign.stateHash));
+        await db.insert(mcpOAuthSignIns).values({
+          stateHash: sign.stateHash,
+          userId,
+          connectionId: sign.connectionId,
+          name: sign.name,
+          config: sign.config,
+          secret,
+          expiresAt: new Date(now().getTime() + (deps.signInTtlMs ?? DEFAULT_SIGN_IN_TTL_MS)),
+        });
+        return ok(undefined);
+      });
+    },
+
+    /**
+     * Takes a started sign-in back, once: only for the user who started it, only
+     * before it expires. Deleted as it's read, so a callback can't be replayed.
+     */
+    async takeSignIn(
+      userId: string,
+      stateHash: string,
+    ): Promise<{ connectionId: string | null; name: string; config: ConnectionConfig; pending: string } | null> {
+      const [row] = await db
+        .delete(mcpOAuthSignIns)
+        .where(and(eq(mcpOAuthSignIns.stateHash, stateHash), eq(mcpOAuthSignIns.userId, userId), gt(mcpOAuthSignIns.expiresAt, now())))
+        .returning();
+      if (!row) return null;
+      const pending = await deps.secrets().open(row.secret, signInContext(userId, stateHash));
+      return { connectionId: row.connectionId, name: row.name, config: connectionConfigSchema.parse(row.config), pending };
+    },
+
+    /**
+     * Saves a connection a finished OAuth sign-in produced, after checking it
+     * works: a new one, or new tokens for an existing one of this user's.
+     */
+    saveSignedIn(
+      userId: string,
+      input: { connectionId: string | null; name: string; config: ConnectionConfig; credential: string },
+    ): Promise<Result<{ id: string; warnings: ConnectionWarning[] }>> {
+      return guard("saveSignedIn", async () => {
+        const config = connectionConfigSchema.parse(input.config);
+        const source = deps.sources(config.type);
+        const tooLarge = refuseIfTooLarge(config.type, input.credential, input.connectionId ? "replace" : "create");
+        if (tooLarge) return tooLarge;
+
+        if (input.connectionId) {
+          const row = await findOwned(userId, input.connectionId);
+          if (!row || row.type !== config.type || row.demoDataset !== null) return notFound();
+          try {
+            const secret = await sealCredential(input.credential, context(config.type, userId, row.id));
+            const warnings = await check(config, input.credential);
+            await db
+              .update(dataConnections)
+              .set({ config, secret, credentialHint: source.credential.hint(input.credential), status: "ok", lastCheckedAt: now(), updatedAt: now() })
+              .where(and(eq(dataConnections.id, row.id), eq(dataConnections.userId, userId)));
+            return ok({ id: row.id, warnings });
+          } catch (error) {
+            return checkFailure(error);
+          } finally {
+            keyCache.delete(row.id);
+          }
+        }
+
+        const id = randomUUID();
+        try {
+          const secret = await sealCredential(input.credential, context(config.type, userId, id));
+          const warnings = await check(config, input.credential);
+          await db.insert(dataConnections).values({
+            id,
+            userId,
+            name: input.name,
+            type: config.type,
+            config,
+            secret,
+            credentialHint: source.credential.hint(input.credential),
+            status: "ok",
+            lastCheckedAt: now(),
+          });
+          return ok({ id, warnings });
+        } catch (error) {
+          return checkFailure(error);
+        }
+      });
     },
   };
   return service;

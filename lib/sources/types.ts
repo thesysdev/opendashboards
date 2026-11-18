@@ -48,7 +48,18 @@ export type ConnectionWarning = "can_write";
 export type SourceError = { code: string; message: string; field?: string };
 
 /** A saved connection, opened: settings plus the decrypted credential. Server only. */
-export type OpenConnection<Config> = { id: string; name: string; config: Config; credential: string };
+export type OpenConnection<Config> = {
+  id: string;
+  name: string;
+  config: Config;
+  credential: string;
+  /**
+   * Replaces the stored credential (fresh OAuth tokens, say), one change at a
+   * time per connection: `change` gets the credential as stored right now and
+   * returns what to store. Absent for demo datasets, which have nothing to change.
+   */
+  updateCredential?: (change: (current: string) => Promise<{ credential: string; status?: "ok" | "invalid" }>) => Promise<string>;
+};
 
 /** Rows from a query, in the shape both the agent and dashboards read. */
 export type QueryResult = {

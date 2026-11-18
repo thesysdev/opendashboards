@@ -17,6 +17,8 @@ export type FieldSpec = {
   initial?: string;
   /** Half width, side by side with the next half-width field. */
   half?: boolean;
+  /** Only used with an API key: hidden when signing in with OAuth. */
+  keyOnly?: boolean;
   /** A file input that fills this field (e.g. a JSON key). */
   fileAccept?: string;
 };
@@ -36,6 +38,8 @@ export type FormSpec = {
   help?: { summary: string; intro: string; code?: string; steps?: string[] };
   /** What "plaintext" storage mode warns about. */
   secretNoun: string;
+  /** Offers a switch between an API key and an OAuth sign-in (MCP servers), shown after this field. */
+  oauth?: { after: string };
 };
 
 /** A password a public, read-only server may not need. */
@@ -220,6 +224,7 @@ GRANT SELECT ON your_db.* TO dashboards_reader;`,
       },
       {
         name: "headerName",
+        keyOnly: true,
         label: "Key header",
         kind: "text",
         initial: "Authorization",
@@ -236,5 +241,6 @@ GRANT SELECT ON your_db.* TO dashboards_reader;`,
     replaceTitle: "Replace key",
     replaceAction: "Test & replace",
     secretNoun: "keys",
+    oauth: { after: "url" },
   },
 };

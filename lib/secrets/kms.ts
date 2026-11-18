@@ -11,6 +11,7 @@ import {
   type SealedSecret,
   type SecretBox,
   type SecretContext,
+  assertSecretSize,
 } from "./types";
 
 /** The part of the KMS client this provider uses, so tests can stand in for AWS. */
@@ -47,6 +48,8 @@ export function createKmsSecretBox(keyId: string, options: KmsOptions): SecretBo
     provider: "kms",
 
     async seal(plaintext: string, context: SecretContext): Promise<SealedSecret> {
+      // KMS would refuse it with a generic error; refuse it first, by size.
+      assertSecretSize(plaintext);
       let blob: Uint8Array | undefined;
       try {
         ({ CiphertextBlob: blob } = await kms().send(

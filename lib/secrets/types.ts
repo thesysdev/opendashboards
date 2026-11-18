@@ -28,6 +28,33 @@ export interface SecretBox {
   open(sealed: SealedSecret, context: SecretContext): Promise<string>;
 }
 
+/**
+ * The largest secret we store, in bytes of UTF-8. KMS's Encrypt takes at most
+ * 4,096 bytes of plaintext with a symmetric key, and every provider applies the
+ * same limit so local development fails exactly where production would.
+ */
+export const MAX_SECRET_BYTES = 4_096;
+
+/** Bytes a secret takes: KMS counts bytes, not characters. */
+export const secretBytes = (plaintext: string) => Buffer.byteLength(plaintext, "utf8");
+
+/** A secret over MAX_SECRET_BYTES. Carries only its size, never the value. */
+export class SecretTooLargeError extends Error {
+  constructor(
+    readonly bytes: number,
+    readonly limit: number = MAX_SECRET_BYTES,
+  ) {
+    super(`The secret is ${bytes} bytes; the most that can be stored is ${limit}`);
+    this.name = "SecretTooLargeError";
+  }
+}
+
+/** Refuses a secret over the limit, before any provider sees it. */
+export function assertSecretSize(plaintext: string): void {
+  const bytes = secretBytes(plaintext);
+  if (bytes > MAX_SECRET_BYTES) throw new SecretTooLargeError(bytes);
+}
+
 /** The secret store couldn't be reached or refused the call. A retry may work. */
 export class SecretStorageUnavailableError extends Error {
   constructor(message: string, options?: ErrorOptions) {

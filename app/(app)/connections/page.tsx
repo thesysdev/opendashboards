@@ -4,6 +4,7 @@ import { Suspense } from "react";
 
 import { AddConnectionButton } from "@/components/connections/add-connection-button";
 import { ConnectionActions } from "@/components/connections/connection-actions";
+import { SignInResult } from "@/components/connections/sign-in-result";
 import { DemoDatasetSwitch } from "@/components/connections/demo-dataset-switch";
 import type { SecretMode } from "@/components/connections/connection-form-dialog";
 import { SourceTile } from "@/components/connections/source-tile";
@@ -46,6 +47,7 @@ async function ConnectionsContent() {
 
   return (
     <>
+      <SignInResult />
       <section aria-labelledby="your-connections">
         <SectionLabel id="your-connections">Your connections</SectionLabel>
         {connections.length === 0 ? (
@@ -135,6 +137,7 @@ function ConnectionRow({
             name: connection.name,
             type: connection.type,
             apps: connection.apps,
+            signIn: connection.signIn,
           }}
           secretMode={secretMode}
         />

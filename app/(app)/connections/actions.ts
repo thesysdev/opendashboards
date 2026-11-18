@@ -5,6 +5,7 @@ import { refresh } from "next/cache";
 import { track } from "@/lib/analytics";
 import { requireUser } from "@/lib/auth/user";
 import { getConnectionService } from "@/lib/connections";
+import { startMcpSignIn } from "@/lib/connections/mcp-sign-in";
 import type { Result } from "@/lib/connections/errors";
 import { withLogContext } from "@/lib/log";
 
@@ -22,6 +23,16 @@ async function run<T>(
   const result = await withLogContext({ user: user.id }, () => call(user.id));
   if (result.ok || refreshOnFailure) refresh();
   return result;
+}
+
+/**
+ * Starts an OAuth sign-in to an MCP server (new, or again for an existing
+ * connection). Returns the sign-in page to send the browser to; the
+ * connection is saved when it comes back to /api/mcp/oauth/callback.
+ */
+export async function startMcpSignInAction(input: unknown) {
+  const user = await requireUser();
+  return startMcpSignIn(user.id, input);
 }
 
 export async function createConnectionAction(input: unknown) {
