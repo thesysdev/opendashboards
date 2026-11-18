@@ -140,6 +140,7 @@ export function AppWorkspace({
   menu,
   builder,
   dashboards,
+  notice,
   children,
 }: {
   appId: string;
@@ -148,6 +149,8 @@ export function AppWorkspace({
   menu: React.ReactNode;
   builder: React.ReactNode;
   dashboards: Dashboard[];
+  /** Shown above the dashboard: a source that needs signing in again, say. */
+  notice?: React.ReactNode;
   children: React.ReactNode;
 }) {
   const [open, setOpenState] = useState(dashboards.length === 0);
@@ -226,6 +229,7 @@ export function AppWorkspace({
           </header>
 
           <MobileDashboardTabs appId={appId} dashboards={dashboards} />
+          {notice}
           {showCreating ? <NewDashboard response={creating.response} /> : children}
         </div>
 

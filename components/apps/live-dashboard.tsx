@@ -3,7 +3,8 @@
 import { LiveArtifactRenderer, useArtifactRenderer } from "@openuidev/react-ui/cloud";
 import { library } from "@openuidev/dashboard-library";
 import { LoaderCircleIcon } from "lucide-react";
-import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 import { cn } from "@/lib/utils";
@@ -58,6 +59,10 @@ function DashboardView({
 }) {
   // Where the loading capsule draws: over the bottom of the dashboard, outside the part that scrolls.
   const [overlay, setOverlay] = useState<HTMLDivElement | null>(null);
+  const router = useRouter();
+  // Once per dashboard: a failed query may have just found a sign-in expired, which
+  // marks its connection on the server. Refreshing the page's data shows the banner.
+  const refreshed = useRef(false);
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto bg-white">
@@ -70,7 +75,12 @@ function DashboardView({
           library={library}
           interpreter={interpreter}
           onError={(errors) => {
-            if (errors.length) console.error("[dashboard]", JSON.stringify(errors));
+            if (!errors.length) return;
+            console.error("[dashboard]", JSON.stringify(errors));
+            if (!refreshed.current && errors.some((error) => error.source === "query")) {
+              refreshed.current = true;
+              router.refresh();
+            }
           }}
         >
           <LiveArtifactRenderer.Chrome>

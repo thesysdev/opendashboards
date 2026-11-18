@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
@@ -93,6 +95,39 @@ describe("create", () => {
     expect(
       await appsService.create("alice", { prompt: "x", connectionIds: [id], name: "Mine" }),
     ).toMatchObject({ ok: false, error: { code: "validation" } });
+  });
+});
+
+describe("sign-in state", () => {
+  it("flags the app's sources signed in with OAuth, so an expired one can be signed in again", async () => {
+    const keyed = await addConnection("alice", "Production");
+    const id = await createApp("alice", "Signups", [keyed]);
+    const [oauthRow] = await db
+      .insert(dataConnections)
+      .values({
+        id: randomUUID(),
+        userId: "alice",
+        name: "Linear",
+        type: "mcp",
+        config: {
+          type: "mcp",
+          url: "https://mcp.linear.app/mcp",
+          headerName: "Authorization",
+          oauth: { issuer: "https://mcp.linear.app", tokenEndpoint: "https://mcp.linear.app/token", resource: "https://mcp.linear.app/mcp" },
+        },
+        secret: { v: 1, provider: "plaintext", value: "{}" },
+        credentialHint: "sign-in expired",
+        status: "invalid",
+        lastCheckedAt: new Date(),
+      })
+      .returning({ id: dataConnections.id });
+    await appsService.addConnection("alice", { appId: id, connectionId: oauthRow.id });
+
+    const connections = (await appsService.get("alice", id))?.connections ?? [];
+    expect(connections.map(({ name, signIn, status }) => ({ name, signIn, status }))).toEqual([
+      { name: "Linear", signIn: "oauth", status: "invalid" },
+      { name: "Production", signIn: null, status: "ok" },
+    ]);
   });
 });
 

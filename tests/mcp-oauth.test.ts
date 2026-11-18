@@ -275,6 +275,32 @@ describe("signing in", () => {
   });
 });
 
+describe("coming back to where the sign-in started", () => {
+  const APP = "/apps/0f8fad5b-d9cb-469f-a165-70867728950e/dashboards/7c9e6679-7425-40de-944b-e07fc1f90ae7";
+
+  it("returns to the dashboard it was started from", async () => {
+    const first = await startMcpSignIn("alice", { name: "Linear", url: `${base}/mcp` }, deps);
+    if (!first.ok) throw new Error(first.error.code);
+    const created = await finishMcpSignIn("alice", approve(first.data.authorizationUrl), deps);
+    if (!created.ok) throw new Error(created.error.code);
+    expect(created.data.returnTo).toBeNull();
+
+    const again = await startMcpSignIn("alice", { connectionId: created.data.id, returnTo: APP }, deps);
+    if (!again.ok) throw new Error(again.error.code);
+    expect(await finishMcpSignIn("alice", approve(again.data.authorizationUrl), deps)).toMatchObject({ ok: true, data: { returnTo: APP } });
+  });
+
+  it.each(["https://evil.example.com/apps/x", "//evil.example.com", "/connections", "/apps/../connections", "/apps/not-an-id", `${APP}?next=https://evil.example.com`])(
+    "refuses %j as a place to return to",
+    async (returnTo) => {
+      expect(await startMcpSignIn("alice", { connectionId: "0f8fad5b-d9cb-469f-a165-70867728950e", returnTo }, deps)).toMatchObject({
+        ok: false,
+        error: { code: "validation" },
+      });
+    },
+  );
+});
+
 describe("refreshing", () => {
   async function signedIn(): Promise<OpenConnection<McpConfig>> {
     const started = await startMcpSignIn("alice", { name: "Linear", url: `${base}/mcp` }, deps);

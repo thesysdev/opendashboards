@@ -32,13 +32,20 @@ import type { ConnectionService } from "./service";
 /** Where the authorization server sends the browser back. Exactly what's registered. */
 export const mcpSignInRedirectUri = () => `${appConfig().appOrigin}/api/mcp/oauth/callback`;
 
+/**
+ * Where the browser may go back to after signing in: an app or one of its
+ * dashboards, on our own site. Anything else (another site, another path) is
+ * refused, so the callback can never be an open redirect.
+ */
+const RETURN_PATH = /^\/apps\/[0-9a-f-]{36}(\/dashboards\/[0-9a-f-]{36})?$/;
+
 const startSchema = z.union([
   z.object({ name: connectionNameSchema, url: z.string() }).strict(),
-  z.object({ connectionId: z.uuid() }).strict(),
+  z.object({ connectionId: z.uuid(), returnTo: z.string().regex(RETURN_PATH).optional() }).strict(),
 ]);
 
 /** What a pending sign-in keeps sealed, besides the settings it will save. */
-type PendingSecret = PendingSignIn & { requireIss: boolean };
+type PendingSecret = PendingSignIn & { requireIss: boolean; returnTo?: string };
 
 type Deps = { service?: ConnectionService; testHooks?: OAuthTestHooks; redirectUri?: string };
 
@@ -51,7 +58,9 @@ export async function startMcpSignIn(userId: string, input: unknown, deps: Deps 
   let name: string;
   let url: string;
   let connectionId: string | null = null;
+  let returnTo: string | undefined;
   if ("connectionId" in parsed.data) {
+    ({ returnTo } = parsed.data);
     const existing = await service.open(userId, parsed.data.connectionId, "mcp");
     if (!existing) return notFound();
     ({ name } = existing);
@@ -73,6 +82,7 @@ export async function startMcpSignIn(userId: string, input: unknown, deps: Deps 
       ...started.pending,
       // RFC 9207: if the server says it sends `iss` back, a callback without it is refused.
       requireIss: (discovery.metadata as { authorization_response_iss_parameter_supported?: boolean }).authorization_response_iss_parameter_supported === true,
+      returnTo,
     };
     const saved = await service.startSignIn(userId, {
       stateHash: started.stateHash,
@@ -89,7 +99,11 @@ export async function startMcpSignIn(userId: string, input: unknown, deps: Deps 
 }
 
 /** Finishes a sign-in from the callback's query parameters. */
-export async function finishMcpSignIn(userId: string, params: URLSearchParams, deps: Deps = {}): Promise<Result<{ id: string }>> {
+export async function finishMcpSignIn(
+  userId: string,
+  params: URLSearchParams,
+  deps: Deps = {},
+): Promise<Result<{ id: string; returnTo: string | null }>> {
   const service = deps.service ?? getConnectionService();
   const state = params.get("state");
   if (!state) return fail({ code: "oauth_failed", message: "The sign-in came back without its state, so it can't be trusted. Start again." });
@@ -121,7 +135,9 @@ export async function finishMcpSignIn(userId: string, params: URLSearchParams, d
     const tokens = await exchangeOAuthCode(settings, pending, code, deps.testHooks);
     const credential = writeOAuthCredential({ kind: "oauth", client: pending.client, tokens });
     const saved = await service.saveSignedIn(userId, { connectionId: taken.connectionId, name: taken.name, config: taken.config, credential });
-    return saved.ok ? ok({ id: saved.data.id }) : saved;
+    // Checked again on the way out: only our own app paths, ever.
+    const back = pending.returnTo && RETURN_PATH.test(pending.returnTo) ? pending.returnTo : null;
+    return saved.ok ? ok({ id: saved.data.id, returnTo: back }) : saved;
   } catch (error) {
     return failure("finish", error);
   }

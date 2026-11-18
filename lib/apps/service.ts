@@ -35,7 +35,7 @@ export type AppDetail = {
   createdAt: Date;
   updatedAt: Date;
   dashboards: { id: string; title: string; description: string | null; artifactId: string; position: number }[];
-  connections: (AppConnectionBadge & { type: ConnectionType; status: ConnectionStatus })[];
+  connections: (AppConnectionBadge & { type: ConnectionType; status: ConnectionStatus; signIn: "oauth" | null })[];
 };
 
 /**
@@ -70,6 +70,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         name: dataConnections.name,
         type: dataConnections.type,
         status: dataConnections.status,
+        config: dataConnections.config,
       })
       .from(appConnections)
       .innerJoin(dataConnections, eq(dataConnections.id, appConnections.connectionId))
@@ -169,7 +170,14 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         ...rest,
         pendingConnections,
         dashboards: appDashboards,
-        connections: badges.map(({ id, name, type, status }) => ({ id, name, type, status })),
+        connections: badges.map(({ id, name, type, status, config }) => ({
+          id,
+          name,
+          type,
+          status,
+          // Signed in with OAuth: when it's invalid, the fix is signing in again.
+          signIn: config && typeof config === "object" && "oauth" in config && config.oauth ? ("oauth" as const) : null,
+        })),
       };
     },
 

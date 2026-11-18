@@ -20,6 +20,8 @@ export async function GET(request: NextRequest) {
   }
 
   const result = await finishMcpSignIn(userId, request.nextUrl.searchParams);
+  // Back to the dashboard it was started from (an /apps path, checked when stored), or Data Connections.
+  if (result.ok && result.data.returnTo) back.pathname = result.data.returnTo;
   if (result.ok) back.searchParams.set("signed_in", result.data.id);
   else back.searchParams.set("sign_in_error", /^[a-z_]{1,40}$/.test(result.error.code) ? result.error.code : "oauth_failed");
   return NextResponse.redirect(back, { status: 303 });

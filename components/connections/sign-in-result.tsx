@@ -1,6 +1,6 @@
 "use client";
 
-import { useRouter, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect } from "react";
 import { toast } from "sonner";
 
@@ -20,6 +20,7 @@ const MESSAGES: Record<string, string> = {
 export function SignInResult() {
   const params = useSearchParams();
   const router = useRouter();
+  const pathname = usePathname();
   const signedIn = params.get("signed_in");
   const error = params.get("sign_in_error");
 
@@ -27,8 +28,8 @@ export function SignInResult() {
     if (!signedIn && !error) return;
     if (signedIn) toast.success("Signed in and connected");
     else toast.error(MESSAGES[error ?? ""] ?? "The sign-in didn't complete. Try again.");
-    router.replace("/connections");
-  }, [signedIn, error, router]);
+    router.replace(pathname);
+  }, [signedIn, error, router, pathname]);
 
   return null;
 }
