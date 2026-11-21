@@ -6,6 +6,7 @@ describe("isPublicPath", () => {
   it("lets the landing page and its images through", () => {
     for (const path of [
       "/",
+      "/pricing",
       "/icon.svg",
       "/shiro-logo.svg",
       "/robots.txt",
@@ -37,6 +38,8 @@ describe("isPublicPath", () => {
       "/robots.txt/apps",
       "/sitemap.xml.bak",
       "/opengraph-image/apps",
+      "/pricing/",
+      "/pricing/apps",
       "/opendashboards",
       "/landing/",
       "/landing",
