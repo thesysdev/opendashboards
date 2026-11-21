@@ -10,7 +10,7 @@ import {
 } from "@/lib/sources/mysql/client";
 import { MysqlError, toMysqlError } from "@/lib/sources/mysql/errors";
 import { mysqlSource } from "@/lib/sources/mysql/source";
-import { BlockedAddressError } from "@/lib/net/guarded-socket";
+import { BlockedAddressError, Ipv6OnlyHostError } from "@/lib/net/guarded-socket";
 
 describe("checkReadOnlySql", () => {
   it.each(["SELECT 1", "  select * from t;", "WITH x AS (SELECT 1) SELECT * FROM x", "(SELECT 1) UNION (SELECT 2)", "-- note\nSELECT 1", "/* c */ SELECT 1", "SHOW TABLES"])(
@@ -61,6 +61,11 @@ describe("toMysqlError", () => {
   it("finds a blocked address inside a driver error", () => {
     const error = Object.assign(new Error("connect failed"), { cause: new BlockedAddressError("db.internal", "10.0.0.5") });
     expect(toMysqlError(error).code).toBe("host_blocked");
+  });
+
+  it("finds an IPv6-only host inside a driver error", () => {
+    const error = Object.assign(new Error("connect failed"), { cause: new Ipv6OnlyHostError("db.supabase.co") });
+    expect(toMysqlError(error).code).toBe("host_ipv6_only");
   });
 
   it("gives the agent something to act on for a timeout", () => {

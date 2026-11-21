@@ -30,6 +30,24 @@ export class BlockedAddressError extends Error {
   }
 }
 
+/**
+ * The host has an AAAA record but no A record, so it only answers over
+ * IPv6. We have no IPv6 egress, so it can never be reached from here
+ * (Supabase's direct connection host is the common case).
+ */
+export class Ipv6OnlyHostError extends Error {
+  constructor(readonly host: string) {
+    super(`${host} only has an IPv6 address, which can't be reached from here`);
+    this.name = "Ipv6OnlyHostError";
+  }
+}
+
+/** Whether a host resolves over IPv6 only: an AAAA record, but no A record. */
+async function isIpv6Only(hostname: string): Promise<boolean> {
+  const [v4, v6] = await Promise.allSettled([dns.promises.resolve4(hostname), dns.promises.resolve6(hostname)]);
+  return v4.status === "rejected" && v6.status === "fulfilled" && v6.value.length > 0;
+}
+
 /** Whether an IP address (v4 or v6, as a string) is a public unicast address. */
 export function isPublicAddress(address: string): boolean {
   if (!net.isIP(address)) return false;
@@ -61,7 +79,15 @@ export function createGuardedLookup() {
     // Our own database is publicly reachable, so it's refused by name before any lookup.
     if (isOwnHost(hostname)) return callback(new BlockedAddressError(hostname, "our own infrastructure"), []);
     dns.lookup(hostname, { ...options, all: true }, (error, addresses) => {
-      if (error) return callback(error, []);
+      if (error) {
+        // ENOTFOUND here can also mean "IPv6-only, and this process can't use it":
+        // tell those apart before reporting a host that doesn't actually fail to resolve.
+        isIpv6Only(hostname).then(
+          (ipv6Only) => callback(ipv6Only ? new Ipv6OnlyHostError(hostname) : error, []),
+          () => callback(error, []),
+        );
+        return;
+      }
       const blocked = addresses.find(({ address }) => !isPublicAddress(address));
       if (blocked) return callback(new BlockedAddressError(hostname, blocked.address), []);
       if (!addresses.length) {

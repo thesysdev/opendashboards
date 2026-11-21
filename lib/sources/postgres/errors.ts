@@ -1,4 +1,4 @@
-import { BlockedAddressError } from "@/lib/net/guarded-socket";
+import { BlockedAddressError, Ipv6OnlyHostError } from "@/lib/net/guarded-socket";
 
 export type PostgresErrorCode =
   /** Wrong user or password, or the server's pg_hba.conf refuses this login. */
@@ -11,6 +11,8 @@ export type PostgresErrorCode =
   | "host_blocked"
   /** DNS has no such host. */
   | "host_not_found"
+  /** The host only has an IPv6 address, which we have no route to. */
+  | "host_ipv6_only"
   /** Nothing answered, the connection was refused, or the server is full. */
   | "unreachable"
   /** Connecting or the test query took too long. */
@@ -43,6 +45,7 @@ export function toPostgresError(error: unknown): PostgresError {
   // The guard's error can arrive wrapped by the driver.
   for (let e: unknown = error; e; e = (e as { cause?: unknown }).cause) {
     if (e instanceof BlockedAddressError) return new PostgresError("host_blocked", e.message);
+    if (e instanceof Ipv6OnlyHostError) return new PostgresError("host_ipv6_only", e.message);
   }
 
   const err = error as { code?: unknown; message?: unknown };

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { testPostgresConnection, type PostgresTarget } from "@/lib/sources/postgres/client";
 import { parseConnectionString, postgresAddress } from "@/lib/sources/postgres/catalog";
 import { PostgresError, toPostgresError } from "@/lib/sources/postgres/errors";
-import { BlockedAddressError } from "@/lib/net/guarded-socket";
+import { BlockedAddressError, Ipv6OnlyHostError } from "@/lib/net/guarded-socket";
 
 import { TEST_DATABASE_URL } from "./global-setup";
 
@@ -58,6 +58,7 @@ describe("toPostgresError", () => {
     [new Error("The server does not support SSL connections"), "tls_failed"],
     [new Error("Connection terminated due to connection timeout"), "timeout"],
     [new BlockedAddressError("db.internal", "10.0.0.5"), "host_blocked"],
+    [new Ipv6OnlyHostError("db.supabase.co"), "host_ipv6_only"],
     [new Error("something odd"), "unexpected"],
   ])("classifies %o as %s", (error, code) => {
     expect(toPostgresError(error).code).toBe(code);

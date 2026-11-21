@@ -1,10 +1,13 @@
-import { describe, expect, it } from "vitest";
+import dns from "node:dns";
+
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { CONNECTION_TYPES } from "@/lib/sources/catalog";
 import { connectionTypeEnum } from "@/lib/db/schema";
 import {
   BlockedAddressError,
   createGuardedLookup,
+  Ipv6OnlyHostError,
   isPublicAddress,
 } from "@/lib/net/guarded-socket";
 
@@ -62,6 +65,34 @@ describe("guarded lookup", () => {
       createGuardedLookup()("localhost", {}, (error, address) => (error ? reject(error) : resolve(address))),
     );
     await expect(lookup).rejects.toBeInstanceOf(BlockedAddressError);
+  });
+
+  describe("a host with an AAAA record but no A record (Supabase's direct host, say)", () => {
+    afterEach(() => vi.restoreAllMocks());
+
+    it("is reported as IPv6-only, not as unresolved", async () => {
+      vi.spyOn(dns, "lookup").mockImplementation(((_host: string, _options: unknown, callback: (e: NodeJS.ErrnoException) => void) =>
+        callback(Object.assign(new Error("not found"), { code: "ENOTFOUND" }))) as unknown as typeof dns.lookup);
+      vi.spyOn(dns.promises, "resolve4").mockRejectedValue(Object.assign(new Error("no A record"), { code: "ENODATA" }));
+      vi.spyOn(dns.promises, "resolve6").mockResolvedValue(["2606:4700::1111"]);
+
+      const lookup = new Promise<unknown>((resolve, reject) =>
+        createGuardedLookup()("db.supabase.co", {}, (error, address) => (error ? reject(error) : resolve(address))),
+      );
+      await expect(lookup).rejects.toBeInstanceOf(Ipv6OnlyHostError);
+    });
+
+    it("still reports a host with neither record as not found", async () => {
+      vi.spyOn(dns, "lookup").mockImplementation(((_host: string, _options: unknown, callback: (e: NodeJS.ErrnoException) => void) =>
+        callback(Object.assign(new Error("not found"), { code: "ENOTFOUND" }))) as unknown as typeof dns.lookup);
+      vi.spyOn(dns.promises, "resolve4").mockRejectedValue(Object.assign(new Error("no A record"), { code: "ENOTFOUND" }));
+      vi.spyOn(dns.promises, "resolve6").mockRejectedValue(Object.assign(new Error("no AAAA record"), { code: "ENOTFOUND" }));
+
+      const lookup = new Promise<unknown>((resolve, reject) =>
+        createGuardedLookup()("nope.example.com", {}, (error, address) => (error ? reject(error) : resolve(address))),
+      );
+      await expect(lookup).rejects.not.toBeInstanceOf(Ipv6OnlyHostError);
+    });
   });
 });
 

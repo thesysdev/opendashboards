@@ -1,4 +1,4 @@
-import { BlockedAddressError } from "@/lib/net/guarded-socket";
+import { BlockedAddressError, Ipv6OnlyHostError } from "@/lib/net/guarded-socket";
 
 export type MysqlErrorCode =
   /** Wrong user or password, or the server refuses logins from OpenDashboards' address. */
@@ -11,6 +11,8 @@ export type MysqlErrorCode =
   | "host_blocked"
   /** DNS has no such host. */
   | "host_not_found"
+  /** The host only has an IPv6 address, which we have no route to. */
+  | "host_ipv6_only"
   /** Nothing answered, the connection was refused, or the server is full. */
   | "unreachable"
   /** Connecting took too long. */
@@ -62,6 +64,7 @@ export function toMysqlError(error: unknown): MysqlError {
 
   for (let e: unknown = error; e; e = (e as { cause?: unknown }).cause) {
     if (e instanceof BlockedAddressError) return new MysqlError("host_blocked", e.message);
+    if (e instanceof Ipv6OnlyHostError) return new MysqlError("host_ipv6_only", e.message);
   }
 
   const err = error as { code?: unknown; errno?: unknown; sqlState?: unknown; message?: unknown; fatal?: unknown };

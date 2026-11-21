@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { clickhouseUrl, listClickhouseTables, queryClickhouse } from "@/lib/sources/clickhouse/client";
 import { ClickhouseError, fromResponse, serverMessage, toClickhouseError } from "@/lib/sources/clickhouse/errors";
 import { clickhouseSource } from "@/lib/sources/clickhouse/source";
-import { BlockedAddressError } from "@/lib/net/guarded-socket";
+import { BlockedAddressError, Ipv6OnlyHostError } from "@/lib/net/guarded-socket";
 
 const target = { host: "ch.example.com", port: 8443, database: "analytics" };
 
@@ -72,6 +72,7 @@ describe("ClickHouse errors", () => {
   it("classifies network failures", () => {
     expect(toClickhouseError(Object.assign(new Error("x"), { code: "ENOTFOUND" })).code).toBe("host_not_found");
     expect(toClickhouseError(new BlockedAddressError("ch.internal", "10.1.2.3")).code).toBe("host_blocked");
+    expect(toClickhouseError(new Ipv6OnlyHostError("ch.supabase.co")).code).toBe("host_ipv6_only");
     expect(toClickhouseError(Object.assign(new Error("self-signed certificate"), { code: "DEPTH_ZERO_SELF_SIGNED_CERT" })).code).toBe("tls_failed");
   });
 
