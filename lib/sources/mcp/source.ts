@@ -211,6 +211,11 @@ export const mcpSource: ConnectionSource<McpConfig> = {
         return unavailable({ code: "bad_arguments", message: `The server rejected the call: ${error.detail ?? "invalid arguments"}. Check the tool's name and input schema with mcp_tools.` });
       case "tool_error":
         return unavailable({ code: "tool_error", message: `The tool reported an error: ${error.detail ?? "no details"}.` });
+      case "tool_not_allowed":
+        return invalid({
+          code: "tool_not_allowed",
+          message: `${error.detail ?? "That tool changes data, and OpenDashboards only reads."} Use a tool that only reads: mcp_tools lists them.`,
+        });
       case "too_large":
         return unavailable({ code: "too_large", message: "The server's reply was too large to read. Ask the tool for less, for example with a smaller limit or a filter." });
       case "timeout":

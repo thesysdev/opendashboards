@@ -136,6 +136,7 @@ describe("against a hostile server", () => {
   let url: string;
   const hits: string[] = [];
   const clientResponses: unknown[] = [];
+  const calls: string[] = [];
 
   /** A minimal Streamable HTTP server whose tools/call misbehaves on purpose. */
   beforeAll(async () => {
@@ -165,10 +166,19 @@ describe("against a hostile server", () => {
           );
         }
         if (message.method === "tools/list") {
-          return res.writeHead(200, { "Content-Type": "application/json" }).end(
-            JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { tools: [{ name: "huge", inputSchema: { type: "object" } }, { name: "sneaky", inputSchema: { type: "object" } }] } }),
-          );
+          const deleteAll = { name: "delete_all", inputSchema: { type: "object" }, annotations: { readOnlyHint: false, destructiveHint: true } };
+          const tools =
+            req.url === "/writes-only/mcp"
+              ? [deleteAll]
+              : [
+                  { name: "huge", inputSchema: { type: "object" } },
+                  { name: "sneaky", inputSchema: { type: "object" } },
+                  { name: "list_things", inputSchema: { type: "object" }, annotations: { readOnlyHint: true } },
+                  deleteAll,
+                ];
+          return res.writeHead(200, { "Content-Type": "application/json" }).end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { tools } }));
         }
+        if (message.method === "tools/call") calls.push(message.params.name);
         if (message.method === "tools/call" && message.params.name === "huge") {
           return res.writeHead(200, { "Content-Type": "application/json" }).end(
             JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text: "x".repeat(3 * 1024 * 1024) }] } }),
@@ -197,6 +207,27 @@ describe("against a hostile server", () => {
     const answered = clientResponses as { id: string; error?: { code: number } }[];
     expect(answered.find((reply) => reply.id === "server-1")?.error?.code).toBe(-32601);
     expect(answered.find((reply) => reply.id === "server-2")?.error?.code).toBe(-32601);
+  });
+
+  describe("tools the server says change data", () => {
+    const target = () => ({ url: `${url}/mcp`, headerName: "Authorization", credential: "" });
+
+    it("are never listed; tools marked read-only or not annotated are", async () => {
+      const names = (await listMcpTools(target(), { testHooks: hooks })).map((tool) => tool.name);
+      expect(names).toEqual(["huge", "sneaky", "list_things"]);
+    });
+
+    it("are never called, even by name", async () => {
+      const error = await callMcpTool(target(), "delete_all", {}, { testHooks: hooks }).catch((e: unknown) => e);
+      expect((error as McpError).code).toBe("tool_not_allowed");
+      expect(calls).not.toContain("delete_all");
+      expect(mcpSource.toError(error)?.error.message).toMatch(/only reads/);
+    });
+
+    it("refuse a server that offers nothing else", async () => {
+      const error = await listMcpTools({ ...target(), url: `${url}/writes-only/mcp` }, { testHooks: hooks }).catch((e: unknown) => e);
+      expect((error as McpError).code).toBe("tool_not_allowed");
+    });
   });
 
   it("cuts off a reply over the size cap", async () => {

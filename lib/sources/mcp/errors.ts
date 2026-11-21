@@ -36,6 +36,8 @@ export type McpErrorCode =
   | "bad_arguments"
   /** The tool ran and reported a failure. */
   | "tool_error"
+  /** The server says the tool changes data: OpenDashboards only reads. */
+  | "tool_not_allowed"
   | "too_large"
   | "timeout"
   | "unavailable"

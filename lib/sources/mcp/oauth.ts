@@ -84,8 +84,16 @@ function storedTokens(tokens: OAuthTokens, previous?: StoredTokens | null): Stor
 /** Tests only: reach a local authorization server. */
 export type OAuthTestHooks = GuardedFetchTestHooks;
 
+/** Discovery and registration: the next host comes from the previous answer. Never carries a credential. */
 const oauthFetch = (testHooks?: OAuthTestHooks) =>
   createGuardedFetch({ origin: "any-https", maxBytes: 256 * 1024, timeoutMs: appConfig().mcp.requestTimeoutMs }, testHooks);
+
+/** Code exchange and refresh carry the code, refresh token and client secret: only ever to the token endpoint's origin. */
+const tokenFetch = (settings: McpOAuthSettings, testHooks?: OAuthTestHooks) =>
+  createGuardedFetch(
+    { origin: new URL(settings.tokenEndpoint).origin, maxBytes: 256 * 1024, timeoutMs: appConfig().mcp.requestTimeoutMs },
+    testHooks,
+  );
 
 const isHttps = (value: string | undefined, testHooks?: OAuthTestHooks) => {
   if (!value) return false;
@@ -275,7 +283,7 @@ export async function exchangeOAuthCode(
   code: string,
   testHooks?: OAuthTestHooks,
 ): Promise<StoredTokens> {
-  const fetchFn = oauthFetch(testHooks);
+  const fetchFn = tokenFetch(settings, testHooks);
   try {
     const tokens = await exchangeAuthorization(settings.issuer, {
       metadata: metadataOf(settings),
@@ -306,7 +314,7 @@ export async function refreshOAuthTokens(
 ): Promise<StoredTokens> {
   const refreshToken = credential.tokens?.refresh_token;
   if (!refreshToken) throw new McpError("reauth_required", "The sign-in expired and the server gave no way to renew it.");
-  const fetchFn = oauthFetch(testHooks);
+  const fetchFn = tokenFetch(settings, testHooks);
   try {
     const tokens = await refreshAuthorization(settings.issuer, {
       metadata: metadataOf(settings),
