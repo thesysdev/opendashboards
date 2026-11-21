@@ -1,10 +1,11 @@
 /**
- * The only paths served without signing in: the landing page, its images in
+ * The only paths served without signing in: the landing and pricing pages, the landing page's images in
  * public/, and what crawlers and link previews fetch. Nothing under the app or the API is here. Anything added must
  * work without a user and read nothing that belongs to one.
  */
 const PUBLIC_PATHS: ReadonlySet<string> = new Set([
   "/",
+  "/pricing",
   "/icon.svg",
   "/shiro-logo.svg",
   "/robots.txt",

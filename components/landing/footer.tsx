@@ -24,7 +24,6 @@ const BUILT_WITH = [
 /** Each icon drawn in its own box, centred in a 24px square. */
 const SOCIAL = [
   { label: "Twitter", href: "https://x.com/openuidev", viewBox: "0 0 24 24", path: svgPaths.pa1e7100, box: "top-1/2 left-1/2 size-5 -translate-1/2" },
-  { label: "Discord", href: "https://discord.com/invite/Pbv5PsqUSv", viewBox: "0 0 21.9611 17", path: svgPaths.p3885cd00, box: "inset-0" },
   { label: "YouTube", href: "https://www.youtube.com/@thesysdev", viewBox: "0 0 22 15.4688", path: svgPaths.p23dbbd00, box: "top-1/2 left-1/2 h-[15.469px] w-[22px] -translate-1/2" },
   { label: "LinkedIn", href: "https://www.linkedin.com/showcase/openui-com/", viewBox: "0 0 19 19", path: svgPaths.p26fc3100, box: "top-1/2 left-1/2 size-[19px] -translate-1/2" },
 ];
