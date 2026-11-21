@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2Icon, TriangleAlertIcon, UploadIcon } from "lucide-react";
+import { ExternalLinkIcon, Loader2Icon, TriangleAlertIcon, UploadIcon } from "lucide-react";
 import { Fragment, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -11,10 +11,11 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { SSL_MODES, type SslMode } from "@/lib/sources/host";
+import { MCP_SERVICES, type McpAuth, type McpServiceKey } from "@/lib/sources/mcp/services";
 
 import { showConnectionWarnings } from "./connection-feedback";
 import type { SecretMode } from "./connection-form-dialog";
-import { SOURCE_FORMS, type FieldSpec } from "./source-forms";
+import { mcpPresetForm, SOURCE_FORMS, type FieldSpec } from "./source-forms";
 
 export type FormSourceType = keyof typeof SOURCE_FORMS;
 
@@ -23,6 +24,8 @@ type Props = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   secretMode: SecretMode;
+  /** With type "mcp": a known server from the catalog, whose endpoint is fixed. */
+  service?: McpServiceKey;
 } & (
   | { mode: "create"; /** Called with the new connection's id once it's saved. */ onCreated?: (id: string) => void }
   | { mode: "replace"; connection: { id: string; name: string } }
@@ -32,14 +35,14 @@ const SSL_LABELS: Record<SslMode, string> = { "verify-full": "Verify certificate
 
 /** Adds a MySQL, ClickHouse or BigQuery connection, or replaces its password or key. */
 export function SourceFormDialog(props: Props) {
-  const { type, open, onOpenChange, secretMode } = props;
-  const spec = SOURCE_FORMS[type];
+  const { type, open, onOpenChange, secretMode, service } = props;
   const replacing = props.mode === "replace";
+  const spec = service && type === "mcp" && !replacing ? mcpPresetForm(MCP_SERVICES[service]) : SOURCE_FORMS[type];
   const allFields = replacing ? [spec.credential] : [...spec.fields, spec.credential];
-  // MCP servers: sign in with OAuth (the server's own page) or give an API key.
-  const offersOAuth = Boolean(spec.oauth) && !replacing;
-  const [auth, setAuth] = useState<"oauth" | "key">(offersOAuth ? "oauth" : "key");
-  const signingIn = offersOAuth && auth === "oauth";
+  // MCP servers: sign in with OAuth (the server's own page), or an API key, as the server allows.
+  const authOptions: readonly McpAuth[] = spec.oauth && !replacing ? spec.oauth.options : ["key"];
+  const [auth, setAuth] = useState<McpAuth>(authOptions[0]);
+  const signingIn = auth === "oauth";
   const fields = signingIn ? allFields.filter((field) => !field.keyOnly && field !== spec.credential) : allFields;
 
   const initial = (): Record<string, string> => Object.fromEntries(allFields.map((field) => [field.name, field.initial ?? ""]));
@@ -55,7 +58,7 @@ export function SourceFormDialog(props: Props) {
 
   function reset() {
     setValues(initial());
-    setAuth(offersOAuth ? "oauth" : "key");
+    setAuth(authOptions[0]);
     setPasted("");
     setPasteNote(null);
     setFieldErrors({});
@@ -81,7 +84,8 @@ export function SourceFormDialog(props: Props) {
   /** OAuth instead of a key: the server's own sign-in page, then back to Data Connections. */
   function signIn() {
     startTransition(async () => {
-      const result = await startMcpSignInAction({ name: values.name ?? "", url: values.url ?? "" });
+      const name = values.name ?? "";
+      const result = await startMcpSignInAction(service ? { name, service } : { name, url: values.url ?? "" });
       if (!result.ok) {
         if (result.error.field && fields.some((field) => field.name === result.error.field)) {
           setFieldErrors({ [result.error.field]: result.error.message });
@@ -101,7 +105,7 @@ export function SourceFormDialog(props: Props) {
       const result =
         props.mode === "replace"
           ? await replaceCredentialAction({ id: props.connection.id, credential: values[spec.credential.name] ?? "" })
-          : await createConnectionAction({ type, ...values });
+          : await createConnectionAction(service ? { type, name: values.name ?? "", apiKey: values.apiKey ?? "", service } : { type, ...values });
 
       if (result.ok) {
         toast.success(replacing ? "Saved" : `Connected to ${(values.name ?? "").trim()}`);
@@ -169,7 +173,25 @@ export function SourceFormDialog(props: Props) {
             autoFocus={replacing ? field === spec.credential : field === fields[0]}
           />
         )}
-        {field.description && <FieldDescription>{field.description}</FieldDescription>}
+        {(field.description || field.link) && (
+          <FieldDescription>
+            {field.description}
+            {field.link && (
+              <>
+                {" "}
+                <a
+                  href={field.link.href}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                  className="inline-flex items-center gap-0.5 font-medium text-foreground underline-offset-2 hover:underline"
+                >
+                  {field.link.label}
+                  <ExternalLinkIcon className="size-3" aria-hidden />
+                </a>
+              </>
+            )}
+          </FieldDescription>
+        )}
         <FieldError>{error}</FieldError>
       </Field>
     );
@@ -224,35 +246,18 @@ export function SourceFormDialog(props: Props) {
                 ) : (
                   <div className="grid grid-cols-2 gap-3">{row.map(renderField)}</div>
                 )}
-                {offersOAuth && row.some((field) => field.name === spec.oauth?.after) && (
-                  <Field>
-                    <FieldLabel id={id("auth")}>Authentication</FieldLabel>
-                    <ToggleGroup
-                      type="single"
-                      variant="outline"
-                      aria-labelledby={id("auth")}
-                      value={auth}
-                      onValueChange={(value) => {
-                        if (value !== "oauth" && value !== "key") return;
-                        setAuth(value);
-                        setFieldErrors({});
-                        setFormError(null);
-                      }}
-                      className="w-full"
-                    >
-                      <ToggleGroupItem value="oauth" className="flex-1">
-                        OAuth
-                      </ToggleGroupItem>
-                      <ToggleGroupItem value="key" className="flex-1">
-                        API key
-                      </ToggleGroupItem>
-                    </ToggleGroup>
-                    <FieldDescription>
-                      {signingIn
-                        ? "You sign in on the server's own page. OpenDashboards keeps the sign-in, never your password."
-                        : "A key or token the server gave you, sent with every request."}
-                    </FieldDescription>
-                  </Field>
+                {spec.oauth && !replacing && row.some((field) => field.name === spec.oauth?.after) && (
+                  <AuthChoice
+                    labelId={id("auth")}
+                    options={authOptions}
+                    value={auth}
+                    server={spec.oauth.server}
+                    onChange={(value) => {
+                      setAuth(value);
+                      setFieldErrors({});
+                      setFormError(null);
+                    }}
+                  />
                 )}
               </Fragment>
             ))}
@@ -356,5 +361,58 @@ function TextareaWithFile({
         </>
       )}
     </div>
+  );
+}
+
+const AUTH_CHOICES: Record<McpAuth, { title: string; who: string }> = {
+  oauth: { title: "Sign in", who: "Just for you" },
+  key: { title: "API key", who: "Can be shared with your team" },
+};
+
+/**
+ * How to connect: signing in is personal (dashboards always run with the
+ * viewer's own sign-in); a key is one credential a team can share.
+ */
+function AuthChoice({
+  labelId,
+  options,
+  value,
+  server,
+  onChange,
+}: {
+  labelId: string;
+  options: readonly McpAuth[];
+  value: McpAuth;
+  server: string;
+  onChange: (value: McpAuth) => void;
+}) {
+  const note =
+    value === "oauth"
+      ? `You sign in on ${server}'s own page. Dashboards always run with each person's own sign-in, never yours.`
+      : "Sent with every request. Anyone you share a dashboard with sees what this key can see.";
+  return (
+    <Field>
+      {options.length > 1 && <FieldLabel id={labelId}>Connect with</FieldLabel>}
+      {options.length > 1 && (
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          aria-labelledby={labelId}
+          value={value}
+          onValueChange={(next) => {
+            if (next === "oauth" || next === "key") onChange(next);
+          }}
+          className="w-full"
+        >
+          {options.map((option) => (
+            <ToggleGroupItem key={option} value={option} className="h-auto flex-1 flex-col gap-0 py-2">
+              <span className="text-sm font-medium">{AUTH_CHOICES[option].title}</span>
+              <span className="text-xs font-normal text-muted-foreground">{AUTH_CHOICES[option].who}</span>
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      )}
+      <FieldDescription>{note}</FieldDescription>
+    </Field>
   );
 }

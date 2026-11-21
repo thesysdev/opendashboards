@@ -4,6 +4,13 @@ import {
   siGoogleanalytics,
   siGooglebigquery,
   siGooglesearchconsole,
+  siGithub,
+  siIntercom,
+  siJira,
+  siLinear,
+  siMixpanel,
+  siSentry,
+  siStripe,
   siModelcontextprotocol,
   siMysql,
   siNeon,
@@ -14,6 +21,8 @@ import {
 } from "simple-icons";
 
 import { cn } from "@/lib/utils";
+
+import { BRAND_MARKS } from "./brand-marks";
 
 /** Each source's logo, by its tile code. Codes without a logo fall back to their letters. */
 const LOGOS: Record<string, SimpleIcon> = {
@@ -27,11 +36,19 @@ const LOGOS: Record<string, SimpleIcon> = {
   GA: siGoogleanalytics,
   SC: siGooglesearchconsole,
   MC: siModelcontextprotocol,
+  LN: siLinear,
+  JI: siJira,
+  GH: siGithub,
+  SE: siSentry,
+  ST: siStripe,
+  MX: siMixpanel,
+  IC: siIntercom,
 };
 
 /** The square tile at the start of a source or connection row: the source's logo. */
 export function SourceTile({ label, className }: { label: string; className?: string }) {
   const logo = LOGOS[label];
+  const mark = BRAND_MARKS[label];
   return (
     <div
       aria-hidden
@@ -43,6 +60,12 @@ export function SourceTile({ label, className }: { label: string; className?: st
       {logo ? (
         <svg viewBox="0 0 24 24" className="size-[56%]" fill={`#${logo.hex}`}>
           <path d={logo.path} />
+        </svg>
+      ) : mark ? (
+        <svg viewBox={mark.viewBox} className="size-[56%]" fill={`#${mark.hex}`}>
+          {mark.paths.map((d) => (
+            <path key={d} d={d} />
+          ))}
         </svg>
       ) : label === "DM" ? (
         <DatabaseIcon className="size-[45%] text-neutral-500" />

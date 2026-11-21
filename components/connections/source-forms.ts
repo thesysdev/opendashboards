@@ -1,5 +1,6 @@
 import { CLICKHOUSE_DEFAULT_PORT } from "@/lib/sources/clickhouse/catalog";
 import { projectIdOfKey } from "@/lib/sources/google/credential";
+import type { McpAuth, McpService } from "@/lib/sources/mcp/services";
 import { MYSQL_DEFAULT_PORT, parseMysqlUrl } from "@/lib/sources/mysql/catalog";
 
 /**
@@ -21,6 +22,8 @@ export type FieldSpec = {
   keyOnly?: boolean;
   /** A file input that fills this field (e.g. a JSON key). */
   fileAccept?: string;
+  /** A link after the description, e.g. where to create a key. */
+  link?: { href: string; label: string };
 };
 
 export type FormSpec = {
@@ -38,8 +41,8 @@ export type FormSpec = {
   help?: { summary: string; intro: string; code?: string; steps?: string[] };
   /** What "plaintext" storage mode warns about. */
   secretNoun: string;
-  /** Offers a switch between an API key and an OAuth sign-in (MCP servers), shown after this field. */
-  oauth?: { after: string };
+  /** MCP servers: signing in with OAuth and/or an API key. The switch (when both) goes after this field. */
+  oauth?: { after: string; options: readonly McpAuth[]; server: string };
 };
 
 /** A password a public, read-only server may not need. */
@@ -241,6 +244,26 @@ GRANT SELECT ON your_db.* TO dashboards_reader;`,
     replaceTitle: "Replace key",
     replaceAction: "Test & replace",
     secretNoun: "keys",
-    oauth: { after: "url" },
+    oauth: { after: "url", options: ["oauth", "key"], server: "the server" },
   },
 };
+
+/** The MCP form for a known server: just a name and how to authenticate. Its endpoint is fixed on the server. */
+export function mcpPresetForm(preset: McpService): FormSpec {
+  const base = SOURCE_FORMS.mcp;
+  return {
+    ...base,
+    title: `Connect ${preset.label}`,
+    description: `OpenDashboards calls ${preset.label}'s tools to explore your data and build dashboards. It only reads.`,
+    fields: [{ name: "name", label: "Name", kind: "text", placeholder: preset.label, initial: preset.label }],
+    credential: {
+      name: "apiKey",
+      label: preset.key?.label ?? "API key",
+      kind: "password",
+      placeholder: preset.key?.placeholder,
+      description: preset.key?.hint,
+      link: preset.key && { href: preset.key.href, label: "Create one" },
+    },
+    oauth: { after: "name", options: preset.auth, server: preset.label },
+  };
+}

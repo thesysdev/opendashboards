@@ -6,6 +6,7 @@ import { config as appConfig } from "@/config";
 import { logError } from "@/lib/log";
 import { mcpConfigSchema } from "@/lib/sources/mcp/catalog";
 import { McpError } from "@/lib/sources/mcp/errors";
+import { MCP_SERVICE_KEYS, mcpService, type McpServiceKey } from "@/lib/sources/mcp/services";
 import {
   beginOAuthSignIn,
   discoverOAuth,
@@ -41,6 +42,8 @@ const RETURN_PATH = /^\/apps\/[0-9a-f-]{36}(\/dashboards\/[0-9a-f-]{36})?$/;
 
 const startSchema = z.union([
   z.object({ name: connectionNameSchema, url: z.string() }).strict(),
+  // A known server: its endpoint comes from the preset, never the browser.
+  z.object({ name: connectionNameSchema, service: z.enum(MCP_SERVICE_KEYS) }).strict(),
   z.object({ connectionId: z.uuid(), returnTo: z.string().regex(RETURN_PATH).optional() }).strict(),
 ]);
 
@@ -59,17 +62,21 @@ export async function startMcpSignIn(userId: string, input: unknown, deps: Deps 
   let url: string;
   let connectionId: string | null = null;
   let returnTo: string | undefined;
+  let preset: McpServiceKey | undefined;
   if ("connectionId" in parsed.data) {
     ({ returnTo } = parsed.data);
     const existing = await service.open(userId, parsed.data.connectionId, "mcp");
     if (!existing) return notFound();
     ({ name } = existing);
-    url = (existing.config as { url: string }).url;
+    ({ url, service: preset } = existing.config as { url: string; service?: McpServiceKey });
     connectionId = existing.id;
   } else {
-    const settings = mcpConfigSchema.safeParse({ url: parsed.data.url });
+    if ("service" in parsed.data && !mcpService(parsed.data.service)?.auth.includes("oauth")) {
+      return fail({ code: "validation", message: `${mcpService(parsed.data.service)?.label} doesn't support signing in. Use an API key.` });
+    }
+    const settings = mcpConfigSchema.safeParse("service" in parsed.data ? { service: parsed.data.service } : { url: parsed.data.url });
     if (!settings.success) return fromValidation(settings.error);
-    ({ url } = settings.data);
+    ({ url, service: preset } = settings.data);
     ({ name } = parsed.data);
   }
 
@@ -88,7 +95,7 @@ export async function startMcpSignIn(userId: string, input: unknown, deps: Deps 
       stateHash: started.stateHash,
       connectionId,
       name,
-      config: { type: "mcp", url, headerName: "Authorization", oauth: discovery.settings },
+      config: { type: "mcp", url, headerName: "Authorization", ...(preset && { service: preset }), oauth: discovery.settings },
       pending: JSON.stringify(pending),
     });
     if (!saved.ok) return saved;

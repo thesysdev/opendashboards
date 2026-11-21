@@ -3,6 +3,8 @@ import { z } from "zod";
 import { isHost } from "../host";
 import type { SourceCatalog } from "../types";
 
+import { MCP_SERVICE_KEYS, mcpService } from "./services";
+
 /**
  * A remote MCP server: its Streamable HTTP endpoint, and which header carries
  * the API key. Safe for the browser: the key is the credential, never here.
@@ -43,7 +45,7 @@ export function normalizeMcpUrl(input: string): string | null {
   return url.href;
 }
 
-export const mcpConfigSchema = z
+const mcpSettingsSchema = z
   .object({
     url: z.string().transform((value, ctx) => {
       const url = normalizeMcpUrl(value);
@@ -64,8 +66,28 @@ export const mcpConfigSchema = z
           .regex(/^[A-Za-z0-9-]{1,64}$/, "Use a header name like Authorization or X-API-Key.")
           .refine((name) => !RESERVED_HEADERS.has(name.toLowerCase()), "That header is set by OpenDashboards itself; choose another."),
       ),
+    /** A known server from the catalog (lib/sources/mcp/services.ts). Absent for any other server. */
+    service: z.enum(MCP_SERVICE_KEYS).optional(),
   })
   .strict();
+
+/**
+ * What a form submits. For a known server the endpoint and header come from
+ * its preset, whatever the browser sent: a preset can't be pointed elsewhere.
+ */
+export const mcpConfigSchema = z.preprocess((input) => {
+  if (!input || typeof input !== "object" || !("service" in input)) return input;
+  const preset = mcpService(String((input as { service: unknown }).service));
+  return preset ? { ...input, url: preset.url, headerName: "Authorization" } : input;
+}, mcpSettingsSchema);
+
+/** Connecting with a key (or none): refused for a known server that only supports signing in. */
+const mcpKeyConfigSchema = mcpConfigSchema.superRefine((config, ctx) => {
+  const preset = mcpService(config.service);
+  if (preset && !preset.auth.includes("key")) {
+    ctx.addIssue({ code: "custom", path: ["service"], message: `${preset.label} only supports signing in, not an API key.` });
+  }
+});
 
 const httpsUrl = z
   .string()
@@ -102,7 +124,7 @@ export const mcpOAuthSettingsSchema = z
   .strict();
 
 /** Settings as stored: what was typed, plus the OAuth details for a server signed in to. */
-export const mcpStoredConfigSchema = mcpConfigSchema.extend({ oauth: mcpOAuthSettingsSchema.optional() }).strict();
+export const mcpStoredConfigSchema = mcpSettingsSchema.extend({ oauth: mcpOAuthSettingsSchema.optional() }).strict();
 
 export type McpOAuthSettings = z.infer<typeof mcpOAuthSettingsSchema>;
 export type McpConfig = z.infer<typeof mcpStoredConfigSchema>;
@@ -115,11 +137,14 @@ export const mcpCatalog: SourceCatalog<McpConfig, "mcp"> = {
   // What a form may submit: never the OAuth details, which only a finished sign-in sets.
   type: "mcp",
   label: "MCP server",
-  blurb: "Any remote MCP server, with an API key",
+  blurb: "Any remote MCP server, with a sign-in or an API key",
   tile: "MC",
-  configSchema: mcpConfigSchema as unknown as z.ZodType<McpConfig>,
+  configSchema: mcpKeyConfigSchema as unknown as z.ZodType<McpConfig>,
   describe: (config) => {
     const url = new URL(config.url);
-    return { source: "MCP server", shortSource: "MCP", detail: `${url.host}${url.pathname === "/" ? "" : url.pathname}`, tile: "MC" };
+    const detail = `${url.host}${url.pathname === "/" ? "" : url.pathname}`;
+    const preset = mcpService(config.service);
+    if (preset) return { source: preset.label, shortSource: preset.label, detail, tile: preset.tile };
+    return { source: "MCP server", shortSource: "MCP", detail, tile: "MC" };
   },
 };
