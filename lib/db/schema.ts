@@ -156,5 +156,30 @@ export const appThreads = pgTable(
   (table) => [index("app_threads_app_id_idx").on(table.appId, table.updatedAt)],
 );
 
+/**
+ * An MCP OAuth sign-in that's been started and not yet finished: kept from
+ * sending the browser to the server's sign-in page until it comes back. The
+ * key is a hash of the `state` sent with it, so a database read can't replay
+ * one. Single use, short-lived, and tied to the user who started it.
+ */
+export const mcpOAuthSignIns = pgTable(
+  "mcp_oauth_sign_ins",
+  {
+    /** SHA-256 of the state, hex. */
+    stateHash: text("state_hash").primaryKey(),
+    userId: text("user_id").notNull(),
+    /** Set when signing in again to an existing connection. */
+    connectionId: uuid("connection_id").references(() => dataConnections.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    /** The connection's settings once signed in: the server and its authorization server, nothing secret. */
+    config: jsonb("config").notNull(),
+    /** The PKCE verifier and client registration, sealed like any credential. */
+    secret: jsonb("secret").$type<SealedSecret>().notNull(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [index("mcp_oauth_sign_ins_user_id_idx").on(table.userId)],
+);
+
 export type DataConnectionRow = typeof dataConnections.$inferSelect;
 export type ConnectionStatus = (typeof connectionStatusEnum.enumValues)[number];

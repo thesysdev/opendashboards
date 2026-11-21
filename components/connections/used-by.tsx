@@ -2,19 +2,21 @@ import { ChevronRightIcon, LayoutDashboardIcon } from "lucide-react";
 import Link from "next/link";
 
 /**
- * Which apps use a connection or demo dataset: a compact table under its
- * row, one line per app with an arrow that opens it. It's why the
- * connection can't be deleted. Long lists scroll inside the table.
+ * Which apps use a connection or demo dataset: a "Used by" line under its
+ * row that opens a compact table, one line per app with an arrow that opens
+ * it. It's why the connection can't be deleted. Closed by default so a row
+ * stays one line; long lists scroll inside the table.
  */
 export function UsedBy({ apps }: { apps: { id: string; name: string }[] }) {
   if (!apps.length) return null;
   return (
     // Indented to line up with the row's text (the 2.5rem tile plus its gap), then out to the row's end.
-    <div className="mt-2.5 ml-[3.25rem]">
-      <p className="mb-1 text-[0.6875rem] font-medium tracking-wide text-muted-foreground uppercase">
+    <details className="group mt-1.5 ml-[3.25rem]">
+      <summary className="inline-flex cursor-pointer list-none items-center gap-1 rounded-sm text-[0.6875rem] font-medium tracking-wide text-muted-foreground uppercase outline-none select-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50 [&::-webkit-details-marker]:hidden">
+        <ChevronRightIcon className="size-3 transition-transform group-open:rotate-90" aria-hidden />
         Used by {apps.length === 1 ? "1 app" : `${apps.length} apps`}
-      </p>
-      <ul className="max-h-[8.25rem] divide-y overflow-y-auto rounded-md border text-xs">
+      </summary>
+      <ul className="mt-1 max-h-[8.25rem] divide-y overflow-y-auto rounded-md border text-xs">
         {apps.map((app) => (
           <li key={app.id}>
             <Link
@@ -28,6 +30,6 @@ export function UsedBy({ apps }: { apps: { id: string; name: string }[] }) {
           </li>
         ))}
       </ul>
-    </div>
+    </details>
   );
 }

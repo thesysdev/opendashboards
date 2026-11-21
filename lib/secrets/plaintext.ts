@@ -1,4 +1,5 @@
 import {
+  assertSecretSize,
   SecretProviderMismatchError,
   type SealedSecret,
   type SecretBox,
@@ -13,6 +14,8 @@ export const plaintextSecretBox: SecretBox = {
   provider: "plaintext",
 
   async seal(plaintext: string, _context: SecretContext): Promise<SealedSecret> {
+    // The same limit as KMS, so local development fails where production would.
+    assertSecretSize(plaintext);
     return { v: 1, provider: "plaintext", value: plaintext };
   },
 

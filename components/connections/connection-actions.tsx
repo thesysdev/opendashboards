@@ -8,6 +8,7 @@ import {
   deleteConnectionAction,
   renameConnectionAction,
   retestConnectionAction,
+  startMcpSignInAction,
 } from "@/app/(app)/connections/actions";
 import {
   AlertDialog,
@@ -47,6 +48,8 @@ type Connection = {
   name: string;
   type: ConnectionType;
   apps: { id: string; name: string }[];
+  /** "oauth": signed in with OAuth, so it can be signed in to again instead of given a key. */
+  signIn?: "oauth" | null;
 };
 
 type OpenDialog = "replace" | "rename" | "delete" | null;
@@ -60,6 +63,14 @@ export function ConnectionActions({
 }) {
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const [testing, startTest] = useTransition();
+
+  function signInAgain() {
+    startTest(async () => {
+      const result = await startMcpSignInAction({ connectionId: connection.id });
+      if (result.ok) window.location.assign(result.data.authorizationUrl);
+      else toast.error(result.error.message);
+    });
+  }
 
   function retest() {
     startTest(async () => {
@@ -84,10 +95,17 @@ export function ConnectionActions({
             <RefreshCwIcon aria-hidden />
             Test again
           </DropdownMenuItem>
-          <DropdownMenuItem onSelect={() => setDialog("replace")}>
-            <KeyRoundIcon aria-hidden />
-            {["posthog", "bigquery", "ga4", "searchconsole", "mcp"].includes(connection.type) ? "Replace key" : "Change password"}
-          </DropdownMenuItem>
+          {connection.signIn === "oauth" ? (
+            <DropdownMenuItem onSelect={signInAgain} disabled={testing}>
+              <KeyRoundIcon aria-hidden />
+              Sign in again
+            </DropdownMenuItem>
+          ) : (
+            <DropdownMenuItem onSelect={() => setDialog("replace")}>
+              <KeyRoundIcon aria-hidden />
+              {["posthog", "bigquery", "ga4", "searchconsole", "mcp"].includes(connection.type) ? "Replace key" : "Change password"}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onSelect={() => setDialog("rename")}>
             <PencilIcon aria-hidden />
             Rename

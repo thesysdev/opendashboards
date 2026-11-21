@@ -5,6 +5,7 @@ import {
   SecretProviderMismatchError,
   SecretStorageNotConfiguredError,
   SecretStorageUnavailableError,
+  SecretTooLargeError,
   SecretUnreadableError,
 } from "@/lib/secrets";
 import { ALL_SOURCES } from "@/lib/sources";
@@ -58,6 +59,16 @@ export function fromCheckError(error: unknown): { error: ConnectionError; status
       error: {
         code: "key_reentry_required",
         message: "This credential was stored by a different setup and can't be used here. Enter it again.",
+      },
+    };
+  }
+  // Normally refused earlier, on the form field; this catches any path around that.
+  if (error instanceof SecretTooLargeError) {
+    return {
+      status: "invalid",
+      error: {
+        code: "credential_too_large",
+        message: `This credential is too large to store securely (${error.bytes.toLocaleString("en-US")} bytes; the limit is ${error.limit.toLocaleString("en-US")}).`,
       },
     };
   }

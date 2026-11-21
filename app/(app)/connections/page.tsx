@@ -2,8 +2,9 @@ import { KeyRoundIcon, PlugIcon } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { AddConnectionButton } from "@/components/connections/add-connection-button";
 import { ConnectionActions } from "@/components/connections/connection-actions";
+import { ConnectorCatalog } from "@/components/connections/connector-catalog";
+import { SignInResult } from "@/components/connections/sign-in-result";
 import { DemoDatasetSwitch } from "@/components/connections/demo-dataset-switch";
 import type { SecretMode } from "@/components/connections/connection-form-dialog";
 import { SourceTile } from "@/components/connections/source-tile";
@@ -12,7 +13,6 @@ import { EmptyState, PageHeader, SectionLabel } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { requireUser } from "@/lib/auth/user";
 import { getConnectionService, type ConnectionSummary, type DemoDatasetSummary } from "@/lib/connections";
-import { SOURCE_OPTIONS } from "@/lib/sources/catalog";
 import type { ConnectionStatus } from "@/lib/db/schema";
 import { formatRelative } from "@/lib/format";
 import { getSecretMode } from "@/lib/secrets";
@@ -46,6 +46,7 @@ async function ConnectionsContent() {
 
   return (
     <>
+      <SignInResult />
       <section aria-labelledby="your-connections">
         <SectionLabel id="your-connections">Your connections</SectionLabel>
         {connections.length === 0 ? (
@@ -68,20 +69,9 @@ async function ConnectionsContent() {
         )}
       </section>
 
-      <section aria-labelledby="available-sources" className="mt-10">
-        <SectionLabel id="available-sources">Available sources</SectionLabel>
-        <ul className="divide-y rounded-xl border">
-          {SOURCE_OPTIONS.map((source) => (
-            <li key={source.key} className="flex items-center gap-3 p-3.5">
-              <SourceTile label={source.tile} />
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-medium">{source.label}</p>
-                <p className="truncate text-sm text-muted-foreground">{source.blurb}</p>
-              </div>
-              <AddConnectionButton source={source} secretMode={secretMode} />
-            </li>
-          ))}
-        </ul>
+      <section aria-labelledby="add-connection" className="mt-10">
+        <SectionLabel id="add-connection">Add a connection</SectionLabel>
+        <ConnectorCatalog secretMode={secretMode} />
       </section>
 
       {demos.length > 0 && (
@@ -135,6 +125,7 @@ function ConnectionRow({
             name: connection.name,
             type: connection.type,
             apps: connection.apps,
+            signIn: connection.signIn,
           }}
           secretMode={secretMode}
         />

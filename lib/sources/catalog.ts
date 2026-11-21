@@ -3,7 +3,7 @@ import { z } from "zod";
 import { bigqueryCatalog, bigqueryConfigSchema } from "./bigquery/catalog";
 import { clickhouseCatalog, clickhouseConfigSchema } from "./clickhouse/catalog";
 import { ga4Catalog, ga4ConfigSchema } from "./ga4/catalog";
-import { mcpCatalog, mcpConfigSchema } from "./mcp/catalog";
+import { mcpCatalog, mcpStoredConfigSchema } from "./mcp/catalog";
 import { mysqlCatalog, mysqlConfigSchema } from "./mysql/catalog";
 import { posthogCatalog, posthogConfigSchema } from "./posthog/catalog";
 import { searchConsoleCatalog, searchConsoleConfigSchema } from "./searchconsole/catalog";
@@ -28,7 +28,7 @@ export const connectionConfigSchema = z.discriminatedUnion("type", [
   bigqueryConfigSchema.extend({ type: z.literal("bigquery") }),
   ga4ConfigSchema.extend({ type: z.literal("ga4") }),
   searchConsoleConfigSchema.extend({ type: z.literal("searchconsole") }),
-  mcpConfigSchema.extend({ type: z.literal("mcp") }),
+  mcpStoredConfigSchema.extend({ type: z.literal("mcp") }),
 ]);
 
 export type ConnectionConfig = z.infer<typeof connectionConfigSchema>;

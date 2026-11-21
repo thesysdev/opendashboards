@@ -5,6 +5,8 @@ import { Suspense } from "react";
 
 import { AddAppConnection } from "@/components/apps/add-app-connection";
 import { AppMenu } from "@/components/apps/app-menu";
+import { SignInAgainBanner } from "@/components/apps/sign-in-again-banner";
+import { SignInResult } from "@/components/connections/sign-in-result";
 import { AppWorkspace } from "@/components/apps/app-workspace";
 import { BuildChat } from "@/components/apps/build-chat";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -58,6 +60,16 @@ async function AppView({ params, children }: { params: Params; children: React.R
             connections={connections
               .filter((connection) => !inApp.has(connection.id))
               .map(({ id, name, shortSource, tile }) => ({ id, name, source: shortSource, tile }))}
+          />
+        </>
+      }
+      notice={
+        <>
+          <SignInResult />
+          <SignInAgainBanner
+            connections={app.connections
+              .filter((connection) => connection.signIn === "oauth" && connection.status === "invalid")
+              .map(({ id, name }) => ({ id, name }))}
           />
         </>
       }

@@ -18,6 +18,14 @@ export type McpErrorCode =
   | "auth_required"
   /** The key was refused. */
   | "key_rejected"
+  /** An OAuth sign-in expired or was revoked: the user signs in again. */
+  | "reauth_required"
+  /** The server doesn't offer an OAuth sign-in OpenDashboards can use. */
+  | "oauth_unsupported"
+  /** The server's OAuth details failed a safety check. */
+  | "oauth_invalid"
+  /** The sign-in didn't complete. */
+  | "oauth_failed"
   /** The key works but isn't allowed this. */
   | "access_denied"
   /** Not an MCP endpoint (404, 405, not JSON-RPC, no tools). */
@@ -26,6 +34,8 @@ export type McpErrorCode =
   | "bad_arguments"
   /** The tool ran and reported a failure. */
   | "tool_error"
+  /** The server says the tool changes data: OpenDashboards only reads. */
+  | "tool_not_allowed"
   | "too_large"
   | "timeout"
   | "unavailable"

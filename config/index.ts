@@ -70,6 +70,7 @@ export function settingsProblems(name: Environment, settings: Settings): string[
   if (name === "local") return problems;
   if (settings.auth.devUser !== null) problems.push(`${name}: auth.devUser must be null; only local may skip the gateway`);
   if (settings.auth.publicHost === null) problems.push(`${name}: auth.publicHost must be set; it sits behind the gateway`);
+  if (!/^https:\/\/[^/]+$/.test(settings.appOrigin)) problems.push(`${name}: appOrigin must be an https:// origin, without a path`);
   if (settings.secrets.allowPlaintext) problems.push(`${name}: secrets.allowPlaintext must be false; keys are never stored unencrypted outside local`);
   if (settings.network.connectAttemptTimeoutMs !== null) {
     problems.push(`${name}: network.connectAttemptTimeoutMs must be null; only local changes Node's connection defaults`);

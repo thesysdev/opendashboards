@@ -50,8 +50,13 @@ export class RedirectRefusedError extends Error {
 }
 
 export type GuardedFetchOptions = {
-  /** The only origin requests may go to: "https://mcp.example.com". */
-  origin: string;
+  /**
+   * The only origin requests may go to: "https://mcp.example.com". "any-https"
+   * allows any HTTPS origin, still public-only and never ours, for OAuth
+   * discovery, where the next host comes from the previous answer. Never use
+   * it for requests that carry a credential meant for one server.
+   */
+  origin: string | "any-https";
   /** Largest response body read, in bytes. */
   maxBytes: number;
   /** Overall deadline for each request, connecting and reading included. */
@@ -64,7 +69,12 @@ export type GuardedFetchOptions = {
  * Tests only: reach a local test server. Never set by app code; the default
  * policy is the production one.
  */
-export type GuardedFetchTestHooks = { allowAddress?: (address: string) => boolean; allowHttp?: boolean };
+export type GuardedFetchTestHooks = {
+  allowAddress?: (address: string) => boolean;
+  allowHttp?: boolean;
+  /** A test server's own certificate authority, trusted in addition to the system's. */
+  ca?: string;
+};
 
 export type GuardedFetch = ((input: string | URL | Request, init?: RequestInit) => Promise<Response>) & {
   /** Closes its connections. */
@@ -72,16 +82,20 @@ export type GuardedFetch = ((input: string | URL | Request, init?: RequestInit) 
 };
 
 export function createGuardedFetch(options: GuardedFetchOptions, testHooks: GuardedFetchTestHooks = {}): GuardedFetch {
-  const allowed = new URL(options.origin);
+  const anyOrigin = options.origin === "any-https";
   const allowHttp = testHooks.allowHttp === true;
-  if (allowed.protocol !== "https:" && !(allowHttp && allowed.protocol === "http:")) {
-    throw new OriginNotAllowedError(options.origin);
-  }
+  const allowed = anyOrigin ? null : new URL(options.origin);
+  const protocolAllowed = (protocol: string) => protocol === "https:" || (allowHttp && protocol === "http:");
+  if (allowed && !protocolAllowed(allowed.protocol)) throw new OriginNotAllowedError(options.origin);
   const isAllowedAddress = testHooks.allowAddress ?? isPublicAddress;
   const lookup = testHooks.allowAddress ? createTestLookup(testHooks.allowAddress) : createGuardedLookup();
 
   const dispatcher: Dispatcher = new Agent({
-    connect: { lookup: lookup as net.LookupFunction, rejectUnauthorized: options.rejectUnauthorized ?? true },
+    connect: {
+      lookup: lookup as net.LookupFunction,
+      rejectUnauthorized: options.rejectUnauthorized ?? true,
+      ...(testHooks.ca ? { ca: testHooks.ca } : {}),
+    },
     // One request at a time per connection; nothing pooled for long.
     keepAliveTimeout: 1_000,
     keepAliveMaxTimeout: 5_000,
@@ -89,7 +103,8 @@ export function createGuardedFetch(options: GuardedFetchOptions, testHooks: Guar
 
   const guarded = (async (input: string | URL | Request, init: RequestInit = {}) => {
     const url = new URL(input instanceof Request ? input.url : String(input));
-    if (url.origin !== allowed.origin || url.username || url.password) throw new OriginNotAllowedError(url.href);
+    const outside = allowed ? url.origin !== allowed.origin : !protocolAllowed(url.protocol);
+    if (outside || url.username || url.password) throw new OriginNotAllowedError(url.href);
     const host = url.hostname.replace(/^\[(.*)\]$/, "$1");
     if ((net.isIP(host) && !isAllowedAddress(host)) || isOwnHost(host)) throw new BlockedAddressError(host, host);
 
