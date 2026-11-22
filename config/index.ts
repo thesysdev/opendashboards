@@ -91,6 +91,7 @@ function demoDatasetProblems(settings: Settings): string[] {
     seen.add(dataset.key);
     if (!dataset.name.trim()) problems.push(`${label}: name is empty`);
     if (!dataset.description.trim()) problems.push(`${label}: description is empty`);
+    if (!dataset.summary.trim()) problems.push(`${label}: summary is empty`);
     const { host, port, database, user } = dataset.postgres;
     if (!host.trim() || !database.trim() || !user.trim()) problems.push(`${label}: postgres needs a host, database and user`);
     if (!Number.isInteger(port) || port < 1 || port > 65535) problems.push(`${label}: postgres.port must be 1–65535`);

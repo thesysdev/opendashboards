@@ -19,16 +19,20 @@ export function EmptyState({
   icon: Icon,
   title,
   description,
+  action,
 }: {
   icon: React.ComponentType<{ className?: string }>;
   title: string;
   description: string;
+  /** A button under the text, for the one thing to do next. */
+  action?: React.ReactNode;
 }) {
   return (
     <div className="flex flex-col items-center rounded-xl bg-neutral-100/80 px-6 py-8 text-center">
       <Icon className="mb-3 size-6 text-muted-foreground" />
       <p className="text-sm font-semibold">{title}</p>
       <p className="mt-1 text-sm text-muted-foreground">{description}</p>
+      {action && <div className="mt-4">{action}</div>}
     </div>
   );
 }

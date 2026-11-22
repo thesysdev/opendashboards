@@ -5,16 +5,16 @@ import { Suspense } from "react";
 import { ConnectionActions } from "@/components/connections/connection-actions";
 import { ConnectorCatalog } from "@/components/connections/connector-catalog";
 import { SignInResult } from "@/components/connections/sign-in-result";
-import { DemoDatasetSwitch } from "@/components/connections/demo-dataset-switch";
+import { BuildButton } from "@/components/connections/build-button";
+import { AddSampleDataButton, SampleDataActions, SampleDataTile } from "@/components/connections/sample-data";
 import type { SecretMode } from "@/components/connections/connection-form-dialog";
 import { SourceTile } from "@/components/connections/source-tile";
 import { UsedBy } from "@/components/connections/used-by";
 import { EmptyState, PageHeader, SectionLabel } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { requireUser } from "@/lib/auth/user";
-import { getConnectionService, type ConnectionSummary, type DemoDatasetSummary } from "@/lib/connections";
+import { getConnectionService, type ConnectionSummary } from "@/lib/connections";
 import type { ConnectionStatus } from "@/lib/db/schema";
-import { formatRelative } from "@/lib/format";
 import { getSecretMode } from "@/lib/secrets";
 import { cn } from "@/lib/utils";
 
@@ -38,11 +38,10 @@ export default function ConnectionsPage() {
 async function ConnectionsContent() {
   const user = await requireUser();
   const service = getConnectionService();
-  const [all, demos] = await Promise.all([service.list(user.id), service.listDemoDatasets(user.id)]);
-  // Installed demo datasets are listed with their switch below, not here.
-  const connections = all.filter((connection) => !connection.demo);
+  const [connections, demos] = await Promise.all([service.list(user.id), service.listDemoDatasets(user.id)]);
   const secretMode = getSecretMode();
-  const now = new Date();
+  // Sample data that isn't added yet: offered on the empty state, or as a catalog tile once there are connections.
+  const sample = demos.find((demo) => demo.connectionId === null);
 
   return (
     <>
@@ -53,17 +52,15 @@ async function ConnectionsContent() {
           <EmptyState
             icon={PlugIcon}
             title="No connections yet"
-            description="Add a source below to get started."
+            description={
+              sample ? "Add a source below, or try OpenDashboards with sample data." : "Add a source below to get started."
+            }
+            action={sample && <AddSampleDataButton dataset={sample.key} name={sample.name} />}
           />
         ) : (
           <ul className="divide-y rounded-xl border">
             {connections.map((connection) => (
-              <ConnectionRow
-                key={connection.id}
-                connection={connection}
-                secretMode={secretMode}
-                now={now}
-              />
+              <ConnectionRow key={connection.id} connection={connection} secretMode={secretMode} />
             ))}
           </ul>
         )}
@@ -71,103 +68,69 @@ async function ConnectionsContent() {
 
       <section aria-labelledby="add-connection" className="mt-10">
         <SectionLabel id="add-connection">Add a connection</SectionLabel>
-        <ConnectorCatalog secretMode={secretMode} />
+        <ConnectorCatalog
+          secretMode={secretMode}
+          sampleData={
+            sample &&
+            connections.length > 0 && <SampleDataTile dataset={sample.key} name={sample.name} summary={sample.summary} />
+          }
+        />
       </section>
-
-      {demos.length > 0 && (
-        <section aria-labelledby="demo-datasets" className="mt-10">
-          <SectionLabel id="demo-datasets">Demo datasets</SectionLabel>
-          <p className="-mt-1 mb-3 text-sm text-muted-foreground">
-            Sample data to try OpenDashboards with. Install one to use it like any connection.
-          </p>
-          <ul className="divide-y rounded-xl border">
-            {demos.map((demo) => (
-              <DemoRow key={demo.key} demo={demo} />
-            ))}
-          </ul>
-        </section>
-      )}
 
       <StorageNote secretMode={secretMode} />
     </>
   );
 }
 
-
-function ConnectionRow({
-  connection,
-  secretMode,
-  now,
-}: {
-  connection: ConnectionSummary;
-  secretMode: SecretMode;
-  now: Date;
-}) {
-  const details = [
-    connection.source,
-    connection.detail,
-    connection.credentialHint,
-    `checked ${formatRelative(connection.lastCheckedAt, now)}`,
-  ];
+/**
+ * One connection, sample data included: the same row for every source, with
+ * Build to start an app on it. A working connection gets only a faint dot;
+ * a broken one says what's wrong.
+ */
+function ConnectionRow({ connection, secretMode }: { connection: ConnectionSummary; secretMode: SecretMode }) {
+  const detail = connection.demo
+    ? `Sample data · ${connection.demo.summary}`
+    : [connection.source, connection.detail].filter(Boolean).join(" · ");
 
   return (
     <li className="p-3.5">
       <div className="flex items-center gap-3">
         <SourceTile label={connection.tile} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{connection.name}</p>
-          <p className="truncate text-sm text-muted-foreground">{details.join(" · ")}</p>
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            <span className="truncate">{connection.name}</span>
+            <Status status={connection.status} />
+          </p>
+          <p className="truncate text-sm text-muted-foreground">{detail}</p>
         </div>
-        <StatusBadge status={connection.status} />
-        <ConnectionActions
-          connection={{
-            id: connection.id,
-            name: connection.name,
-            type: connection.type,
-            apps: connection.apps,
-            signIn: connection.signIn,
-          }}
-          secretMode={secretMode}
-        />
+        <BuildButton connectionId={connection.id} name={connection.name} />
+        {connection.demo ? (
+          <SampleDataActions dataset={connection.demo.key} name={connection.name} apps={connection.apps} />
+        ) : (
+          <ConnectionActions
+            connection={{
+              id: connection.id,
+              name: connection.name,
+              type: connection.type,
+              apps: connection.apps,
+              signIn: connection.signIn,
+            }}
+            secretMode={secretMode}
+          />
+        )}
       </div>
       <UsedBy apps={connection.apps} />
     </li>
   );
 }
 
-function DemoRow({ demo }: { demo: DemoDatasetSummary }) {
+function Status({ status }: { status: ConnectionStatus }) {
+  if (status === "ok") {
+    return <span role="img" aria-label="Connected" className="size-1.5 shrink-0 rounded-full bg-emerald-500/50" />;
+  }
   return (
-    <li className="p-3.5">
-      <div className="flex items-center gap-3">
-        <SourceTile label="DM" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{demo.name}</p>
-          <p className="line-clamp-2 text-sm text-muted-foreground">{demo.description}</p>
-        </div>
-        <DemoDatasetSwitch
-          dataset={demo.key}
-          name={demo.name}
-          installed={demo.connectionId !== null}
-          apps={demo.apps}
-        />
-      </div>
-      <UsedBy apps={demo.apps} />
-    </li>
-  );
-}
-
-const STATUS: Record<ConnectionStatus, { label: string; dot: string }> = {
-  ok: { label: "Connected", dot: "bg-emerald-500" },
-  invalid: { label: "Invalid", dot: "bg-red-500" },
-  unavailable: { label: "Unavailable", dot: "bg-amber-500" },
-};
-
-function StatusBadge({ status }: { status: ConnectionStatus }) {
-  const { label, dot } = STATUS[status];
-  return (
-    <span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:flex">
-      <span className={cn("size-1.5 rounded-full", dot)} aria-hidden />
-      {label}
+    <span className={cn("shrink-0 text-xs font-normal", status === "invalid" ? "text-red-600" : "text-amber-600")}>
+      {status === "invalid" ? "Invalid" : "Unavailable"}
     </span>
   );
 }

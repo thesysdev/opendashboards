@@ -22,6 +22,8 @@ export type DemoDataset = {
   name: string;
   /** What's in it, for people (the Connections page) and the agent (list_connections). */
   description: string;
+  /** One short line about it, for the sample-data card on an empty Data Connections page. */
+  summary: string;
   /** Where it lives. Read-only role, Neon's pooler host, TLS verified. */
   postgres: { host: string; port: number; database: string; user: string; sslMode: "verify-full" | "require" };
   /** Starting prompts offered on the home page. */

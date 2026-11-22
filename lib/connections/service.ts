@@ -58,7 +58,7 @@ export type ConnectionSummary = {
   /** "oauth" for a connection signed in with OAuth, which can be signed in to again. */
   signIn: "oauth" | null;
   /** Set for an installed demo dataset: which one, and what's in it. */
-  demo: { key: string; description: string } | null;
+  demo: { key: string; description: string; summary: string } | null;
 };
 
 /** A demo dataset as the Connections and home pages show it. */
@@ -66,6 +66,7 @@ export type DemoDatasetSummary = {
   key: string;
   name: string;
   description: string;
+  summary: string;
   prompts: string[];
   /** The user's connection to it, when installed. */
   connectionId: string | null;
@@ -328,7 +329,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           ...describeDemo(dataset),
           signIn: null,
           apps: used,
-          demo: { key: dataset.key, description: dataset.description },
+          demo: { key: dataset.key, description: dataset.description, summary: dataset.summary },
         });
       }
       return summaries;
@@ -345,6 +346,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           key: dataset.key,
           name: dataset.name,
           description: dataset.description,
+          summary: dataset.summary,
           prompts: dataset.prompts,
           connectionId: connection?.id ?? null,
           apps: connection?.apps ?? [],

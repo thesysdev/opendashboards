@@ -33,6 +33,7 @@ const DEMO: DemoDataset = {
   key: "retail",
   name: "Retail sales",
   description: "A sample retail business.",
+  summary: "A retail store's orders.",
   postgres: { host: "demo.example.com", port: 5432, database: "retail_sales", user: "reader", sslMode: "verify-full" },
   prompts: ["Revenue by month"],
 };
@@ -510,8 +511,8 @@ describe("demo datasets", () => {
     expect(await service.open("bob", first.data.id, "postgres")).toBeNull();
 
     const [summary] = await service.list("alice");
-    expect(summary).toMatchObject({ source: "Demo dataset", shortSource: "Demo", demo: { key: "retail" } });
-    expect(await service.listDemoDatasets("alice")).toMatchObject([{ key: "retail", connectionId: first.data.id, apps: [] }]);
+    expect(summary).toMatchObject({ source: "Demo dataset", shortSource: "Demo", demo: { key: "retail", summary: DEMO.summary } });
+    expect(await service.listDemoDatasets("alice")).toMatchObject([{ key: "retail", summary: DEMO.summary, connectionId: first.data.id, apps: [] }]);
     expect(await service.listDemoDatasets("bob")).toMatchObject([{ key: "retail", connectionId: null }]);
   });
 
