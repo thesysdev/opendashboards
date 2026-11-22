@@ -12,7 +12,7 @@ import { parseMessage } from "@openuidev/lang-core";
 import { config, secrets } from "@/config";
 import { getDb } from "@/lib/db";
 import { logError } from "@/lib/log";
-import { ToolError, toolsFor, type ToolContext } from "@/lib/tools";
+import { ToolError, toolsFor, type Tool, type ToolContext } from "@/lib/tools";
 
 import promptOptions from "./generated/dashboard.prompt.json";
 import spec from "./generated/dashboard.spec.json";
@@ -135,24 +135,28 @@ export async function deleteAppDashboardsInCloud(userId: string, appId: string):
 
 /** Every source's dashboard tools, in the shape the interpreter runs. */
 function dataTools(): Record<string, DataTool<ToolContext>> {
-  return Object.fromEntries(
-    toolsFor("dashboard").map((tool) => [
-      tool.name,
-      {
-        description: tool.description,
-        parameters: tool.parameters,
-        output: tool.output,
-        async execute(args, context, { signal }) {
-          try {
-            return await tool.run(args, context, { signal, caller: "dashboard" });
-          } catch (error) {
-            if (error instanceof ToolError) throw new ToolExecutionError(error.message, error.code, 400);
-            throw error;
-          }
-        },
-      } satisfies DataTool<ToolContext>,
-    ]),
-  );
+  return Object.fromEntries(toolsFor("dashboard").map((tool) => [tool.name, asDataTool(tool)]));
+}
+
+/** One tool as the interpreter runs it. Exported for tests. */
+export function asDataTool(tool: Tool): DataTool<ToolContext> {
+  return {
+    description: tool.description,
+    parameters: tool.parameters,
+    output: tool.output,
+    async execute(args, context, { signal }) {
+      try {
+        return await tool.run(args, context, { signal, caller: "dashboard" });
+      } catch (error) {
+        if (error instanceof ToolError) {
+          // Reported even when the dashboard's own script catches the error and carries on.
+          if (error.code === "reauth_required") context.onSignInLost?.();
+          throw new ToolExecutionError(error.message, error.code, 400);
+        }
+        throw error;
+      }
+    },
+  };
 }
 
 /**

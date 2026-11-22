@@ -108,6 +108,12 @@ export interface ConnectionSource<Config extends Record<string, unknown> = Recor
   };
   /** Checks the connection works with this credential. Throws on failure. */
   test(config: Config, credential: string, signal?: AbortSignal): Promise<ConnectionWarning[]>;
+  /**
+   * Checks a saved connection still works ("Test again"). Optional: without
+   * it, `test` runs with the stored credential. A source whose credential
+   * renews itself (an OAuth sign-in) renews it here, as a query would.
+   */
+  retest?(connection: OpenConnection<Config>): Promise<ConnectionWarning[]>;
   /** Turns this source's failures into a user-facing error and the status to record. */
   toError(error: unknown): { error: SourceError; status: Exclude<ConnectionStatus, "ok"> } | null;
   // Each tool has its own argument type; the runner validates them with the tool's schema.

@@ -448,7 +448,19 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           const credential = await keyCache.get(row.id, () =>
             openCredential(row.secret, context(config.type, userId, row.id)),
           );
-          await check(config, credential);
+          const { type, ...settings } = config;
+          const source = deps.sources(type);
+          if (source.retest) {
+            await source.retest({
+              id: row.id,
+              name: row.name,
+              config: settings,
+              credential,
+              updateCredential: (change) => updateCredential(userId, row.id, type, change),
+            });
+          } else {
+            await check(config, credential);
+          }
         } catch (error) {
           failure = fromCheckError(error);
           if (!failure) throw error;

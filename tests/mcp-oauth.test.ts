@@ -343,6 +343,38 @@ describe("refreshing", () => {
     expect(stored.status).toBe("ok");
   });
 
+  describe("Test again", () => {
+    // A source whose plain check would fail with the expired token, as a real server would.
+    const retesting = createConnectionService({
+      db,
+      secrets: () => plaintextSecretBox,
+      sources: () =>
+        ({
+          ...mcpSource,
+          test: async () => {
+            throw new McpError("key_rejected");
+          },
+          retest: (connection: OpenConnection<McpConfig>) => withCredential(connection, async () => {}, hooks).then(() => []),
+        }) as unknown as ConnectionSource,
+    });
+    const statusOf = async (id: string) => (await db.select().from(dataConnections).where(eq(dataConnections.id, id)))[0].status;
+
+    it("renews an expired access token instead of marking a working sign-in invalid", async () => {
+      const connection = await expireSoon(await signedIn());
+      const before = refreshCalls;
+      expect(await retesting.retest("alice", { id: connection.id })).toEqual({ ok: true, data: { status: "ok" } });
+      expect(refreshCalls - before).toBe(1);
+      expect(await statusOf(connection.id)).toBe("ok");
+    });
+
+    it("still marks a sign-in whose refresh is refused for signing in again", async () => {
+      const connection = await expireSoon(await signedIn());
+      mode = { refresh: "invalid_grant" };
+      expect(await retesting.retest("alice", { id: connection.id })).toMatchObject({ ok: false, error: { code: "reauth_required" } });
+      expect(await statusOf(connection.id)).toBe("invalid");
+    });
+  });
+
   it("retries once with a refreshed token after a 401", async () => {
     const connection = await signedIn();
     let attempts = 0;

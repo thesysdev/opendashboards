@@ -147,6 +147,11 @@ export const mcpSource: ConnectionSource<McpConfig> = {
     }
     return [];
   },
+  /** "Test again": an expired access token is renewed first, exactly as a query renews it. */
+  async retest(connection) {
+    await withCredential(connection, (target) => testMcpServer(target));
+    return [];
+  },
   toError(error) {
     if (!(error instanceof McpError)) return null;
     switch (error.code) {

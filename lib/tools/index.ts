@@ -23,7 +23,12 @@ import type { ConnectionSource, SourceTool, ToolCaller } from "@/lib/sources/typ
  */
 
 /** Who a call is for. Comes from the session and the route, never from the model. */
-export type ToolContext = { userId: string; appId: string };
+export type ToolContext = {
+  userId: string;
+  appId: string;
+  /** Called when a call finds a sign-in expired or revoked (its connection is now marked so). */
+  onSignInLost?: () => void;
+};
 
 /** A tool ready to run, described for the model. */
 export type Tool = {

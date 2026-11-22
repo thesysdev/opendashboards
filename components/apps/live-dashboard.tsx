@@ -4,15 +4,24 @@ import { LiveArtifactRenderer, useArtifactRenderer } from "@openuidev/react-ui/c
 import { library } from "@openuidev/dashboard-library";
 import { LoaderCircleIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useRef, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
+import { SIGN_IN_LOST_HEADER } from "@/lib/dashboards/sign-in-lost";
 import { cn } from "@/lib/utils";
 
 import { useDashboardResponse } from "./app-workspace";
 import { DashboardTitle } from "./dashboard-title";
 
-const interpreter = { url: "/api/interpreter" };
+type InterpreterRequest = { id: string; version?: string; name: string; arguments: Record<string, unknown> };
+
+/** An error from the interpreter as the renderer reads it: its message, and its code when there is one. */
+function interpreterError(error: unknown, status: number): Error {
+  const message =
+    typeof error === "string" ? error : typeof (error as { message?: unknown })?.message === "string" ? (error as { message: string }).message : null;
+  const code = typeof (error as { code?: unknown })?.code === "string" ? (error as { code: string }).code : undefined;
+  return Object.assign(new Error(message ?? `Interpreter request failed: ${status}`), { code });
+}
 
 /**
  * A live dashboard from OpenUI Cloud, drawn with @openuidev/dashboard-library, under
@@ -63,6 +72,27 @@ function DashboardView({
   // Once per dashboard: a failed query may have just found a sign-in expired, which
   // marks its connection on the server. Refreshing the page's data shows the banner.
   const refreshed = useRef(false);
+  const refreshOnce = useCallback(() => {
+    if (refreshed.current) return;
+    refreshed.current = true;
+    router.refresh();
+  }, [router]);
+  // Runs data calls through /api/interpreter, as the renderer's own endpoint call does, and also
+  // watches for a lost sign-in: a dashboard that catches its query errors still gets the banner.
+  const interpreter = useCallback(
+    async (request: InterpreterRequest) => {
+      const response = await fetch("/api/interpreter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(request),
+      });
+      if (response.headers.get(SIGN_IN_LOST_HEADER)) refreshOnce();
+      const body = (await response.json().catch(() => null)) as { result?: unknown; error?: unknown } | null;
+      if (!response.ok || (body?.error !== undefined && body.error !== null)) throw interpreterError(body?.error, response.status);
+      return body?.result;
+    },
+    [refreshOnce],
+  );
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <div className="min-h-0 flex-1 overflow-y-auto bg-white">
@@ -77,10 +107,7 @@ function DashboardView({
           onError={(errors) => {
             if (!errors.length) return;
             console.error("[dashboard]", JSON.stringify(errors));
-            if (!refreshed.current && errors.some((error) => error.source === "query")) {
-              refreshed.current = true;
-              router.refresh();
-            }
+            if (errors.some((error) => error.source === "query")) refreshOnce();
           }}
         >
           <LiveArtifactRenderer.Chrome>

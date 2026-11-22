@@ -96,6 +96,23 @@ async function allTools(client: Client, signal: AbortSignal) {
   return tools;
 }
 
+/** Pages checked when looking for one tool by name: far past what any real server lists. */
+const MAX_TOOL_PAGES = 50;
+
+/** The named tool as the server lists it, looking past the listing cap; null when it isn't listed. */
+async function findTool(client: Client, signal: AbortSignal, name: string) {
+  const timeout = appConfig().mcp.requestTimeoutMs;
+  let cursor: string | undefined;
+  for (let page = 0; page < MAX_TOOL_PAGES; page++) {
+    const result = await client.listTools(cursor ? { cursor } : undefined, { signal, timeout });
+    const tool = result.tools.find((candidate) => candidate.name === name);
+    if (tool) return tool;
+    cursor = result.nextCursor;
+    if (!cursor) return null;
+  }
+  return null;
+}
+
 async function listTools(client: Client, signal: AbortSignal): Promise<McpToolInfo[]> {
   const tools = await allTools(client, signal);
   const readable = tools.filter((tool) => !changesData(tool.annotations));
@@ -168,9 +185,10 @@ export function callMcpTool(
   return withMcpClient(
     target,
     async (client, signal) => {
-      // Checked on every call, in the same session: never a tool the server says changes data.
-      const tool = (await allTools(client, signal)).find((candidate) => candidate.name === name);
-      if (tool && changesData(tool.annotations)) {
+      // Checked on every call, in the same session: only a tool the server lists, and never one it says changes data.
+      const tool = await findTool(client, signal, name);
+      if (!tool) throw new McpError("bad_arguments", `The server doesn't list a tool called ${name}`);
+      if (changesData(tool.annotations)) {
         throw new McpError("tool_not_allowed", `${name} changes data, and OpenDashboards only reads.`);
       }
       const result = await client.callTool({ name, arguments: args }, undefined, {

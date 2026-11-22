@@ -167,6 +167,16 @@ describe("against a hostile server", () => {
         }
         if (message.method === "tools/list") {
           const deleteAll = { name: "delete_all", inputSchema: { type: "object" }, annotations: { readOnlyHint: false, destructiveHint: true } };
+          if (req.url === "/many/mcp") {
+            // 250 read-only tools on the first page, then a write tool on the second: past the 200 listed.
+            const first = !message.params?.cursor;
+            const page = first
+              ? Array.from({ length: 250 }, (_, i) => ({ name: `read_${i}`, inputSchema: { type: "object" }, annotations: { readOnlyHint: true } }))
+              : [{ name: "wipe_everything", inputSchema: { type: "object" }, annotations: { readOnlyHint: false } }];
+            return res
+              .writeHead(200, { "Content-Type": "application/json" })
+              .end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result: { tools: page, ...(first && { nextCursor: "page-2" }) } }));
+          }
           const tools =
             req.url === "/writes-only/mcp"
               ? [deleteAll]
@@ -222,6 +232,19 @@ describe("against a hostile server", () => {
       expect((error as McpError).code).toBe("tool_not_allowed");
       expect(calls).not.toContain("delete_all");
       expect(mcpSource.toError(error)?.error.message).toMatch(/only reads/);
+    });
+
+    it("are refused even when listed past the first 200 tools", async () => {
+      const many = { ...target(), url: `${url}/many/mcp` };
+      const error = await callMcpTool(many, "wipe_everything", {}, { testHooks: hooks }).catch((e: unknown) => e);
+      expect((error as McpError).code).toBe("tool_not_allowed");
+      expect(calls).not.toContain("wipe_everything");
+    });
+
+    it("refuses a tool the server doesn't list at all", async () => {
+      const error = await callMcpTool(target(), "hidden_tool", {}, { testHooks: hooks }).catch((e: unknown) => e);
+      expect((error as McpError).code).toBe("bad_arguments");
+      expect(calls).not.toContain("hidden_tool");
     });
 
     it("refuse a server that offers nothing else", async () => {
