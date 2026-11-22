@@ -16,6 +16,12 @@ export const posthogConfigSchema = z
 
 export type PostHogConfig = z.infer<typeof posthogConfigSchema>;
 
+/** A personal API key. Here, not with the server code, so the form can check it before sending. */
+export const apiKeySchema = z
+  .string()
+  .trim()
+  .regex(/^phx_[A-Za-z0-9_-]{16,200}$/, "Personal API keys start with phx_.");
+
 export const posthogCatalog: SourceCatalog<PostHogConfig, "posthog"> = {
   type: "posthog",
   label: "PostHog",

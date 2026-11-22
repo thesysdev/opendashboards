@@ -80,5 +80,6 @@ export async function uninstallDemoAction(input: unknown) {
 
 function trackConnection(userId: string, sourceType: string, isDemo: boolean, result: Result<unknown>) {
   if (result.ok) track(userId, "connection_created", { source_type: sourceType, is_demo: isDemo });
-  else track(userId, "connection_failed", { source_type: sourceType, is_demo: isDemo, error_code: result.error.code });
+  // `field` is a form field's name ("host", "password"), never what was typed in it.
+  else track(userId, "connection_failed", { source_type: sourceType, is_demo: isDemo, error_code: result.error.code, field: result.error.field ?? null });
 }

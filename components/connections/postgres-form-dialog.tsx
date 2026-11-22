@@ -16,17 +16,23 @@ import {
 } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { ConnectionField } from "@/lib/connections/errors";
+import { connectionNameSchema } from "@/lib/connections/schemas";
 import {
   DEFAULT_PORT,
+  flavorOf,
+  isSupabaseDirectHost,
+  looksLikeConnectionString,
   parseConnectionString,
+  passwordSchema,
   POSTGRES_FLAVORS,
-  SSL_MODES,
+  postgresConfigSchema,
+  suggestConnectionName,
   type PostgresFlavor,
   type SslMode,
 } from "@/lib/sources/postgres/catalog";
 
+import { CertificateCheckField } from "./certificate-check-field";
 import { showConnectionWarnings } from "./connection-feedback";
 import type { SecretMode } from "./connection-form-dialog";
 
@@ -65,11 +71,6 @@ const EMPTY: Values = {
   sslMode: "verify-full",
 };
 
-const SSL_LABELS: Record<SslMode, string> = {
-  "verify-full": "Verify certificate",
-  require: "Encrypt only",
-};
-
 const READ_ONLY_ROLE_SQL = `CREATE ROLE dashboards_reader LOGIN PASSWORD '…';
 GRANT CONNECT ON DATABASE your_db TO dashboards_reader;
 GRANT USAGE ON SCHEMA public TO dashboards_reader;
@@ -98,7 +99,6 @@ export function PostgresFormDialog(props: Props) {
     database: useId(),
     user: useId(),
     password: useId(),
-    ssl: useId(),
   };
 
   const storageMissing = secretMode === "unconfigured";
@@ -123,21 +123,65 @@ export function PostgresFormDialog(props: Props) {
     if (!text.trim()) return setPasteNote(null);
     const parsed = parseConnectionString(text);
     if (!parsed) return setPasteNote("That isn't a postgres:// connection string.");
-    setValues((current) => ({
-      ...current,
-      ...(parsed.host !== undefined && { host: parsed.host }),
-      ...(parsed.port !== undefined && { port: String(parsed.port) }),
-      ...(parsed.database !== undefined && { database: parsed.database }),
-      ...(parsed.user !== undefined && { user: parsed.user }),
-      ...(parsed.password !== undefined && { password: parsed.password }),
-      ...(parsed.sslMode !== undefined && { sslMode: parsed.sslMode }),
-    }));
-    setFieldErrors({});
-    setPasteNote("Filled in the fields below. Check them, then test.");
+    setValues((current) => {
+      const next: Values = {
+        ...current,
+        ...(parsed.host !== undefined && { host: parsed.host }),
+        ...(parsed.port !== undefined && { port: String(parsed.port) }),
+        ...(parsed.database !== undefined && { database: parsed.database }),
+        ...(parsed.user !== undefined && { user: parsed.user }),
+        ...(parsed.password !== undefined && { password: parsed.password }),
+        ...(parsed.passwordMissing && { password: "" }),
+        ...(parsed.sslMode !== undefined && { sslMode: parsed.sslMode }),
+      };
+      // A string that doesn't say how to encrypt gets the service's own default (Supabase: its own certificate authority).
+      const service = parsed.sslMode === undefined && parsed.host ? flavorOf(parsed.host) : null;
+      if (service) next.sslMode = POSTGRES_FLAVORS[service].sslMode;
+      // The string carries everything but a name: suggest one, so pasting alone is enough to test.
+      if (!current.name.trim()) next.name = suggestConnectionName(next);
+      return next;
+    });
+    setFieldErrors(parsed.passwordMissing ? { password: "The string has a placeholder where the password goes. Enter your database password." } : {});
+    setPasteNote(parsed.passwordMissing ? "Filled in the fields below, except the password." : "Filled in the fields below. Check them, then test.");
+  }
+
+  /** A whole connection string typed or pasted into Host is treated as one. */
+  function updateHost(text: string) {
+    if (looksLikeConnectionString(text) && parseConnectionString(text)) return applyConnectionString(text);
+    update("host", text);
+  }
+
+  /**
+   * The server's own checks, run here first, so every problem shows at once
+   * and a slip doesn't cost a round trip. The server still checks everything.
+   */
+  function validate(): Partial<Record<ConnectionField, string>> {
+    const errors: Partial<Record<ConnectionField, string>> = {};
+    const password = passwordSchema.safeParse(values.password);
+    if (!password.success) errors.password = password.error.issues[0]?.message;
+    // Hosted services always need one, and a login without it counts as a failed attempt there.
+    else if (!values.password && !replacing && (flavor || flavorOf(values.host))) errors.password = "Enter your database password.";
+    if (replacing) return errors;
+    const name = connectionNameSchema.safeParse(values.name);
+    if (!name.success) errors.name = name.error.issues[0]?.message;
+    const { host, port, database, user, sslMode } = values;
+    const settings = postgresConfigSchema.safeParse({ host, port, database, user, sslMode });
+    if (!settings.success) {
+      for (const issue of settings.error.issues) {
+        const field = issue.path[0];
+        if (typeof field === "string") errors[field] ??= issue.message;
+      }
+    }
+    return errors;
   }
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
+    const errors = validate();
+    if (Object.values(errors).some(Boolean)) {
+      setFormError(null);
+      return setFieldErrors(errors);
+    }
     startTransition(async () => {
       const { name, host, port, database, user, password, sslMode } = values;
       const result = replacing
@@ -154,9 +198,12 @@ export function PostgresFormDialog(props: Props) {
         }
         return;
       }
+      // Each result replaces the last one's message: a stale error under a field would contradict it.
       if (result.error.field) {
         setFieldErrors({ [result.error.field]: result.error.message });
+        setFormError(null);
       } else {
+        setFieldErrors({});
         setFormError(result.error.message);
       }
     });
@@ -173,8 +220,8 @@ export function PostgresFormDialog(props: Props) {
       <Input
         id={ids[key]}
         value={values[key]}
-        onChange={(e) => update(key, e.target.value)}
-        placeholder={placeholder}
+        onChange={(e) => (key === "host" ? updateHost(e.target.value) : update(key, e.target.value))}
+        placeholder={`e.g. ${placeholder}`}
         autoComplete="off"
         spellCheck={false}
         aria-invalid={!!fieldErrors[key] || undefined}
@@ -209,14 +256,8 @@ export function PostgresFormDialog(props: Props) {
           <FieldGroup className="my-6 gap-5">
             {!replacing && (
               <>
-                {textField("name", "Name", flavor ? `${flavor.label} database` : "Production database", {
-                  maxLength: 80,
-                  autoFocus: true,
-                  spellCheck: undefined,
-                })}
-
                 <Field>
-                  <FieldLabel htmlFor={ids.url}>Connection string (optional)</FieldLabel>
+                  <FieldLabel htmlFor={ids.url}>Connection string</FieldLabel>
                   <Input
                     id={ids.url}
                     value={connectionString}
@@ -224,9 +265,17 @@ export function PostgresFormDialog(props: Props) {
                     placeholder="postgres://user:password@host:5432/database"
                     autoComplete="off"
                     spellCheck={false}
+                    autoFocus
                   />
-                  <FieldDescription>{pasteNote ?? "Paste one to fill in the fields. It isn't saved."}</FieldDescription>
+                  <FieldDescription>
+                    {pasteNote ?? "Paste one to fill in everything below, or fill in the fields yourself. It isn't saved."}
+                  </FieldDescription>
                 </Field>
+
+                {textField("name", "Name", flavor ? `${flavor.label} database` : "Production database", {
+                  maxLength: 80,
+                  spellCheck: undefined,
+                })}
 
                 <div className="grid grid-cols-[1fr_6rem] gap-3">
                   {textField("host", "Host", flavor?.hostPlaceholder ?? "db.example.com")}
@@ -244,6 +293,18 @@ export function PostgresFormDialog(props: Props) {
                     <FieldError>{fieldErrors.port}</FieldError>
                   </Field>
                 </div>
+
+                {/* Once a test has said the same thing under Host, saying it twice is noise. */}
+                {isSupabaseDirectHost(values.host) && !fieldErrors.host && (
+                  <p role="status" className="flex gap-2 rounded-lg border px-3 py-2 text-sm">
+                    <TriangleAlertIcon className="mt-0.5 size-4 shrink-0 text-amber-500" aria-hidden />
+                    <span>
+                      This is Supabase&apos;s direct host, which only answers over IPv6. OpenDashboards can&apos;t reach
+                      it unless the project has the IPv4 add-on. In Supabase, open Connect and copy the{" "}
+                      <strong className="font-medium">Session pooler</strong> string instead.
+                    </span>
+                  </p>
+                )}
 
                 <div className="grid grid-cols-2 gap-3">
                   {textField("database", "Database", flavor?.databasePlaceholder ?? "app")}
@@ -263,34 +324,20 @@ export function PostgresFormDialog(props: Props) {
                 aria-invalid={!!fieldErrors.password || undefined}
                 autoFocus={replacing}
               />
-              <FieldDescription>Leave empty for a server that doesn&apos;t need one.</FieldDescription>
+              {/* Hosted services always need a password, so the hint would contradict the error for leaving it empty. */}
+              {!flavor && !flavorOf(values.host) && (
+                <FieldDescription>Leave empty for a server that doesn&apos;t need one.</FieldDescription>
+              )}
               <FieldError>{fieldErrors.password}</FieldError>
             </Field>
 
             {!replacing && (
-              <Field data-invalid={!!fieldErrors.sslMode || undefined}>
-                <FieldLabel id={ids.ssl}>SSL</FieldLabel>
-                <ToggleGroup
-                  type="single"
-                  variant="outline"
-                  aria-labelledby={ids.ssl}
-                  value={values.sslMode}
-                  onValueChange={(value) => value && update("sslMode", value as SslMode)}
-                  className="w-full"
-                >
-                  {SSL_MODES.map((mode) => (
-                    <ToggleGroupItem key={mode} value={mode} className="flex-1">
-                      {SSL_LABELS[mode]}
-                    </ToggleGroupItem>
-                  ))}
-                </ToggleGroup>
-                <FieldDescription>
-                  {values.sslMode === "verify-full"
-                    ? "Encrypted, and the server's certificate is checked. Recommended."
-                    : "Encrypted, but the certificate isn't checked. Use for self-signed certificates."}
-                </FieldDescription>
-                <FieldError>{fieldErrors.sslMode}</FieldError>
-              </Field>
+              <CertificateCheckField
+                value={values.sslMode}
+                onChange={(mode) => update("sslMode", mode)}
+                error={fieldErrors.sslMode}
+                presetReason={flavor?.sslMode === "require" ? `Still encrypted. On because ${flavor.label} uses its own certificate authority.` : undefined}
+              />
             )}
 
             {!replacing && (

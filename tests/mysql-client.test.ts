@@ -52,7 +52,7 @@ describe("toMysqlError", () => {
     [{ code: "ENOTFOUND", message: "getaddrinfo ENOTFOUND" }, "host_not_found"],
     [{ code: "ECONNREFUSED", message: "connect ECONNREFUSED" }, "unreachable"],
     [{ code: "ETIMEDOUT", message: "connect ETIMEDOUT" }, "connect_timeout"],
-    [{ code: "HANDSHAKE_NO_SSL_SUPPORT", message: "Server does not support secure connection" }, "tls_failed"],
+    [{ code: "HANDSHAKE_NO_SSL_SUPPORT", message: "Server does not support secure connection" }, "ssl_unsupported"],
     [{ code: "SELF_SIGNED_CERT_IN_CHAIN", message: "self-signed certificate in certificate chain" }, "tls_failed"],
   ])("classifies %j as %s", (error, code) => {
     expect(toMysqlError(error).code).toBe(code);
@@ -179,7 +179,7 @@ describe.skipIf(!ports.length).each(ports)("against the server on port %i", (por
 /*
  * The whole path (guarded socket, TLS, read-only session) against Rfam's
  * public, read-only MySQL 8 server: LIVE_TESTS=1 pnpm test tests/mysql-client.test.ts
- * Its certificate isn't publicly trusted, so this uses "Encrypt only".
+ * Its certificate isn't publicly trusted, so this uses "Skip certificate check".
  */
 describe.skipIf(!process.env.LIVE_TESTS)("Rfam public MySQL (live)", () => {
   const rfam = { host: "mysql-rfam-public.ebi.ac.uk", port: 4497, database: "Rfam", user: "rfamro", password: "", sslMode: "require" as const };

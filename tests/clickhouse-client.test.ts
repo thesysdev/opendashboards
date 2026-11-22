@@ -74,6 +74,8 @@ describe("ClickHouse errors", () => {
     expect(toClickhouseError(new BlockedAddressError("ch.internal", "10.1.2.3")).code).toBe("host_blocked");
     expect(toClickhouseError(new Ipv6OnlyHostError("ch.supabase.co")).code).toBe("host_ipv6_only");
     expect(toClickhouseError(Object.assign(new Error("self-signed certificate"), { code: "DEPTH_ZERO_SELF_SIGNED_CERT" })).code).toBe("tls_failed");
+    // The plain HTTP port (8123) answering a TLS handshake.
+    expect(toClickhouseError(Object.assign(new Error("write EPROTO … wrong version number"), { code: "EPROTO" })).code).toBe("ssl_unsupported");
   });
 
   it("tells the agent how to fix a heavy query", () => {

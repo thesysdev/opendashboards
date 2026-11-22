@@ -69,6 +69,22 @@ export function logWarning(context: string, fields: Record<string, string | numb
   console.warn(`[opendashboards] ${context}${describeContext()}: ${redact(details)}`);
 }
 
+/**
+ * Logs a failure that is the user's to fix (a connection test their server
+ * refused, say), with the detail the user isn't shown. A remote server wrote
+ * part of this text, so it's flattened to one line. Not an error of ours: it
+ * doesn't count toward the `opendashboards.error` metric.
+ */
+export function logRejection(context: string, error: unknown): void {
+  const parts: string[] = [];
+  for (let current: unknown = error, depth = 0; depth < 4 && current !== undefined && current !== null; depth++) {
+    parts.push(describe(current));
+    current = current instanceof Error ? current.cause : undefined;
+  }
+  const line = redact(parts.join(" ← caused by ")).replace(/[\u0000-\u001f\u007f\s]+/g, " ");
+  console.warn(`[opendashboards] ${context}${describeContext()}: ${line}`);
+}
+
 /** A low-cardinality name for a failure: a code (`ECONNREFUSED`, `23505`) or the error's name. */
 function causeLabel(error: unknown): string {
   if (!(error instanceof Error)) return "unknown";

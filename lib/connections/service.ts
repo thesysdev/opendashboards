@@ -5,7 +5,7 @@ import { and, asc, eq, gt, isNull, lt, sql } from "drizzle-orm";
 import type { DemoDataset } from "@/config";
 import type { Database } from "@/lib/db";
 import { appConnections, apps, dataConnections, mcpOAuthSignIns, type ConnectionStatus, type DataConnectionRow } from "@/lib/db/schema";
-import { logError, logWarning } from "@/lib/log";
+import { logError, logRejection, logWarning } from "@/lib/log";
 import { count } from "@/lib/metrics";
 import type { SecretBox, SecretContext } from "@/lib/secrets";
 import { MAX_SECRET_BYTES, SecretTooLargeError, secretBytes, type SealedSecret } from "@/lib/secrets/types";
@@ -243,9 +243,20 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     }
   }
 
-  /** A failed check as a result, or rethrown when it's not a known failure. */
-  function checkFailure(error: unknown): Result<never> {
+  /**
+   * A failed check as a user-facing error and the status to record, or null when it's not a known failure.
+   * The user only sees our own wording; what the server itself said goes to the log, so a cause we
+   * don't name yet can be found and given a message.
+   */
+  function knownFailure(error: unknown, type: ConnectionType) {
     const known = fromCheckError(error);
+    if (known) logRejection(`connections.check.${type}.${known.error.code}`, error);
+    return known;
+  }
+
+  /** A failed check as a result, or rethrown when it's not a known failure. */
+  function checkFailure(error: unknown, type: ConnectionType): Result<never> {
+    const known = knownFailure(error, type);
     if (known) return fail(known.error);
     throw error;
   }
@@ -427,7 +438,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             lastCheckedAt: now(),
           });
         } catch (error) {
-          return checkFailure(error);
+          return checkFailure(error, type);
         }
         return ok({ id, warnings });
       });
@@ -462,7 +473,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             await check(config, credential);
           }
         } catch (error) {
-          failure = fromCheckError(error);
+          failure = knownFailure(error, row.type as ConnectionType);
           if (!failure) throw error;
           keyCache.delete(row.id);
         }
@@ -510,7 +521,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             })
             .where(and(eq(dataConnections.id, row.id), eq(dataConnections.userId, userId)));
         } catch (error) {
-          return checkFailure(error);
+          return checkFailure(error, config.type);
         } finally {
           keyCache.delete(row.id);
         }
@@ -647,7 +658,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               .where(and(eq(dataConnections.id, row.id), eq(dataConnections.userId, userId)));
             return ok({ id: row.id, warnings });
           } catch (error) {
-            return checkFailure(error);
+            return checkFailure(error, config.type);
           } finally {
             keyCache.delete(row.id);
           }
@@ -670,7 +681,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           });
           return ok({ id, warnings });
         } catch (error) {
-          return checkFailure(error);
+          return checkFailure(error, config.type);
         }
       });
     },

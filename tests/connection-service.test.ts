@@ -355,6 +355,25 @@ describe("postgres", () => {
     expect(await service.create("alice", PG)).toMatchObject({ ok: true, data: { warnings: ["can_write"] } });
   });
 
+  it("logs what the server said about a failed check, and shows the user only our own wording", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const { service } = makeService({
+      testPostgres: async () => {
+        throw new PostgresError("unexpected", "FATAL: something only\nthe remote server would say");
+      },
+    });
+    const result = await service.create("alice", PG);
+    expect(result).toMatchObject({ ok: false, error: { code: "postgres_unexpected" } });
+    expect(JSON.stringify(result)).not.toContain("remote server would say");
+    expect(warn).toHaveBeenCalledTimes(1);
+    const line = String(warn.mock.calls[0]?.[0]);
+    expect(line).toContain("connections.check.postgres.postgres_unexpected");
+    // One line, whatever the server put in its message.
+    expect(line).toContain("something only the remote server would say");
+    expect(line).not.toContain("\n");
+    warn.mockRestore();
+  });
+
   it("maps failed checks to their fields and saves nothing", async () => {
     for (const [code, field] of [
       ["auth_failed", "password"],
@@ -362,6 +381,11 @@ describe("postgres", () => {
       ["host_blocked", "host"],
       ["host_not_found", "host"],
       ["tls_failed", "sslMode"],
+      ["ssl_unsupported", "sslMode"],
+      ["tls_handshake_failed", "sslMode"],
+      ["password_required", "password"],
+      ["pooler_user_not_found", "user"],
+      ["address_not_allowed", "host"],
     ] as const) {
       const { service } = makeService({
         testPostgres: async () => {

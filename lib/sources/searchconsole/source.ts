@@ -86,8 +86,9 @@ export const searchConsoleSource: ConnectionSource<SearchConsoleConfig> = {
         return invalid({
           code: "access_denied",
           field: "siteUrl",
-          message:
-            "The service account can't read this property. In Search Console, open the property → Settings → Users and permissions, and add the account's email (Restricted is enough).",
+          message: error.account
+            ? `The service account ${error.account} can't read this property. In Search Console, open the property → Settings → Users and permissions, and add that email (Restricted is enough).`
+            : "The service account can't read this property. In Search Console, open the property → Settings → Users and permissions, and add the account's email (Restricted is enough).",
         });
       case "not_found":
         return invalid({
@@ -99,7 +100,7 @@ export const searchConsoleSource: ConnectionSource<SearchConsoleConfig> = {
         return invalid({
           code: "not_enabled",
           field: "serviceAccountKey",
-          message: `The Google Search Console API isn't enabled in the service account's Google Cloud project.${error.activationUrl ? ` Enable it at ${error.activationUrl}` : " Enable it in APIs & Services, then try again."}`,
+          message: `The Google Search Console API isn't enabled in the service account's Google Cloud project.${error.activationUrl ? ` Enable it at ${error.activationUrl}` : " Enable it in APIs & Services."} If you just enabled it, Google can take a few minutes to apply it: wait, then try again.`,
         });
       case "bad_request":
         return unavailable({ code: "bad_request", message: `Search Console rejected the query: ${error.detail ?? "invalid request"}.` });

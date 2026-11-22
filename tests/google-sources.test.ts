@@ -167,6 +167,9 @@ describe("requests to Google", () => {
     mockGoogle(() => ({ status: 403, body: { error: { code: 403, status: "PERMISSION_DENIED", message: "User does not have sufficient permissions for this property." } } }));
     const ga4 = await runGa4Report({ propertyId: "424243", credential }, { startDate: "7daysAgo", endDate: "today", metrics: ["sessions"] }, 1).catch((e: unknown) => e);
     expect(ga4Source.toError(ga4)).toMatchObject({ status: "invalid", error: { field: "propertyId", message: expect.stringMatching(/Property access management/) } });
+    // Names the account from the user's own key, so they know which email to add.
+    expect((ga4 as GoogleApiError).account).toMatch(/@.+\.iam\.gserviceaccount\.com$/);
+    expect(ga4Source.toError(ga4)?.error.message).toContain((ga4 as GoogleApiError).account);
 
     const sc = await querySearchAnalytics({ siteUrl: "https://www.example-denied.com/", credential }, { startDate: "2026-10-01", endDate: "2026-10-02" }, 1).catch((e: unknown) => e);
     expect(searchConsoleSource.toError(sc)).toMatchObject({ status: "invalid", error: { field: "siteUrl", message: expect.stringMatching(/Users and permissions/) } });

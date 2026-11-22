@@ -18,6 +18,8 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { ConnectionField } from "@/lib/connections/errors";
+import { connectionNameSchema } from "@/lib/connections/schemas";
+import { apiKeySchema, posthogConfigSchema } from "@/lib/sources/posthog/catalog";
 import { HOST_KINDS, POSTHOG_HOSTS, type HostKind } from "@/lib/sources/posthog/hosts";
 import type { SecretProvider } from "@/lib/secrets/types";
 
@@ -65,8 +67,34 @@ export function PostHogFormDialog(props: Props) {
     setFormError(null);
   }
 
+  /**
+   * The server's own checks, run here first, so every problem shows at once
+   * and a slip doesn't cost a round trip. The server still checks everything.
+   */
+  function validate(): Partial<Record<ConnectionField, string>> {
+    const errors: Partial<Record<ConnectionField, string>> = {};
+    const apiKey = apiKeySchema.safeParse(values.apiKey);
+    if (!apiKey.success) errors.apiKey = values.apiKey.trim() ? apiKey.error.issues[0]?.message : "Enter a personal API key.";
+    if (replacing) return errors;
+    const name = connectionNameSchema.safeParse(values.name);
+    if (!name.success) errors.name = name.error.issues[0]?.message;
+    const settings = posthogConfigSchema.safeParse({ hostKind: values.hostKind, projectId: values.projectId });
+    if (!settings.success) {
+      for (const issue of settings.error.issues) {
+        const field = issue.path[0];
+        if (typeof field === "string") errors[field] ??= field === "projectId" && !values.projectId.trim() ? "Enter the project ID." : issue.message;
+      }
+    }
+    return errors;
+  }
+
   function submit(event: React.FormEvent) {
     event.preventDefault();
+    const errors = validate();
+    if (Object.values(errors).some(Boolean)) {
+      setFormError(null);
+      return setFieldErrors(errors);
+    }
     startTransition(async () => {
       const result = replacing
         ? await replaceCredentialAction({ id: props.connection.id, credential: values.apiKey })
@@ -81,9 +109,12 @@ export function PostHogFormDialog(props: Props) {
         }
         return;
       }
+      // Each result replaces the last one's message: a stale error under a field would contradict it.
       if (result.error.field) {
         setFieldErrors({ [result.error.field]: result.error.message });
+        setFormError(null);
       } else {
+        setFieldErrors({});
         setFormError(result.error.message);
       }
     });
@@ -117,7 +148,7 @@ export function PostHogFormDialog(props: Props) {
                   id={ids.name}
                   value={values.name}
                   onChange={(e) => update("name", e.target.value)}
-                  placeholder="Production analytics"
+                  placeholder="e.g. Production analytics"
                   maxLength={80}
                   autoComplete="off"
                   aria-invalid={!!fieldErrors.name || undefined}
@@ -155,7 +186,7 @@ export function PostHogFormDialog(props: Props) {
                   id={ids.projectId}
                   value={values.projectId}
                   onChange={(e) => update("projectId", e.target.value)}
-                  placeholder="12345"
+                  placeholder="e.g. 12345"
                   inputMode="numeric"
                   autoComplete="off"
                   aria-invalid={!!fieldErrors.projectId || undefined}

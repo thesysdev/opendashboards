@@ -6,13 +6,10 @@ import { config as appConfig } from "@/config";
 
 import type { ConnectionSource, QueryResult, SourceTool } from "../types";
 
-import { posthogCatalog, type PostHogConfig } from "./catalog";
+import { apiKeySchema, posthogCatalog, type PostHogConfig } from "./catalog";
 import { PostHogError, runHogQLQuery, testConnection } from "./client";
 
-export const apiKeySchema = z
-  .string()
-  .trim()
-  .regex(/^phx_[A-Za-z0-9_-]{16,200}$/, "Personal API keys start with phx_.");
+export { apiKeySchema };
 
 
 async function hogql(

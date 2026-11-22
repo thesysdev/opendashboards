@@ -1,7 +1,13 @@
-import { CLICKHOUSE_DEFAULT_PORT } from "@/lib/sources/clickhouse/catalog";
-import { projectIdOfKey } from "@/lib/sources/google/credential";
+import type { z } from "zod";
+
+import { bigqueryConfigSchema } from "@/lib/sources/bigquery/catalog";
+import { CLICKHOUSE_DEFAULT_PORT, clickhouseConfigSchema, clickhousePasswordSchema } from "@/lib/sources/clickhouse/catalog";
+import { ga4ConfigSchema } from "@/lib/sources/ga4/catalog";
+import { projectIdOfKey, serviceAccountKeySchema } from "@/lib/sources/google/credential";
+import { mcpConfigSchema, mcpKeySchema } from "@/lib/sources/mcp/catalog";
 import type { McpAuth, McpService } from "@/lib/sources/mcp/services";
-import { MYSQL_DEFAULT_PORT, parseMysqlUrl } from "@/lib/sources/mysql/catalog";
+import { MYSQL_DEFAULT_PORT, mysqlConfigSchema, mysqlPasswordSchema, parseMysqlUrl } from "@/lib/sources/mysql/catalog";
+import { searchConsoleConfigSchema } from "@/lib/sources/searchconsole/catalog";
 
 /**
  * What the generic connection form asks for, per source. Client-safe. The
@@ -43,6 +49,11 @@ export type FormSpec = {
   secretNoun: string;
   /** MCP servers: signing in with OAuth and/or an API key. The switch (when both) goes after this field. */
   oauth?: { after: string; options: readonly McpAuth[]; server: string };
+  /**
+   * The source's own checks for its settings and its credential: the same ones the
+   * server runs, so the form can show every problem before sending anything.
+   */
+  schemas: { config: z.ZodType; credential: z.ZodType };
 };
 
 /** A password a public, read-only server may not need. */
@@ -96,6 +107,7 @@ export const SOURCE_FORMS: Record<"mysql" | "clickhouse" | "bigquery" | "ga4" | 
 GRANT SELECT, SHOW VIEW ON your_db.* TO 'dashboards_reader'@'%';`,
     },
     secretNoun: "passwords",
+    schemas: { config: mysqlConfigSchema, credential: mysqlPasswordSchema },
   },
   clickhouse: {
     title: "Connect ClickHouse",
@@ -125,6 +137,7 @@ GRANT SELECT, SHOW VIEW ON your_db.* TO 'dashboards_reader'@'%';`,
 GRANT SELECT ON your_db.* TO dashboards_reader;`,
     },
     secretNoun: "passwords",
+    schemas: { config: clickhouseConfigSchema, credential: clickhousePasswordSchema },
   },
   bigquery: {
     title: "Connect BigQuery",
@@ -158,6 +171,7 @@ GRANT SELECT ON your_db.* TO dashboards_reader;`,
       ],
     },
     secretNoun: "keys",
+    schemas: { config: bigqueryConfigSchema, credential: serviceAccountKeySchema },
   },
   ga4: {
     title: "Connect Google Analytics",
@@ -185,6 +199,7 @@ GRANT SELECT ON your_db.* TO dashboards_reader;`,
       ],
     },
     secretNoun: "keys",
+    schemas: { config: ga4ConfigSchema, credential: serviceAccountKeySchema },
   },
   searchconsole: {
     title: "Connect Search Console",
@@ -212,6 +227,7 @@ GRANT SELECT ON your_db.* TO dashboards_reader;`,
       ],
     },
     secretNoun: "keys",
+    schemas: { config: searchConsoleConfigSchema, credential: serviceAccountKeySchema },
   },
   mcp: {
     title: "Connect an MCP server",
@@ -245,6 +261,7 @@ GRANT SELECT ON your_db.* TO dashboards_reader;`,
     replaceAction: "Test & replace",
     secretNoun: "keys",
     oauth: { after: "url", options: ["oauth", "key"], server: "the server" },
+    schemas: { config: mcpConfigSchema, credential: mcpKeySchema },
   },
 };
 

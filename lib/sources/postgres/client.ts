@@ -9,8 +9,8 @@ import { createGuardedSocket } from "@/lib/net/guarded-socket";
 
 import type { QueryResult } from "../types";
 
-import type { PostgresConfig, SslMode } from "./catalog";
-import { toPostgresError } from "./errors";
+import { flavorOf, type PostgresConfig, type SslMode } from "./catalog";
+import { PostgresError, toPostgresError } from "./errors";
 
 export type PostgresTarget = PostgresConfig & { password: string };
 
@@ -46,6 +46,10 @@ const WRITE_ACCESS_SQL = `
  * ~/.pgpass, which on our servers can hold the password to OUR database. It
  * would then send it to whatever server the user named. A function is never
  * second-guessed: the server gets exactly the user's stored password, empty or not.
+ *
+ * No statement_timeout here either: the driver would send it as a startup
+ * parameter, and PgBouncer refuses a connection that carries one it doesn't
+ * know. It's set inside the transaction instead (see withReadOnly).
  */
 export function postgresClientConfig(target: PostgresTarget): pg.ClientConfig {
   // pg fills an empty host, user or database from PGHOST, PGUSER, PGDATABASE: ours. Validation already
@@ -59,7 +63,6 @@ export function postgresClientConfig(target: PostgresTarget): pg.ClientConfig {
     password: () => target.password,
     ssl: sslOptions(target.sslMode),
     connectionTimeoutMillis: appConfig().postgres.connectTimeoutMs,
-    statement_timeout: appConfig().postgres.statementTimeoutMs,
     query_timeout: appConfig().postgres.statementTimeoutMs + 2_000,
     application_name: "opendashboards",
   };
@@ -77,12 +80,16 @@ async function withReadOnly<T>(target: PostgresTarget, fn: (client: pg.Client) =
 
   try {
     await client.connect();
-    await client.query("BEGIN READ ONLY");
+    // One round trip. SET LOCAL lasts for this transaction only, so it also holds behind a pooler in transaction mode.
+    await client.query(`BEGIN READ ONLY; SET LOCAL statement_timeout = ${Math.trunc(appConfig().postgres.statementTimeoutMs)}`);
     const result = await fn(client);
     await client.query("ROLLBACK");
     return result;
   } catch (error) {
-    throw toPostgresError(error);
+    const failure = toPostgresError(error);
+    // "Skip certificate check" already skips the certificate check, so advice to choose it would lead nowhere.
+    const code = failure.code === "tls_failed" && target.sslMode === "require" ? "tls_handshake_failed" : failure.code;
+    throw new PostgresError(code, failure.detail, flavorOf(target.host));
   } finally {
     await client.end().catch(() => {});
   }

@@ -154,7 +154,10 @@ async function withReadOnly<T>(target: MysqlTarget, fn: (connection: Connection,
     }
     return await fn(connection, version);
   } catch (error) {
-    throw toMysqlError(error);
+    const failure = toMysqlError(error);
+    // "Skip certificate check" already skips the certificate check, so advice to choose it would lead nowhere.
+    if (failure.code === "tls_failed" && target.sslMode === "require") throw new MysqlError("tls_handshake_failed", failure.detail);
+    throw failure;
   } finally {
     connection?.destroy();
   }

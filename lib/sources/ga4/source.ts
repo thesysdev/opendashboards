@@ -99,7 +99,9 @@ export const ga4Source: ConnectionSource<Ga4Config> = {
         return invalid({
           code: "access_denied",
           field: "propertyId",
-          message: "The service account can't read this property. In Google Analytics, open Admin → Property access management and add the account's email as a Viewer.",
+          message: error.account
+            ? `The service account ${error.account} can't read this property. In Google Analytics, open Admin → Property access management and add that email as a Viewer. If it's already there, check the property ID.`
+            : "The service account can't read this property. In Google Analytics, open Admin → Property access management and add the account's email as a Viewer.",
         });
       case "not_found":
         return invalid({ code: "not_found", field: "propertyId", message: "There's no GA4 property with this ID, or the account can't see it." });
@@ -107,7 +109,7 @@ export const ga4Source: ConnectionSource<Ga4Config> = {
         return invalid({
           code: "not_enabled",
           field: "serviceAccountKey",
-          message: `The Google Analytics Data API isn't enabled in the service account's Google Cloud project.${error.activationUrl ? ` Enable it at ${error.activationUrl}` : " Enable it in APIs & Services, then try again."}`,
+          message: `The Google Analytics Data API isn't enabled in the service account's Google Cloud project.${error.activationUrl ? ` Enable it at ${error.activationUrl}` : " Enable it in APIs & Services."} If you just enabled it, Google can take a few minutes to apply it: wait, then try again.`,
         });
       case "bad_request":
         return unavailable({

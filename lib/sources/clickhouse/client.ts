@@ -141,7 +141,10 @@ async function send(
       rejectUnauthorized: target.sslMode === "verify-full",
     });
   } catch (error) {
-    throw toClickhouseError(error);
+    const failure = toClickhouseError(error);
+    // "Skip certificate check" already skips the certificate check, so advice to choose it would lead nowhere.
+    if (failure.code === "tls_failed" && target.sslMode === "require") throw new ClickhouseError("tls_handshake_failed", failure.detail);
+    throw failure;
   }
 
   if (response.status !== 200 || response.headers["x-clickhouse-exception-code"]) {

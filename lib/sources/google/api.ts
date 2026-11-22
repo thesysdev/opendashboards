@@ -1,6 +1,7 @@
 import "server-only";
 
 import { googleAccessToken, GoogleAuthError } from "./auth";
+import { readServiceAccountKey } from "./credential";
 
 /**
  * Calls a Google REST API (Search Console, Analytics Data) as a service
@@ -33,6 +34,8 @@ export class GoogleApiError extends Error {
     readonly detail?: string,
     /** For not_enabled: where to switch the API on, when Google said. */
     readonly activationUrl?: string,
+    /** The service account the request ran as: from the user's own key, so it can be named back to them. */
+    readonly account?: string,
   ) {
     super(`Google API request failed: ${code}${detail ? ` (${detail})` : ""}`);
     this.name = "GoogleApiError";
@@ -87,6 +90,15 @@ export function fromGoogleError(status: number, body: unknown): GoogleApiError {
   return new GoogleApiError("unexpected", message);
 }
 
+/** The service account's email from a stored credential, or nothing if it can't be read. */
+function accountOf(credential: string): string | undefined {
+  try {
+    return readServiceAccountKey(credential).client_email;
+  } catch {
+    return undefined;
+  }
+}
+
 /** One authenticated JSON request. */
 export async function googleRequest<T>(
   credential: string,
@@ -119,6 +131,9 @@ export async function googleRequest<T>(
     throw new GoogleApiError(name === "TimeoutError" || name === "AbortError" ? "timeout" : "unavailable", (error as Error)?.message);
   }
   const json: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw fromGoogleError(response.status, json);
+  if (!response.ok) {
+    const failure = fromGoogleError(response.status, json);
+    throw new GoogleApiError(failure.code, failure.detail, failure.activationUrl, accountOf(credential));
+  }
   return json as T;
 }

@@ -76,7 +76,52 @@ export const postgresSource: ConnectionSource<PostgresConfig> = {
           error: {
             code: "auth_failed",
             field: "password",
-            message: "Postgres didn't accept this user and password. If they're right, the server may not allow logins from OpenDashboards' address.",
+            message:
+              error.flavor === "supabase"
+                ? "Supabase didn't accept this user and password. Check them before trying again: after repeated wrong attempts Supabase blocks new connections for a few minutes. The database password is under Database → Settings in Supabase."
+                : "Postgres didn't accept this user and password. If they're right, the server may not allow logins from OpenDashboards' address.",
+          },
+        };
+      case "password_required":
+        return { status: "invalid", error: { code: "password_required", field: "password", message: "This server needs a password. Enter the one for this user." } };
+      case "pooler_user_not_found":
+        return {
+          status: "invalid",
+          error: {
+            code: "pooler_user_not_found",
+            field: "user",
+            message:
+              "Supabase's pooler doesn't know this user. On the pooler the user ends with your project ref, like dashboards_reader.your-project-ref. Copy it, and the host, from the Session pooler string in Supabase → Connect.",
+          },
+        };
+      case "connection_blocked":
+        return {
+          status: "unavailable",
+          error: {
+            code: "connection_blocked",
+            message:
+              "Supabase is refusing new connections for now, which it does after repeated failed attempts. Wait a couple of minutes, check the password in Supabase, then try once.",
+          },
+        };
+      case "address_not_allowed":
+        return {
+          status: "invalid",
+          error: {
+            code: "address_not_allowed",
+            field: "host",
+            message:
+              "This Supabase project only accepts connections from the addresses in its Network Restrictions, and OpenDashboards isn't one of them. OpenDashboards has no fixed address to add there, so it can only connect while the project allows all addresses.",
+          },
+        };
+      case "too_many_connections":
+        return {
+          status: "unavailable",
+          error: {
+            code: "too_many_connections",
+            message:
+              error.flavor === "supabase"
+                ? "The database has no free connections right now. Try again shortly; if it keeps happening, use the Transaction pooler (port 6543) or raise the pool size in Supabase."
+                : "The database has no free connections right now. Try again shortly, or raise its connection limit.",
           },
         };
       case "database_not_found":
@@ -110,7 +155,10 @@ export const postgresSource: ConnectionSource<PostgresConfig> = {
           error: {
             code: "unreachable",
             field: "host",
-            message: "Couldn't reach the server. Check the host and port, and that the database accepts connections from OpenDashboards.",
+            message:
+              error.flavor === "supabase"
+                ? "Couldn't reach the database. Check the host and port. If a wrong password was just tried, Supabase may have blocked the address for about 30 minutes: wait, or lift the ban under Database → Settings in Supabase."
+                : "Couldn't reach the server. Check the host and port, and that the database accepts connections from OpenDashboards.",
           },
         };
       case "timeout":
@@ -128,7 +176,25 @@ export const postgresSource: ConnectionSource<PostgresConfig> = {
           error: {
             code: "tls_failed",
             field: "sslMode",
-            message: "Couldn't set up an encrypted connection. If the server's certificate can't be verified, choose \"Encrypt only\".",
+            message: "Couldn't set up an encrypted connection. If the server's certificate can't be verified, turn on \"Skip certificate check\".",
+          },
+        };
+      case "ssl_unsupported":
+        return {
+          status: "invalid",
+          error: {
+            code: "ssl_unsupported",
+            field: "sslMode",
+            message: "This server doesn't accept encrypted (SSL) connections, and OpenDashboards never connects without encryption. Turn SSL on for the database, then try again.",
+          },
+        };
+      case "tls_handshake_failed":
+        return {
+          status: "invalid",
+          error: {
+            code: "tls_handshake_failed",
+            field: "sslMode",
+            message: "Couldn't set up an encrypted connection with this server, even without checking its certificate. Check that the port is the database's own and that SSL is switched on for it.",
           },
         };
       case "bad_query":

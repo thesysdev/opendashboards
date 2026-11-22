@@ -112,11 +112,23 @@ export const mysqlSource: ConnectionSource<MysqlConfig> = {
           code: "timeout",
           message: `The query took longer than ${appConfig().mysql.statementTimeoutMs / 1000} seconds and was stopped. Filter to a shorter date range, use indexed columns in WHERE, or aggregate before joining.`,
         });
+      case "ssl_unsupported":
+        return invalid({
+          code: "ssl_unsupported",
+          field: "sslMode",
+          message: "This server doesn't accept encrypted (TLS) connections, and OpenDashboards never connects without encryption. Turn TLS on for the database, then try again.",
+        });
+      case "tls_handshake_failed":
+        return invalid({
+          code: "tls_handshake_failed",
+          field: "sslMode",
+          message: "Couldn't set up an encrypted connection with this server, even without checking its certificate. Check that the port is the database's own and that TLS is switched on for it.",
+        });
       case "tls_failed":
         return invalid({
           code: "tls_failed",
           field: "sslMode",
-          message: "Couldn't set up an encrypted connection. OpenDashboards only connects over TLS. If the server's certificate can't be verified, choose \"Encrypt only\".",
+          message: "Couldn't set up an encrypted connection. OpenDashboards only connects over TLS. If the server's certificate can't be verified, turn on \"Skip certificate check\".",
         });
       case "read_only":
         return unavailable({ code: "read_only", message: `Queries are read-only. ${error.detail ?? "Only SELECT is allowed."}` });

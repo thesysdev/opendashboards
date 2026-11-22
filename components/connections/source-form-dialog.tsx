@@ -10,9 +10,10 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { SSL_MODES, type SslMode } from "@/lib/sources/host";
+import { connectionNameSchema } from "@/lib/connections/schemas";
 import { MCP_SERVICES, type McpAuth, type McpServiceKey } from "@/lib/sources/mcp/services";
 
+import { CertificateCheckField } from "./certificate-check-field";
 import { showConnectionWarnings } from "./connection-feedback";
 import type { SecretMode } from "./connection-form-dialog";
 import { mcpPresetForm, SOURCE_FORMS, type FieldSpec } from "./source-forms";
@@ -30,8 +31,6 @@ type Props = {
   | { mode: "create"; /** Called with the new connection's id once it's saved. */ onCreated?: (id: string) => void }
   | { mode: "replace"; connection: { id: string; name: string } }
 );
-
-const SSL_LABELS: Record<SslMode, string> = { "verify-full": "Verify certificate", require: "Encrypt only" };
 
 /** Adds a MySQL, ClickHouse or BigQuery connection, or replaces its password or key. */
 export function SourceFormDialog(props: Props) {
@@ -76,7 +75,12 @@ export function SourceFormDialog(props: Props) {
     if (!spec.paste || !text.trim()) return setPasteNote(null);
     const parsed = spec.paste.parse(text);
     if (!parsed) return setPasteNote("That isn't a connection string OpenDashboards recognizes.");
-    setValues((current) => ({ ...current, ...Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v)])) }));
+    setValues((current) => {
+      const next = { ...current, ...Object.fromEntries(Object.entries(parsed).map(([k, v]) => [k, String(v)])) };
+      // The string carries everything but a name: suggest one, so pasting alone is enough to test.
+      if (!current.name?.trim() && next.database?.trim()) next.name = next.database.trim();
+      return next;
+    });
     setFieldErrors({});
     setPasteNote("Filled in the fields below. Check them, then test.");
   }
@@ -87,9 +91,12 @@ export function SourceFormDialog(props: Props) {
       const name = values.name ?? "";
       const result = await startMcpSignInAction(service ? { name, service } : { name, url: values.url ?? "" });
       if (!result.ok) {
+        // Each result replaces the last one's message: a stale error under a field would contradict it.
         if (result.error.field && fields.some((field) => field.name === result.error.field)) {
           setFieldErrors({ [result.error.field]: result.error.message });
+          setFormError(null);
         } else {
+          setFieldErrors({});
           setFormError(result.error.message);
         }
         return;
@@ -98,8 +105,45 @@ export function SourceFormDialog(props: Props) {
     });
   }
 
+  /**
+   * The server's own checks, run here first, so every problem shows at once
+   * and a slip doesn't cost a round trip. The server still checks everything.
+   */
+  function validate(): Record<string, string> {
+    const errors: Record<string, string> = {};
+    // An empty required field reads better as "is required" than as a format complaint.
+    for (const field of fields) {
+      if (!field.optional && field.kind !== "ssl" && !(values[field.name] ?? "").trim()) {
+        errors[field.name] = field.name === "name" ? "Enter a name." : `${field.label} is required.`;
+      }
+    }
+    // Signing in with OAuth sends no key, so there's none to check.
+    if (!signingIn) {
+      const credential = spec.schemas.credential.safeParse(values[spec.credential.name] ?? "");
+      if (!credential.success) errors[spec.credential.name] ??= credential.error.issues[0]?.message ?? "Check this field.";
+    }
+    if (replacing) return errors;
+    const name = connectionNameSchema.safeParse(values.name ?? "");
+    if (!name.success) errors.name ??= name.error.issues[0]?.message ?? "Enter a name.";
+    const { name: _name, [spec.credential.name]: _credential, ...settings } = values;
+    // A known MCP server's endpoint comes from its preset, as it does on the server.
+    const config = spec.schemas.config.safeParse(service ? { ...settings, service } : settings);
+    if (!config.success) {
+      for (const issue of config.error.issues) {
+        const field = issue.path[0];
+        if (typeof field === "string" && fields.some((candidate) => candidate.name === field)) errors[field] ??= issue.message;
+      }
+    }
+    return errors;
+  }
+
   function submit(event: React.FormEvent) {
     event.preventDefault();
+    const errors = validate();
+    if (Object.keys(errors).length) {
+      setFormError(null);
+      return setFieldErrors(errors);
+    }
     if (signingIn) return signIn();
     startTransition(async () => {
       const result =
@@ -116,9 +160,12 @@ export function SourceFormDialog(props: Props) {
         if (props.mode === "create" && typeof data?.id === "string") props.onCreated?.(data.id);
         return;
       }
+      // Each result replaces the last one's message: a stale error under a field would contradict it.
       if (result.error.field && fields.some((field) => field.name === result.error.field)) {
         setFieldErrors({ [result.error.field]: result.error.message });
+        setFormError(null);
       } else {
+        setFieldErrors({});
         setFormError(result.error.message);
       }
     });
@@ -128,29 +175,12 @@ export function SourceFormDialog(props: Props) {
     const error = fieldErrors[field.name];
     if (field.kind === "ssl") {
       return (
-        <Field key={field.name} data-invalid={!!error || undefined}>
-          <FieldLabel id={id(field.name)}>{field.label}</FieldLabel>
-          <ToggleGroup
-            type="single"
-            variant="outline"
-            aria-labelledby={id(field.name)}
-            value={values[field.name]}
-            onValueChange={(value) => value && update(field.name, value)}
-            className="w-full"
-          >
-            {SSL_MODES.map((mode) => (
-              <ToggleGroupItem key={mode} value={mode} className="flex-1">
-                {SSL_LABELS[mode]}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
-          <FieldDescription>
-            {values[field.name] === "verify-full"
-              ? "Encrypted, and the server's certificate is checked. Recommended."
-              : "Encrypted, but the certificate isn't checked. Use for self-signed certificates."}
-          </FieldDescription>
-          <FieldError>{error}</FieldError>
-        </Field>
+        <CertificateCheckField
+          key={field.name}
+          value={values[field.name] === "require" ? "require" : "verify-full"}
+          onChange={(mode) => update(field.name, mode)}
+          error={error}
+        />
       );
     }
     return (
@@ -165,7 +195,7 @@ export function SourceFormDialog(props: Props) {
             inputMode={field.kind === "number" ? "numeric" : undefined}
             value={values[field.name] ?? ""}
             onChange={(e) => update(field.name, e.target.value)}
-            placeholder={field.placeholder}
+            placeholder={field.placeholder && `e.g. ${field.placeholder}`}
             autoComplete="off"
             spellCheck={false}
             aria-invalid={!!error || undefined}
