@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { config } from "@/config";
 import { requireUser, UnauthorizedError } from "@/lib/auth/user";
 import { finishMcpSignIn } from "@/lib/connections/mcp-sign-in";
 
@@ -10,7 +11,7 @@ import { finishMcpSignIn } from "@/lib/connections/mcp-sign-in";
  * the query: only our own fixed codes reach the page.
  */
 export async function GET(request: NextRequest) {
-  const back = new URL("/connections", request.nextUrl.origin);
+  const back = new URL("/connections", config().appOrigin);
   let userId: string;
   try {
     userId = (await requireUser()).id;
