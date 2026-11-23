@@ -73,7 +73,7 @@ async function IdentifyUser() {
 function HomeLink({ className }: { className?: string }) {
   return (
     <Link
-      href="/connections"
+      href="/apps"
       aria-label="OpenDashboards home"
       className={`rounded-md focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${className ?? ""}`}
     >
