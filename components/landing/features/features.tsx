@@ -6,13 +6,13 @@ import { SharingIllustration, SourcesIllustration } from "./LaunchIllustrations"
 
 const FEATURES: { title: string; description: string; art: ReactNode }[] = [
   {
-    title: "Share dashboards with your team",
-    description: "Give teammates view or edit access. Invite guests to view a shared app.",
+    title: "Share and edit",
+    description: "Invite your team and edit the same dashboard together.",
     art: <SharingIllustration />,
   },
   {
-    title: "Follow the build and inspect sources",
-    description: "Watch what the agent is checking, then open Sources to trace a dashboard number.",
+    title: "See the sources",
+    description: "Watch it build, then see where each chart's data comes from.",
     art: <SourcesIllustration />,
   },
   {
