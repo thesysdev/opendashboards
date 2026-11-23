@@ -23,8 +23,8 @@ export async function seedWorkspaces(db: Database, userIds: readonly string[]): 
   for (const userId of userIds) {
     const { orgId } = workspaceOf(userId);
     await db.insert(users).values({ id: userId, email: `${userId}@example.com` }).onConflictDoNothing();
-    await db.insert(orgs).values({ id: orgId, name: `${userId}'s workspace` }).onConflictDoNothing();
-    await db.insert(orgMembers).values({ orgId, userId, role: "admin" }).onConflictDoNothing();
+    await db.insert(orgs).values({ id: orgId, name: `${userId}'s workspace`, createdBy: userId }).onConflictDoNothing();
+    await db.insert(orgMembers).values({ orgId, userId, role: "admin", addedBy: userId }).onConflictDoNothing();
   }
 }
 
@@ -35,7 +35,8 @@ export async function seedTeam(
   members: Record<string, "admin" | "editor" | "viewer">,
 ): Promise<string> {
   const orgId = orgIdFor(`team:${name}`);
-  await db.insert(orgs).values({ id: orgId, name }).onConflictDoNothing();
+  // Nobody's own: created by a stand-in, so it's never where anyone's old rows are moved.
+  await db.insert(orgs).values({ id: orgId, name, createdBy: "seed" }).onConflictDoNothing();
   for (const [userId, role] of Object.entries(members)) {
     await db.insert(users).values({ id: userId, email: `${userId}@example.com` }).onConflictDoNothing();
     await db

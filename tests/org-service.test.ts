@@ -57,8 +57,8 @@ describe("signing up", () => {
   });
 
   it("names the workspace the migration made for someone, the first time they sign in", async () => {
-    const [org] = await db.insert(orgs).values({ name: "My workspace" }).returning();
-    await db.insert(orgMembers).values({ orgId: org.id, userId: bob.id, role: "admin" });
+    const [org] = await db.insert(orgs).values({ name: "My workspace", createdBy: bob.id }).returning();
+    await db.insert(orgMembers).values({ orgId: org.id, userId: bob.id, role: "admin", addedBy: bob.id });
 
     await service.ensureUser(bob);
 

@@ -223,19 +223,22 @@ export function createOrgService({ db }: { db: Database }) {
         if (!created) return;
 
         const memberships = await tx
-          .select({ orgId: orgMembers.orgId, name: orgs.name, addedBy: orgMembers.addedBy })
+          .select({ orgId: orgMembers.orgId, name: orgs.name, createdBy: orgs.createdBy })
           .from(orgMembers)
           .innerJoin(orgs, eq(orgs.id, orgMembers.orgId))
           .where(eq(orgMembers.userId, user.id));
         if (!memberships.length) {
           // Signed up on their own: a workspace of their own.
-          const [org] = await tx.insert(orgs).values({ name: defaultWorkspaceName(email) }).returning({ id: orgs.id });
-          await tx.insert(orgMembers).values({ orgId: org.id, userId: user.id, role: "admin" });
+          const [org] = await tx
+            .insert(orgs)
+            .values({ name: defaultWorkspaceName(email), createdBy: user.id })
+            .returning({ id: orgs.id });
+          await tx.insert(orgMembers).values({ orgId: org.id, userId: user.id, role: "admin", addedBy: user.id });
           return;
         }
         // Here before workspaces: theirs was made by the migration, which couldn't know their email.
         for (const membership of memberships) {
-          if (membership.addedBy === null && membership.name === PLACEHOLDER_NAME) {
+          if (membership.createdBy === user.id && membership.name === PLACEHOLDER_NAME) {
             await tx.update(orgs).set({ name: defaultWorkspaceName(email) }).where(eq(orgs.id, membership.orgId));
           }
         }
@@ -244,9 +247,8 @@ export function createOrgService({ db }: { db: Database }) {
 
     /**
      * Moves anything of the user's that has no workspace into their own: the
-     * oldest one they weren't added to by someone else. Never into a
-     * workspace they were invited to, which would hand their connections to
-     * its members. The migration did this for everything that existed; this
+     * oldest one they created. Never into a workspace they were invited to,
+     * which would hand their connections to its members. The migration did this for everything that existed; this
      * catches rows a deployment from before workspaces wrote while this one
      * was rolling out.
      */
@@ -254,8 +256,9 @@ export function createOrgService({ db }: { db: Database }) {
       const [own] = await db
         .select({ orgId: orgMembers.orgId })
         .from(orgMembers)
-        .where(and(eq(orgMembers.userId, userId), isNull(orgMembers.addedBy)))
-        .orderBy(asc(orgMembers.createdAt))
+        .innerJoin(orgs, eq(orgs.id, orgMembers.orgId))
+        .where(and(eq(orgMembers.userId, userId), eq(orgs.createdBy, userId)))
+        .orderBy(asc(orgs.createdAt))
         .limit(1);
       if (!own) return;
       const { orgId } = own;
@@ -292,8 +295,8 @@ export function createOrgService({ db }: { db: Database }) {
         const parsed = createSchema.safeParse(input);
         if (!parsed.success) return fromValidation(parsed.error);
         return db.transaction(async (tx) => {
-          const [org] = await tx.insert(orgs).values({ name: parsed.data.name }).returning({ id: orgs.id });
-          await tx.insert(orgMembers).values({ orgId: org.id, userId, role: "admin" });
+          const [org] = await tx.insert(orgs).values({ name: parsed.data.name, createdBy: userId }).returning({ id: orgs.id });
+          await tx.insert(orgMembers).values({ orgId: org.id, userId, role: "admin", addedBy: userId });
           return ok({ id: org.id });
         });
       });
@@ -363,7 +366,8 @@ export function createOrgService({ db }: { db: Database }) {
           await db
             .insert(orgInvites)
             .values({ orgId, email, role, invitedBy: userId })
-            .onConflictDoUpdate({ target: [orgInvites.orgId, orgInvites.email], set: { role, invitedBy: userId } });
+            // Inviting the same email again only changes the role: who invited them first, and when, stay.
+            .onConflictDoUpdate({ target: [orgInvites.orgId, orgInvites.email], set: { role } });
           return ok({ status: "invited" as const });
         }
         const added = await db

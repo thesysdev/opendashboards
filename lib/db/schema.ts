@@ -65,6 +65,8 @@ export const users = pgTable(
 export const orgs = pgTable("orgs", {
   id: uuid("id").primaryKey().defaultRandom(),
   name: text("name").notNull(),
+  /** Who created it. */
+  createdBy: text("created_by").notNull(),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
@@ -76,10 +78,8 @@ export const orgMembers = pgTable(
       .references(() => orgs.id, { onDelete: "cascade" }),
     userId: text("user_id").notNull(),
     role: orgRoleEnum("role").notNull(),
-    /** Who added them. Null for the person who created the org. */
-    addedBy: text("added_by"),
-    /** No longer read or written: it backed a "New" mark in the switcher that was removed. Kept because migrations only add. */
-    seenAt: timestamp("seen_at", { withTimezone: true }),
+    /** Who added them: themselves, for whoever created the org. */
+    addedBy: text("added_by").notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [primaryKey({ columns: [table.orgId, table.userId] }), index("org_members_user_id_idx").on(table.userId)],
