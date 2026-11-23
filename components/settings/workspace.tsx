@@ -189,7 +189,7 @@ export function MemberRow({
   lastAdmin,
 }: {
   orgId: string;
-  member: { userId: string; email: string | null; role: OrgRole; you: boolean };
+  member: { userId: string; email: string | null; role: OrgRole; you: boolean; appCount: number };
   canManage: boolean;
   lastAdmin: boolean;
 }) {
@@ -236,15 +236,23 @@ export function MemberRow({
             <AlertDialogContent>
               <AlertDialogHeader>
                 <AlertDialogTitle>Remove {name}?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  They lose access to this workspace straight away. Their apps stay in it, and connections they added keep
-                  working.
+                <AlertDialogDescription asChild>
+                  <div className="space-y-2">
+                    {member.appCount > 0 && (
+                      <p className="font-medium text-destructive">
+                        This also deletes {member.appCount === 1 ? "the 1 app" : `the ${member.appCount} apps`} they made, with
+                        every dashboard in {member.appCount === 1 ? "it" : "them"}, for everyone they&apos;re shared with. It
+                        can&apos;t be undone.
+                      </p>
+                    )}
+                    <p>They lose access to this workspace straight away. Connections they added keep working.</p>
+                  </div>
                 </AlertDialogDescription>
               </AlertDialogHeader>
               <AlertDialogFooter>
                 <AlertDialogCancel>Cancel</AlertDialogCancel>
                 <AlertDialogAction variant="destructive" onClick={remove}>
-                  Remove
+                  {member.appCount > 0 ? "Remove and delete their apps" : "Remove"}
                 </AlertDialogAction>
               </AlertDialogFooter>
             </AlertDialogContent>

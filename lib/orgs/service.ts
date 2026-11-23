@@ -15,7 +15,15 @@ export type OrgSummary = {
   /** They were added and haven't opened it yet. */
 };
 
-export type OrgMember = { userId: string; email: string | null; role: OrgRole; you: boolean; joinedAt: Date };
+export type OrgMember = {
+  userId: string;
+  email: string | null;
+  role: OrgRole;
+  you: boolean;
+  joinedAt: Date;
+  /** How many apps they own here: removing them deletes these. */
+  appCount: number;
+};
 export type OrgInvite = { email: string; role: OrgRole; invitedAt: Date };
 
 export type OrgDetail = {
@@ -243,6 +251,15 @@ export function createOrgService({ db }: { db: Database }) {
         .leftJoin(users, eq(users.id, orgMembers.userId))
         .where(eq(orgMembers.orgId, orgId))
         .orderBy(asc(orgMembers.createdAt), asc(orgMembers.userId));
+      const owned = new Map(
+        (
+          await db
+            .select({ userId: apps.userId, count: count() })
+            .from(apps)
+            .where(eq(apps.orgId, orgId))
+            .groupBy(apps.userId)
+        ).map((row) => [row.userId, row.count]),
+      );
       const invites = await db
         .select({ email: orgInvites.email, role: orgInvites.role, invitedAt: orgInvites.createdAt })
         .from(orgInvites)
@@ -252,7 +269,7 @@ export function createOrgService({ db }: { db: Database }) {
         id: org.id,
         name: org.name,
         role,
-        members: members.map((member) => ({ ...member, you: member.userId === userId })),
+        members: members.map((member) => ({ ...member, you: member.userId === userId, appCount: owned.get(member.userId) ?? 0 })),
         invites,
       };
     },
@@ -318,6 +335,32 @@ export function createOrgService({ db }: { db: Database }) {
     },
 
     /** Removes someone else from a workspace. Their apps and connections stay where they are. */
+    /**
+     * The OpenUI Cloud dashboards of the apps a member owns here, which
+     * removing them deletes. Checked as `removeMember` checks: the caller
+     * deletes these in Cloud first, then calls it.
+     */
+    async memberDashboardsToDelete(userId: string, input: unknown): Promise<OrgResult<{ artifactIds: string[] }>> {
+      const parsed = memberRefSchema.safeParse(input);
+      if (!parsed.success) return notFound();
+      const { orgId, userId: memberId } = parsed.data;
+      const allowed = await managed(userId, orgId);
+      if (!allowed.ok) return allowed;
+      if (memberId === userId) return fail({ code: "conflict", message: "To remove yourself, leave the workspace." });
+      if (!(await roleIn(db, memberId, orgId))) return fail({ code: "not_found", message: "This person is no longer a member." });
+      const rows = await db
+        .select({ artifactId: dashboards.artifactId })
+        .from(dashboards)
+        .innerJoin(apps, eq(apps.id, dashboards.appId))
+        .where(and(eq(apps.orgId, orgId), eq(apps.userId, memberId)));
+      return ok({ artifactIds: rows.map((row) => row.artifactId) });
+    },
+
+    /**
+     * Removes someone from a workspace, and deletes every app they own in it
+     * with its dashboards, chat threads and guests: nobody left could open
+     * or delete a private one. Connections they added stay. Admins only.
+     */
     removeMember(userId: string, input: unknown): Promise<OrgResult> {
       return guard("removeMember", async () => {
         const parsed = memberRefSchema.safeParse(input);
@@ -326,12 +369,16 @@ export function createOrgService({ db }: { db: Database }) {
         const allowed = await managed(userId, orgId);
         if (!allowed.ok) return allowed;
         if (memberId === userId) return fail({ code: "conflict", message: "To remove yourself, leave the workspace." });
-        const removed = await db
-          .delete(orgMembers)
-          .where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, memberId)))
-          .returning({ userId: orgMembers.userId });
+        const removed = await db.transaction(async (tx) => {
+          const gone = await tx
+            .delete(orgMembers)
+            .where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, memberId)))
+            .returning({ userId: orgMembers.userId });
+          if (gone.length) await tx.delete(apps).where(and(eq(apps.orgId, orgId), eq(apps.userId, memberId)));
+          return gone.length > 0;
+        });
         await forgetAppShares(orgId, memberId);
-        return removed.length ? ok(undefined) : fail({ code: "not_found", message: "This person is no longer a member." });
+        return removed ? ok(undefined) : fail({ code: "not_found", message: "This person is no longer a member." });
       });
     },
 

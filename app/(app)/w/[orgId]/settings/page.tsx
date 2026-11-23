@@ -69,7 +69,7 @@ async function WorkspaceSettings({ params }: { params: Params }) {
               <MemberRow
                 key={entry.userId}
                 orgId={org.id}
-                member={{ userId: entry.userId, email: entry.email, role: entry.role, you: entry.you }}
+                member={{ userId: entry.userId, email: entry.email, role: entry.role, you: entry.you, appCount: entry.appCount }}
                 canManage={admin}
                 // A workspace always keeps an admin: the last one can't be demoted.
                 lastAdmin={entry.role === "admin" && admins <= 1}

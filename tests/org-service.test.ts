@@ -240,6 +240,30 @@ describe("roles and leaving", () => {
     expect(await db.select().from(orgMembers).where(eq(orgMembers.orgId, orgId))).toHaveLength(1);
   });
 
+  it("deletes the apps of someone removed, says how many first, and keeps everyone else's", async () => {
+    const orgId = await withBob();
+    const [{ id: own }] = await service.list(bob.id);
+    const [bobs] = await db.insert(apps).values({ userId: bob.id, orgId, name: "Bob's app" }).returning();
+    await db.insert(dashboards).values({ appId: bobs.id, userId: bob.id, artifactId: "art_bob", title: "Signups", position: 0 });
+    const [alices] = await db.insert(apps).values({ userId: alice.id, orgId, name: "Alice's app" }).returning();
+    // Bob's app in his own workspace isn't this workspace's to delete.
+    const [elsewhere] = await db.insert(apps).values({ userId: bob.id, orgId: own, name: "Bob's own app" }).returning();
+
+    const members = (await service.get(alice.id, orgId))?.members ?? [];
+    expect(members.map(({ userId, appCount }) => ({ userId, appCount }))).toEqual([
+      { userId: alice.id, appCount: 1 },
+      { userId: bob.id, appCount: 1 },
+    ]);
+    // Their dashboards are named first, for the caller to delete in OpenUI Cloud; only an admin may ask.
+    expect(await service.memberDashboardsToDelete(alice.id, { orgId, userId: bob.id })).toEqual({ ok: true, data: { artifactIds: ["art_bob"] } });
+    expect(await service.memberDashboardsToDelete(bob.id, { orgId, userId: alice.id })).toMatchObject({ ok: false, error: { code: "forbidden" } });
+
+    expect(await service.removeMember(alice.id, { orgId, userId: bob.id })).toEqual({ ok: true, data: undefined });
+    const left = (await db.select({ id: apps.id }).from(apps)).map((row) => row.id).sort();
+    expect(left).toEqual([alices.id, elsewhere.id].sort());
+    expect(await db.select().from(dashboards).where(eq(dashboards.appId, bobs.id))).toEqual([]);
+  });
+
   it("lets a member who isn't the last admin leave", async () => {
     const orgId = await withBob("viewer");
     expect(await service.leave(bob.id, { orgId })).toEqual({ ok: true, data: undefined });

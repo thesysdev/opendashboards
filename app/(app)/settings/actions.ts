@@ -101,10 +101,24 @@ export async function changeMemberRoleAction(input: unknown): Promise<OrgResult>
   return result;
 }
 
+/**
+ * Removes someone from a workspace, with every app they own in it. Their
+ * dashboards are deleted in OpenUI Cloud first, so none are left behind;
+ * then the rest.
+ */
 export async function removeMemberAction(input: unknown): Promise<OrgResult> {
   const user = await requireKnownUser();
-  const result = await getOrgService().removeMember(user.id, input);
-  if (result.ok) revalidateShell();
+  const orgs = getOrgService();
+  const plan = await orgs.memberDashboardsToDelete(user.id, input);
+  if (!plan.ok) return plan;
+  if (!(await deleteDashboardsInCloud(plan.data.artifactIds))) {
+    return fail({ code: "internal", message: "OpenUI Cloud couldn't delete some of their dashboards. Nobody was removed. Try again." });
+  }
+  const result = await orgs.removeMember(user.id, input);
+  if (result.ok) {
+    track(user.id, "workspace_member_removed", { dashboards_deleted: plan.data.artifactIds.length });
+    revalidateShell();
+  }
   return result;
 }
 
