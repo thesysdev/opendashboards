@@ -396,7 +396,7 @@ function TextareaWithFile({
 
 const AUTH_CHOICES: Record<McpAuth, { title: string; who: string }> = {
   oauth: { title: "Sign in", who: "Just for you" },
-  key: { title: "API key", who: "Can be shared with your team" },
+  key: { title: "API key", who: "Everyone in your workspace can use it" },
 };
 
 /**
@@ -418,7 +418,7 @@ function AuthChoice({
 }) {
   const note =
     value === "oauth"
-      ? `You sign in on ${server}'s own page. Dashboards always run with each person's own sign-in, never yours.`
+      ? `You sign in on ${server}'s own page. It's yours alone until you share it with your workspace.`
       : "Sent with every request. Anyone you share a dashboard with sees what this key can see.";
   return (
     <Field>

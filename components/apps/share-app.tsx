@@ -119,7 +119,8 @@ export function ShareApp({
         )}
       </div>
       <Dialog open={open} onOpenChange={openDialog}>
-        <DialogContent className="max-h-[calc(100dvh-2rem)] overflow-y-auto sm:max-w-md">
+        {/* One column no wider than the dialog: on a phone a long email is cut short, and what's beside it stays on screen. */}
+        <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Share “{app.name}”</DialogTitle>
             <DialogDescription className="sr-only">Its dashboards are shared with it. Chats stay your own.</DialogDescription>
@@ -225,8 +226,8 @@ export function ShareApp({
             <p>Only share with people you trust.</p>
             {personalConnections > 0 && (
               <p>
-                This app uses {personalConnections === 1 ? "1 connection" : `${personalConnections} connections`} only you can query.
-                Others will be asked to sign in.
+                This app uses {personalConnections === 1 ? "1 connection" : `${personalConnections} connections`} with a personal
+                sign-in. Teammates sign in themselves to see its data.
               </p>
             )}
           </div>

@@ -292,8 +292,10 @@ function DeleteDialog({
   const [refusedBy, setRefusedBy] = useState<Connection["apps"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // Refused over apps the reader can't open: there are none to name, only the server's reason.
+  const [refusal, setRefusal] = useState<string | null>(null);
   const blockingApps = refusedBy ?? connection.apps;
-  const blocked = blockingApps.length > 0;
+  const blocked = blockingApps.length > 0 || refusal !== null;
 
   // Opened by the row menu through `open`, which doesn't call onOpenChange.
   // Reset while rendering when it opens, so the first frame is already fresh.
@@ -302,6 +304,7 @@ function DeleteDialog({
     setWasOpen(open);
     if (open) {
       setRefusedBy(null);
+      setRefusal(null);
       setError(null);
     }
   }
@@ -312,8 +315,9 @@ function DeleteDialog({
       if (result.ok) {
         toast.success(`${connection.name} deleted`);
         onOpenChange(false);
-      } else if (result.error.code === "in_use" && result.error.apps) {
-        setRefusedBy(result.error.apps);
+      } else if (result.error.code === "in_use") {
+        if (result.error.apps?.length) setRefusedBy(result.error.apps);
+        else setRefusal(result.error.message);
       } else {
         setError(result.error.message);
       }
@@ -335,7 +339,9 @@ function DeleteDialog({
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div>
-              {blocked ? (
+              {blocked && !blockingApps.length ? (
+                <p>{refusal}</p>
+              ) : blocked ? (
                 <>
                   <p>Dashboards in these apps use this connection. Delete those apps first.</p>
                   <ul className="mt-3 list-disc pl-5 text-foreground">

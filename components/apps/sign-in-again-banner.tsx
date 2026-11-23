@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button";
 export function SignInAgainBanner({
   connections,
   others = [],
+  expired = [],
 }: {
   connections: { id: string; name: string }[];
   /**
@@ -24,10 +25,16 @@ export function SignInAgainBanner({
    * panels stay empty until they sign in themselves.
    */
   others?: { id: string; name: string }[];
+  /**
+   * Sign-ins a teammate shared with the workspace that have expired. Only
+   * that teammate can sign in again, so this says who to ask. `owner` is
+   * null for a guest, who isn't told who is in the workspace.
+   */
+  expired?: { id: string; name: string; owner: string | null }[];
 }) {
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
-  if (!connections.length && !others.length) return null;
+  if (!connections.length && !others.length && !expired.length) return null;
 
   function signIn(connectionId: string, own = true) {
     startTransition(async () => {
@@ -50,6 +57,25 @@ export function SignInAgainBanner({
             {pending && <Loader2Icon className="animate-spin" aria-hidden />}
             Sign in again
           </Button>
+        </div>
+      ))}
+      {expired.map((connection) => (
+        <div key={connection.id} className="flex items-center gap-3">
+          <KeyRoundIcon className="size-4 shrink-0 text-amber-700" aria-hidden />
+          <p className="min-w-0 flex-1">
+            {connection.owner ? (
+              <>
+                <span className="font-medium">{connection.owner}</span>&apos;s sign-in to{" "}
+                <span className="font-medium">{connection.name}</span> expired, so its data can&apos;t load. Ask them to sign in
+                again.
+              </>
+            ) : (
+              <>
+                The sign-in to <span className="font-medium">{connection.name}</span> expired, so its data can&apos;t load. Ask
+                whoever shared this app with you.
+              </>
+            )}
+          </p>
         </div>
       ))}
       {others.map((connection) => (

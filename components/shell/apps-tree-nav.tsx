@@ -88,6 +88,8 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
               <Link
                 href={appPath(app.id)}
                 onDoubleClick={(event) => {
+                  // Renaming is for whoever can change the app.
+                  if (!app.canChange) return;
                   event.preventDefault();
                   setEditing(app.id);
                 }}
@@ -145,6 +147,7 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                       <>
                       <Link
                         onDoubleClick={(event) => {
+                          if (!app.canChange) return;
                           event.preventDefault();
                           setEditing(dashboard.id);
                         }}

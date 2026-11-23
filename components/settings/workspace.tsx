@@ -368,6 +368,16 @@ export function DeleteWorkspaceButton({ orgId, name }: { orgId: string; name: st
     });
   }
 
+  // Every way of closing it (Cancel, Escape, a click outside) forgets what was typed.
+  function change(next: boolean) {
+    if (pending) return;
+    if (!next) {
+      setTyped("");
+      setError(null);
+    }
+    setOpen(next);
+  }
+
   return (
     <>
       <Button variant="destructive" size="sm" onClick={() => setOpen(true)} className="shrink-0">
@@ -375,14 +385,7 @@ export function DeleteWorkspaceButton({ orgId, name }: { orgId: string; name: st
       </Button>
       <Dialog
         open={open}
-        onOpenChange={(next) => {
-          if (pending) return;
-          if (!next) {
-            setTyped("");
-            setError(null);
-          }
-          setOpen(next);
-        }}
+        onOpenChange={change}
       >
         <DialogContent className="sm:max-w-md">
           <form onSubmit={submit} noValidate>
@@ -411,7 +414,7 @@ export function DeleteWorkspaceButton({ orgId, name }: { orgId: string; name: st
               <FieldError>{error}</FieldError>
             </Field>
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setOpen(false)} disabled={pending}>
+              <Button type="button" variant="outline" onClick={() => change(false)} disabled={pending}>
                 Cancel
               </Button>
               <Button type="submit" variant="destructive" disabled={!matches || pending}>

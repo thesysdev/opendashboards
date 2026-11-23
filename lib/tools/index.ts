@@ -100,6 +100,18 @@ function fromSource(source: ConnectionSource, tool: SourceTool<Record<string, un
             // The caller gets a short message; keep the cause (network error, PostHog's
             // detail) in the server log, where it can be diagnosed.
             if (known.status === "unavailable") logError(`tools.${tool.name}`, error);
+            if (known.error.code === "reauth_required") {
+              // Someone else's sign-in, shared with the workspace: only they can sign in again.
+              const owner = await getConnectionService().signInOwner(context.userId, connection.id);
+              if (owner) {
+                throw new ToolError(
+                  "reauth_required",
+                  owner.email
+                    ? `${owner.email}'s sign-in to ${owner.name} expired. Ask them to sign in again.`
+                    : `The sign-in to ${owner.name} expired. Ask whoever shared this app with you.`,
+                );
+              }
+            }
             throw new ToolError(known.error.code, known.error.message);
           }
           logError(`tools.${tool.name}`, error);

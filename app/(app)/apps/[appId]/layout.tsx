@@ -85,6 +85,10 @@ async function AppView({ params, children }: { params: Params; children: React.R
               // Signing in again is for whoever signed in: a teammate's sign-in isn't theirs to renew.
               .filter((connection) => connection.signIn === "oauth" && connection.status === "invalid" && connection.mine)
               .map(({ id, name }) => ({ id, name }))}
+            // A sign-in shared with the workspace is its owner's to renew: everyone else is told who to ask.
+            expired={app.connections
+              .filter((connection) => connection.signIn === "oauth" && connection.status === "invalid" && !connection.mine && connection.sharing === "org")
+              .map(({ id, name, ownerEmail }) => ({ id, name, owner: ownerEmail }))}
             // A guest can't sign in to a workspace's sources: only its members can.
             others={app.guest ? [] : app.connections.filter((connection) => connection.needsSignIn).map(({ id, name }) => ({ id, name }))}
           />

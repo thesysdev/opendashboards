@@ -108,6 +108,12 @@ export type AppDetail = {
      * to that server: its dashboards stay empty for them until they sign in.
      */
     needsSignIn: boolean;
+    /**
+     * Whose it is, when it's a teammate's: who to ask when a sign-in shared
+     * with the workspace expires. Null for the caller's own, and for a guest,
+     * who isn't told who is in the workspace.
+     */
+    ownerEmail: string | null;
   })[];
 };
 
@@ -277,6 +283,12 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
             .where(and(eq(dataConnections.orgId, grant.orgId), eq(dataConnections.userId, userId), eq(dataConnections.sharing, "personal")))
         : [];
       const signedInTo = new Set(ownSignIns.map((row) => serverOf(row.config)));
+      const otherOwners = grant.guest ? [] : [...new Set(badges.map((badge) => badge.ownerId).filter((id) => id !== userId))];
+      const ownerEmails = new Map(
+        otherOwners.length
+          ? (await db.select({ id: users.id, email: users.email }).from(users).where(inArray(users.id, otherOwners))).map((row) => [row.id, row.email])
+          : [],
+      );
       const { pendingConnectionIds: _ids, ...rest } = app;
       return {
         ...rest,
@@ -296,6 +308,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
           status,
           sharing,
           mine: ownerId === userId,
+          ownerEmail: ownerEmails.get(ownerId) ?? null,
           needsSignIn: sharing === "personal" && ownerId !== userId && !signedInTo.has(serverOf(config)),
           // Signed in with OAuth: when it's invalid, the fix is signing in again.
           signIn: config && typeof config === "object" && "oauth" in config && config.oauth ? ("oauth" as const) : null,

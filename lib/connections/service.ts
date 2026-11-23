@@ -764,6 +764,24 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     },
 
     /**
+     * Whose sign-in a connection is, for telling someone else that it
+     * expired: only its owner can sign in again. Null when it's the caller's
+     * own. The email only for a member of its workspace: a guest isn't told
+     * who is in it.
+     */
+    async signInOwner(userId: string, connectionId: string): Promise<{ name: string; email: string | null } | null> {
+      if (!isUuid(connectionId)) return null;
+      const [row] = await db
+        .select({ name: dataConnections.name, ownerId: dataConnections.userId, orgId: dataConnections.orgId, email: users.email })
+        .from(dataConnections)
+        .leftJoin(users, eq(users.id, dataConnections.userId))
+        .where(eq(dataConnections.id, connectionId))
+        .limit(1);
+      if (!row || row.ownerId === userId) return null;
+      return { name: row.name, email: (await roleIn(db, userId, row.orgId)) ? row.email : null };
+    },
+
+    /**
      * For a connection that didn't open: the teammate's personal sign-in it
      * is, when the reason is that the caller has no sign-in of their own to
      * that server. Its name and where it points, so they can be asked to sign in.
