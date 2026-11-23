@@ -1,5 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "regions": ["iad1"],
-  "buildCommand": "pnpm db:migrate && pnpm build"
+  "buildCommand": "pnpm db:migrate && pnpm build",
+  "functions": {
+    "app/api/**/*": {
+      "supportsCancellation": true
+    }
+  }
 }
