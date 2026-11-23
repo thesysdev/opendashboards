@@ -1,9 +1,9 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 import { workspacePath } from "@/lib/apps/paths";
-import { requireUser, UnauthorizedError } from "@/lib/auth/user";
+import { UnauthorizedError } from "@/lib/auth/user";
 import { finishMcpSignIn } from "@/lib/connections/mcp-sign-in";
-import { lastMember } from "@/lib/orgs";
+import { lastMember, requireKnownUser } from "@/lib/orgs";
 
 /**
  * Where an MCP server's authorization server sends the browser after sign-in.
@@ -15,7 +15,7 @@ import { lastMember } from "@/lib/orgs";
 export async function GET(request: NextRequest) {
   let userId: string;
   try {
-    userId = (await requireUser()).id;
+    userId = (await requireKnownUser()).id;
   } catch (error) {
     if (error instanceof UnauthorizedError) return new NextResponse("Unauthorized", { status: 401 });
     throw error;

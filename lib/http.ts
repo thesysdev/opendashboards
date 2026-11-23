@@ -1,6 +1,7 @@
 import "server-only";
 
-import { requireUser, UnauthorizedError, type CurrentUser } from "@/lib/auth/user";
+import { UnauthorizedError, type CurrentUser } from "@/lib/auth/user";
+import { requireKnownUser } from "@/lib/orgs";
 import { config } from "@/config";
 import type { AppErrorCode, AppResult } from "@/lib/apps/errors";
 import { withLogContext } from "@/lib/log";
@@ -36,7 +37,7 @@ export function route<Ctx>(
   return async (request: Request, ctx: Ctx): Promise<Response> => {
     try {
       if (request.method !== "GET" && request.method !== "HEAD") assertSameOrigin(request);
-      const user = await requireUser();
+      const user = await requireKnownUser();
       return await withLogContext({ user: user.id }, () => handler(request, user, ctx));
     } catch (error) {
       if (error instanceof UnauthorizedError) return Response.json({ error: "Unauthorized" }, { status: 401 });

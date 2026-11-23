@@ -46,11 +46,27 @@ export type Member = {
 // Per process: who has had rows from before workspaces moved into one.
 const adopted = new Set<string>();
 
-/** The signed-in user and every workspace they're in. Sets the user up the first time they're seen. */
-const memberships = cache(async (): Promise<{ user: CurrentUser; orgs: OrgSummary[] }> => {
+/**
+ * The signed-in user, recorded. The first time someone is seen, this writes
+ * down their email and turns invites waiting for it into memberships.
+ * Everything that decides what a person may open matches on that record (a
+ * guest by their email, a member by their membership), so call this, never
+ * `requireUser`, wherever access is checked: someone's first request is often
+ * a link straight to an app. Cached per request; only the first request ever
+ * writes. Like `requireUser`, it reads the request, so in a page or layout it
+ * must run inside `<Suspense>`.
+ */
+export const requireKnownUser = cache(async (): Promise<CurrentUser> => {
   const user = await requireUser();
   const service = getOrgService();
   if (!(await service.isKnown(user))) await service.ensureUser(user);
+  return user;
+});
+
+/** The signed-in user and every workspace they're in. */
+const memberships = cache(async (): Promise<{ user: CurrentUser; orgs: OrgSummary[] }> => {
+  const user = await requireKnownUser();
+  const service = getOrgService();
   const orgs = await service.list(user.id);
   if (orgs.length && !adopted.has(user.id)) {
     adopted.add(user.id);
@@ -107,6 +123,6 @@ export function inWorkspace(input: unknown): { orgId: unknown; fields: unknown }
 
 /** What the signed-in user may do with an app, or null. Cached per request. */
 export const getAppGrant = cache(async (appId: string): Promise<AppGrant | null> => {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   return appAccess(getDb(), user.id, appId);
 });

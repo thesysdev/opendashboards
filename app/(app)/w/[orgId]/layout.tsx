@@ -11,8 +11,7 @@ import { RememberWorkspace } from "@/components/shell/remember-workspace";
 import { OpenSidebarButton, Sidebar } from "@/components/shell/sidebar";
 import { SidebarUser, SidebarUserFallback } from "@/components/shell/sidebar-user";
 import { workspacePath } from "@/lib/apps/paths";
-import { requireUser } from "@/lib/auth/user";
-import { lastMember, memberOf, NO_WORKSPACE_PATH, type Member } from "@/lib/orgs";
+import { lastMember, type Member, memberOf, NO_WORKSPACE_PATH, requireKnownUser } from "@/lib/orgs";
 
 type Params = Promise<{ orgId: string }>;
 
@@ -94,7 +93,7 @@ function SidebarFallback() {
 }
 
 async function IdentifyUser() {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   return <AnalyticsUser id={user.id} email={user.email} />;
 }
 

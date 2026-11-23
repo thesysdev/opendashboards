@@ -377,6 +377,29 @@ describe("a teammate's personal sign-in in a shared app", () => {
       error: { code: "not_found" },
     });
   });
+  it("counts the teammate's own sign-in to that server even once they've shared it with the workspace", async () => {
+    const { appId, eds } = await sharedWithSignIn();
+    const alices = await signedIn("alice", "org");
+    expect((await connections.open("alice", eds, "mcp", { orgId: acme }))?.id).toBe(alices);
+    expect(await connections.signInNeeded("alice", eds)).toBeNull();
+    expect((await appsService.get("alice", appId))?.connections.find((row) => row.id === eds)).toMatchObject({ needsSignIn: false });
+  });
+
+  it("asks the teammate, a viewer included, to sign in again when their own sign-in has expired", async () => {
+    const { appId, eds } = await sharedWithSignIn();
+    const veras = await signedIn("vera");
+    const own = async () => (await appsService.get("vera", appId))?.connections.find((row) => row.id === eds);
+    expect(await own()).toMatchObject({ needsSignIn: false, expiredOwnSignIn: null });
+
+    await db.update(dataConnections).set({ status: "invalid" }).where(eq(dataConnections.id, veras));
+    expect(await own()).toMatchObject({ needsSignIn: false, expiredOwnSignIn: veras });
+    // Theirs to sign in to again, as a viewer; never Ed's.
+    const sign = { name: "Linear", config: { type: "mcp" as const, url: "https://mcp.linear.app/mcp", headerName: "Authorization" }, pending: "{}" };
+    expect(await connections.startSignIn(inAcme("vera"), { ...sign, connectionId: veras, stateHash: "e".repeat(64) })).toEqual({ ok: true, data: undefined });
+    expect(await connections.startSignIn(inAcme("vera"), { ...sign, connectionId: eds, stateHash: "f".repeat(64) })).toMatchObject({ ok: false });
+    // Ed's own sign-in isn't affected.
+    expect((await appsService.get("ed", appId))?.connections.find((row) => row.id === eds)).toMatchObject({ expiredOwnSignIn: null });
+  });
 });
 
 describe("sharing an app with specific teammates", () => {
@@ -647,6 +670,25 @@ describe("guests of an app", () => {
 
     expect(await appsService.removeGuest("alice", { id: appId, email: "gina@example.com" })).toEqual({ ok: true, data: undefined });
     expect(await appAccess(db, "gina", appId)).toBeNull();
+  });
+
+  it("stay guests when they join the workspace, until the workspace itself opens the app", async () => {
+    const { appId } = await withGuest();
+    await seedTeam(db, "Acme", { gina: "editor" });
+    try {
+      // The workspace doesn't open this private app for her: she's still its guest, and it's listed as one.
+      expect(await appAccess(db, "gina", appId)).toMatchObject({ access: "view", guest: true });
+      expect((await appsService.sharedWithGuest("gina")).map((row) => row.id)).toEqual([appId]);
+      expect((await appsService.tree(inAcme("gina"))).map((row) => row.id)).not.toContain(appId);
+
+      // Once the workspace opens it, that's how she has it: listed with the workspace's apps, never both.
+      await appsService.setTeamAccess("ed", { id: appId, teamAccess: "edit" });
+      expect(await appAccess(db, "gina", appId)).toMatchObject({ access: "edit", guest: false });
+      expect(await appsService.sharedWithGuest("gina")).toEqual([]);
+      expect((await appsService.tree(inAcme("gina"))).map((row) => row.id)).toContain(appId);
+    } finally {
+      await db.delete(orgMembers).where(sql`${orgMembers.userId} = 'gina' and ${orgMembers.orgId} = ${acme}`);
+    }
   });
 
   it("go with the app when it's deleted", async () => {

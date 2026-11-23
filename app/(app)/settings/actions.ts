@@ -7,11 +7,10 @@ import { redirect } from "next/navigation";
 import { config } from "@/config";
 import { track } from "@/lib/analytics";
 import { DEV_USER_COOKIE, DEV_USER_NAMES } from "@/lib/auth/providers/dev";
-import { requireUser } from "@/lib/auth/user";
 import { deleteDashboardsInCloud } from "@/lib/dashboards";
 import { getDb } from "@/lib/db";
 import { workspacePath } from "@/lib/apps/paths";
-import { getOrgService, LAST_ORG_COOKIE } from "@/lib/orgs";
+import { getOrgService, LAST_ORG_COOKIE, requireKnownUser } from "@/lib/orgs";
 import { roleIn } from "@/lib/orgs/access";
 import { fail, type OrgResult } from "@/lib/orgs/errors";
 
@@ -41,13 +40,13 @@ async function rememberOrg(orgId: string) {
  * membership again.
  */
 export async function rememberWorkspaceAction(orgId: unknown): Promise<void> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   if (typeof orgId === "string" && (await roleIn(getDb(), user.id, orgId))) await rememberOrg(orgId);
 }
 
 /** Creates a workspace. The caller opens it at its address. */
 export async function createOrgAction(input: unknown): Promise<OrgResult<{ id: string }>> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await getOrgService().create(user, input);
   if (!result.ok) return result;
   await rememberOrg(result.data.id);
@@ -61,7 +60,7 @@ export async function createOrgAction(input: unknown): Promise<OrgResult<{ id: s
  * and takes them into the app. Returns only on failure.
  */
 export async function createFirstWorkspaceAction(): Promise<OrgResult<never>> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await getOrgService().create(user);
   if (!result.ok) return result;
   await rememberOrg(result.data.id);
@@ -71,14 +70,14 @@ export async function createFirstWorkspaceAction(): Promise<OrgResult<never>> {
 }
 
 export async function renameOrgAction(input: unknown): Promise<OrgResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await getOrgService().rename(user.id, input);
   if (result.ok) revalidateShell();
   return result;
 }
 
 export async function inviteMemberAction(input: unknown): Promise<OrgResult<{ status: "added" | "invited" }>> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await getOrgService().invite(user.id, input);
   if (result.ok) {
     // The role and whether they already had an account: never the email.
@@ -89,21 +88,21 @@ export async function inviteMemberAction(input: unknown): Promise<OrgResult<{ st
 }
 
 export async function revokeInviteAction(input: unknown): Promise<OrgResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await getOrgService().revokeInvite(user.id, input);
   if (result.ok) revalidateShell();
   return result;
 }
 
 export async function changeMemberRoleAction(input: unknown): Promise<OrgResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await getOrgService().changeRole(user.id, input);
   if (result.ok) revalidateShell();
   return result;
 }
 
 export async function removeMemberAction(input: unknown): Promise<OrgResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await getOrgService().removeMember(user.id, input);
   if (result.ok) revalidateShell();
   return result;
@@ -111,7 +110,7 @@ export async function removeMemberAction(input: unknown): Promise<OrgResult> {
 
 /** Leaves a workspace. Whichever of their others opens next; with none left, they're asked to create one. */
 export async function leaveOrgAction(input: unknown): Promise<OrgResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await getOrgService().leave(user.id, input);
   if (!result.ok) return result;
   (await cookies()).delete(LAST_ORG_COOKIE);
@@ -125,7 +124,7 @@ export async function leaveOrgAction(input: unknown): Promise<OrgResult> {
  * none are left behind; then the rest. Returns only on failure.
  */
 export async function deleteOrgAction(input: unknown): Promise<OrgResult<never>> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const orgs = getOrgService();
   const plan = await orgs.dashboardsToDelete(user.id, input);
   if (!plan.ok) return plan;

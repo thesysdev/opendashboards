@@ -6,9 +6,8 @@ import { track } from "@/lib/analytics";
 import { getConnectionService } from "@/lib/connections";
 import { startMcpSignIn } from "@/lib/connections/mcp-sign-in";
 import { withLogContext } from "@/lib/log";
-import { requireUser } from "@/lib/auth/user";
 import { fail, type Result } from "@/lib/connections/errors";
-import { inWorkspace, memberOf, type Member } from "@/lib/orgs";
+import { inWorkspace, type Member, memberOf, requireKnownUser } from "@/lib/orgs";
 
 /*
  * Each action is a public POST endpoint: it authenticates itself, and the
@@ -22,7 +21,7 @@ async function run<T>(
   call: (user: { userId: string }) => Promise<Result<T>>,
   { refreshOnFailure = false } = {},
 ): Promise<Result<T>> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await withLogContext({ user: user.id }, () => call({ userId: user.id }));
   if (result.ok || refreshOnFailure) refresh();
   return result;

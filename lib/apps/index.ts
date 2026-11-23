@@ -2,11 +2,11 @@ import "server-only";
 
 import { cache } from "react";
 
-import { requireUser } from "@/lib/auth/user";
 import { getDb } from "@/lib/db";
 
 import { createAppService, type AppService } from "./service";
 import { createThreadService, type ThreadService } from "./threads";
+import { requireKnownUser } from "@/lib/orgs";
 
 export type { AppDetail, AppGuest, AppSummary, AppTeammate, AppTreeNode, WorkspaceGuest } from "./service";
 export type { AppThread } from "./threads";
@@ -29,6 +29,6 @@ export function getThreadService(): ThreadService {
  * and the dashboard page share one lookup.
  */
 export const getCurrentUserApp = cache(async (appId: string) => {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   return getAppService().get(user.id, appId);
 });

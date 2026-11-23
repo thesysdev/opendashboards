@@ -242,8 +242,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         and(
           eq(dataConnections.orgId, found.row.orgId),
           eq(dataConnections.userId, userId),
+          // Theirs, whether or not they've shared it with the workspace.
           eq(dataConnections.type, found.row.type),
-          eq(dataConnections.sharing, "personal"),
         ),
       )
       .orderBy(asc(dataConnections.createdAt));

@@ -4,9 +4,8 @@ import { Suspense } from "react";
 
 import { Brand } from "@/components/shell/brand";
 import { CreateFirstWorkspace } from "@/components/settings/create-first-workspace";
-import { lastMember } from "@/lib/orgs";
+import { lastMember, requireKnownUser } from "@/lib/orgs";
 import { defaultWorkspaceName } from "@/lib/orgs/service";
-import { requireUser } from "@/lib/auth/user";
 
 export const metadata: Metadata = { title: "Create your workspace", robots: { index: false, follow: false } };
 
@@ -33,7 +32,7 @@ export default function WelcomePage() {
 async function NoWorkspace() {
   // Anyone who already has a workspace has no business here.
   if (await lastMember()) redirect("/apps");
-  const user = await requireUser();
+  const user = await requireKnownUser();
   return (
     <>
       <h1 className="text-xl font-bold tracking-tight">Create your workspace</h1>

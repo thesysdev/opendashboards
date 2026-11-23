@@ -13,8 +13,7 @@ import { BuildChat } from "@/components/apps/build-chat";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getAppService, getCurrentUserApp, type AppDetail } from "@/lib/apps";
 import { GuestAppMarker } from "@/components/shell/sidebar";
-import { requireUser } from "@/lib/auth/user";
-import { memberOf } from "@/lib/orgs";
+import { memberOf, requireKnownUser } from "@/lib/orgs";
 import { getConnectionService } from "@/lib/connections";
 
 /**
@@ -47,7 +46,7 @@ async function AppView({ params, children }: { params: Params; children: React.R
   const app = await getCurrentUserApp(appId);
   // Only at its own workspace's address.
   if (!app || app.orgId !== orgId) notFound();
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const connections = app.canChange ? await getConnectionService().list({ userId: user.id, orgId: app.orgId }) : [];
   const inApp = new Set(app.connections.map((connection) => connection.id));
   const guests = app.canChange ? await getAppService().guests(user.id, app.id) : [];
@@ -82,10 +81,14 @@ async function AppView({ params, children }: { params: Params; children: React.R
         <>
           <SignInResult />
           <SignInAgainBanner
-            connections={app.connections
+            connections={[
               // Signing in again is for whoever signed in: a teammate's sign-in isn't theirs to renew.
-              .filter((connection) => connection.signIn === "oauth" && connection.status === "invalid" && connection.mine)
-              .map(({ id, name }) => ({ id, name }))}
+              ...app.connections
+                .filter((connection) => connection.signIn === "oauth" && connection.status === "invalid" && connection.mine)
+                .map(({ id, name }) => ({ id, name })),
+              // A teammate's personal sign-in runs as the reader's own sign-in to the same server: theirs to renew.
+              ...app.connections.flatMap(({ name, expiredOwnSignIn }) => (expiredOwnSignIn ? [{ id: expiredOwnSignIn, name }] : [])),
+            ]}
             // A sign-in shared with the workspace is its owner's to renew: everyone else is told who to ask.
             expired={app.connections
               .filter((connection) => connection.signIn === "oauth" && connection.status === "invalid" && !connection.mine && connection.sharing === "org")

@@ -3,7 +3,7 @@ import Link from "next/link";
 import { Suspense } from "react";
 
 import { Button } from "@/components/ui/button";
-import { requireUser } from "@/lib/auth/user";
+import { requireKnownUser } from "@/lib/orgs";
 
 /**
  * What someone sees at a link to an app or dashboard they can't open: most
@@ -33,7 +33,7 @@ export default function AppNotFound() {
 
 /** Which account they're on: a link shared with another address is the usual reason. Reads the request, so it streams in. */
 async function SignedInAs() {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   return (
     <p className="mt-4 max-w-md text-sm text-muted-foreground">
       You&apos;re signed in as <span className="font-medium text-foreground">{user.email}</span>. If someone sent you this link,

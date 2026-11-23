@@ -113,6 +113,12 @@ export type AppDetail = {
      */
     needsSignIn: boolean;
     /**
+     * Someone else's personal sign-in that runs as the caller's own sign-in
+     * to the same server, which has expired: the id of the caller's own, for
+     * them to sign in to again. Null otherwise.
+     */
+    expiredOwnSignIn: string | null;
+    /**
      * Whose it is, when it's a teammate's: who to ask when a sign-in shared
      * with the workspace expires. Null for the caller's own, and for a guest,
      * who isn't told who is in the workspace.
@@ -280,15 +286,26 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         .innerJoin(orgMembers, and(eq(orgMembers.orgId, grant.orgId), eq(orgMembers.userId, appMembers.userId)))
         .where(eq(appMembers.appId, app.id));
       const badges = await connectionBadges([app.id]);
-      // The servers the caller has signed in to themselves: a teammate's sign-in to the same server is covered by theirs.
+      // The servers the caller has signed in to themselves, shared with the workspace or not: a teammate's
+      // personal sign-in to the same server runs as theirs. One that has expired is theirs to renew.
       const others = badges.filter((badge) => badge.sharing === "personal" && badge.ownerId !== userId);
       const ownSignIns = others.length
         ? await db
-            .select({ config: dataConnections.config })
+            .select({ id: dataConnections.id, config: dataConnections.config, status: dataConnections.status })
             .from(dataConnections)
-            .where(and(eq(dataConnections.orgId, grant.orgId), eq(dataConnections.userId, userId), eq(dataConnections.sharing, "personal")))
+            .where(and(eq(dataConnections.orgId, grant.orgId), eq(dataConnections.userId, userId)))
+            .orderBy(asc(dataConnections.createdAt))
         : [];
-      const signedInTo = new Set(ownSignIns.map((row) => serverOf(row.config)));
+      const signedInTo = new Map<string | null, { id: string; expired: boolean }>();
+      for (const row of ownSignIns) {
+        const server = serverOf(row.config);
+        if (server && !signedInTo.has(server)) signedInTo.set(server, { id: row.id, expired: row.status === "invalid" });
+      }
+      const expiredOwn = (sharing: string, ownerId: string, config: unknown) => {
+        if (sharing !== "personal" || ownerId === userId) return null;
+        const own = signedInTo.get(serverOf(config));
+        return own?.expired ? own.id : null;
+      };
       const otherOwners = grant.guest ? [] : [...new Set(badges.map((badge) => badge.ownerId).filter((id) => id !== userId))];
       const ownerEmails = new Map(
         otherOwners.length
@@ -316,6 +333,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
           mine: ownerId === userId,
           ownerEmail: ownerEmails.get(ownerId) ?? null,
           needsSignIn: sharing === "personal" && ownerId !== userId && !signedInTo.has(serverOf(config)),
+          expiredOwnSignIn: expiredOwn(sharing, ownerId, config),
           // Signed in with OAuth: when it's invalid, the fix is signing in again.
           signIn: config && typeof config === "object" && "oauth" in config && config.oauth ? ("oauth" as const) : null,
         })),
@@ -467,23 +485,33 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
     },
 
     /**
-     * The apps this user may view as a guest: listed by email on an app of a
-     * workspace they aren't in. Most recently updated first.
+     * The apps this user may view only as a guest: listed by email on an app
+     * that their place in its workspace, if they have one, doesn't open for
+     * them. An app the workspace does open shows with the workspace's apps
+     * instead: team access wins, and the two are never merged. Most recently
+     * updated first.
      */
     async sharedWithGuest(userId: string): Promise<AppTreeNode[]> {
       const appRows = await db
-        .select({ id: apps.id, name: apps.name, orgId: apps.orgId })
+        .select({
+          id: apps.id,
+          name: apps.name,
+          orgId: apps.orgId,
+          ownerId: apps.userId,
+          teamAccess: apps.teamAccess,
+          role: orgMembers.role,
+          own: appMembers.access,
+        })
         .from(appGuests)
         .innerJoin(users, eq(users.email, appGuests.email))
         .innerJoin(apps, eq(apps.id, appGuests.appId))
+        .leftJoin(orgMembers, and(eq(orgMembers.orgId, apps.orgId), eq(orgMembers.userId, userId)))
+        .leftJoin(appMembers, and(eq(appMembers.appId, apps.id), eq(appMembers.userId, userId)))
         .where(eq(users.id, userId))
         .orderBy(desc(apps.updatedAt), desc(apps.id));
-      if (!appRows.length) return [];
-      // An app of a workspace they're in shows there, with whatever that membership gives them.
-      const memberOf = new Set(
-        (await db.select({ orgId: orgMembers.orgId }).from(orgMembers).where(eq(orgMembers.userId, userId))).map((row) => row.orgId),
+      const guestOf = appRows.filter(
+        (app) => app.orgId && !(app.role && accessFor({ userId: app.ownerId, teamAccess: app.teamAccess }, userId, app.role, app.own)),
       );
-      const guestOf = appRows.filter((app) => app.orgId && !memberOf.has(app.orgId));
       if (!guestOf.length) return [];
       const dashboardRows = await db
         .select({ appId: dashboards.appId, id: dashboards.id, title: dashboards.title })

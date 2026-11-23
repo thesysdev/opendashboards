@@ -7,12 +7,11 @@ import { z } from "zod";
 import { config } from "@/config";
 import { DISCOVERY_PROMPT } from "@/components/onboarding/discovery-prompt";
 import { track } from "@/lib/analytics";
-import { requireUser } from "@/lib/auth/user";
 import { getAppService } from "@/lib/apps";
 import { getConnectionService } from "@/lib/connections";
 import { fail, type AppResult } from "@/lib/apps/errors";
 import { deleteAppDashboardsInCloud, deleteDashboard, getDashboardService, shareDashboardsWithApp } from "@/lib/dashboards";
-import { getAppGrant, inWorkspace, memberOf } from "@/lib/orgs";
+import { getAppGrant, inWorkspace, memberOf, requireKnownUser } from "@/lib/orgs";
 import { appPath, workspacePath } from "@/lib/apps/paths";
 
 /*
@@ -54,7 +53,7 @@ export async function createAppAction(input: unknown): Promise<AppResult<never>>
 }
 
 export async function renameAppAction(input: unknown): Promise<AppResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await getAppService().rename(user.id, input);
   if (result.ok) revalidateShell();
   return result;
@@ -68,7 +67,7 @@ const teamAccessInput = z.object({ id: z.uuid(), teamAccess: z.enum(["private", 
  * already were, which changes nothing), so everyone let in can load them.
  */
 export async function setAppTeamAccessAction(input: unknown): Promise<AppResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const parsed = teamAccessInput.safeParse(input);
   if (!parsed.success) return fail({ code: "not_found", message: "This app doesn't exist or was deleted." });
   const { id, teamAccess } = parsed.data;
@@ -97,7 +96,7 @@ const guestInput = z.object({ id: z.uuid(), email: z.string().max(300) }).strict
  * with the workspace), so the guest can load them.
  */
 export async function addAppGuestAction(input: unknown): Promise<AppResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const parsed = guestInput.safeParse(input);
   if (!parsed.success) return fail({ code: "not_found", message: "This app doesn't exist or was deleted." });
   const app = await getAppService().get(user.id, parsed.data.id);
@@ -116,7 +115,7 @@ export async function addAppGuestAction(input: unknown): Promise<AppResult> {
 
 /** Takes a guest's access to an app away. For whoever can change the app, and the workspace's admins. */
 export async function removeAppGuestAction(input: unknown): Promise<AppResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await getAppService().removeGuest(user.id, input);
   if (result.ok) revalidateShell();
   return result;
@@ -130,7 +129,7 @@ const memberInput = z.object({ id: z.uuid(), memberId: z.string().min(1).max(200
  * Cloud first (as when it's shared with the workspace), so they can load them.
  */
 export async function shareAppWithMemberAction(input: unknown): Promise<AppResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const parsed = memberInput.safeParse(input);
   if (!parsed.success) return fail({ code: "not_found", message: "This app doesn't exist or was deleted." });
   const app = await getAppService().get(user.id, parsed.data.id);
@@ -149,7 +148,7 @@ export async function shareAppWithMemberAction(input: unknown): Promise<AppResul
 
 /** Takes back what an app gave one teammate by name. For whoever can change the app. */
 export async function unshareAppWithMemberAction(input: unknown): Promise<AppResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await getAppService().unshareWithMember(user.id, input);
   if (result.ok) revalidateShell();
   return result;
@@ -157,7 +156,7 @@ export async function unshareAppWithMemberAction(input: unknown): Promise<AppRes
 
 /** Adds a connection the user can query to an app. */
 export async function addAppConnectionAction(input: unknown): Promise<AppResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const result = await getAppService().addConnection(user.id, input);
   if (result.ok) revalidateShell();
   return result;
@@ -165,7 +164,7 @@ export async function addAppConnectionAction(input: unknown): Promise<AppResult>
 
 /** Deletes the app and goes back to the list. Returns only on failure. */
 export async function deleteAppAction(input: unknown): Promise<AppResult<never>> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   // Its dashboards live in OpenUI Cloud; delete them first so none are left behind.
   const appId = (input as { id?: unknown } | null)?.id;
   // Back to the app's own workspace afterwards.
@@ -187,7 +186,7 @@ export async function deleteAppAction(input: unknown): Promise<AppResult<never>>
  * user picked.
  */
 export async function takePendingPromptAction(appId: string): Promise<string | null> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const pending = await getAppService().takePendingPrompt(user.id, appId);
   if (!pending) return null;
   const grant = await getAppGrant(appId);
@@ -212,7 +211,7 @@ const updateDashboardSchema = z
 
 /** Renames one of an app's dashboards, or changes its description. */
 export async function updateDashboardAction(input: unknown): Promise<AppResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const parsed = updateDashboardSchema.safeParse(input);
   if (!parsed.success) {
     const issue = parsed.error.issues[0];
@@ -237,7 +236,7 @@ const deleteDashboardSchema = z.object({ appId: z.uuid(), dashboardId: z.uuid() 
 
 /** Deletes one dashboard of an app, in OpenUI Cloud and in the sidebar. */
 export async function deleteDashboardAction(input: unknown): Promise<AppResult> {
-  const user = await requireUser();
+  const user = await requireKnownUser();
   const parsed = deleteDashboardSchema.safeParse(input);
   if (!parsed.success) return fail({ code: "not_found", message: "This dashboard doesn't exist or was deleted." });
   const { appId, dashboardId } = parsed.data;
