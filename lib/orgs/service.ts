@@ -2,7 +2,7 @@ import { and, asc, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import type { Database } from "@/lib/db";
-import { appMembers, apps, dashboards, dataConnections, mcpOAuthSignIns, orgInvites, orgMembers, orgs, users, type OrgRole } from "@/lib/db/schema";
+import { appConnections, appMembers, apps, dashboards, dataConnections, mcpOAuthSignIns, orgInvites, orgMembers, orgs, users, type OrgRole } from "@/lib/db/schema";
 import { logError } from "@/lib/log";
 
 import { canManageMembers, roleIn } from "./access";
@@ -109,6 +109,34 @@ export function createOrgService({ db }: { db: Database }) {
    * querying as them. Teammates are asked to sign in themselves. Connections
    * with a key or password aren't sign-ins, and keep serving the workspace.
    */
+  /**
+   * Someone removed from a workspace leaves no sign-in behind: their
+   * sign-ins there are deleted with their stored credentials, and taken off
+   * any teammate's app that used them, along with sign-ins they had started
+   * and not finished. Nobody left could use, renew or delete them. Teammates
+   * are asked to sign in themselves. Connections with a key or password stay.
+   */
+  async function deleteSignIns(orgId: string, userId: string): Promise<void> {
+    await db.transaction(async (tx) => {
+      const theirs = await tx
+        .select({ id: dataConnections.id })
+        .from(dataConnections)
+        .where(
+          and(
+            eq(dataConnections.orgId, orgId),
+            eq(dataConnections.userId, userId),
+            sql`${dataConnections.config} -> 'oauth' is not null`,
+          ),
+        );
+      const ids = theirs.map((row) => row.id);
+      if (ids.length) {
+        await tx.delete(appConnections).where(inArray(appConnections.connectionId, ids));
+        await tx.delete(dataConnections).where(inArray(dataConnections.id, ids));
+      }
+      await tx.delete(mcpOAuthSignIns).where(and(eq(mcpOAuthSignIns.orgId, orgId), eq(mcpOAuthSignIns.userId, userId)));
+    });
+  }
+
   async function stopSharingSignIns(orgId: string, userId: string): Promise<void> {
     await db
       .update(dataConnections)
@@ -398,7 +426,7 @@ export function createOrgService({ db }: { db: Database }) {
           return gone.length > 0;
         });
         await forgetAppShares(orgId, memberId);
-        await stopSharingSignIns(orgId, memberId);
+        await deleteSignIns(orgId, memberId);
         return removed ? ok(undefined) : fail({ code: "not_found", message: "This person is no longer a member." });
       });
     },

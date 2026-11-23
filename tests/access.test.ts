@@ -266,10 +266,17 @@ describe("connections in a team", () => {
     const eds = await signedIn("ed", "org");
     const key = await keyed("ed");
     const veras = await signedIn("vera", "org");
+    // A teammate's app that used Ed's sign-in.
+    const { appId } = await app("alice", "edit");
+    expect(await appsService.addConnection("alice", { appId, connectionId: eds })).toEqual({ ok: true, data: undefined });
 
+    // Removed: their sign-in is deleted outright, and taken off the app that used it. Their key stays.
     expect(await orgsService.removeMember("alice", { orgId: acme, userId: "ed" })).toEqual({ ok: true, data: undefined });
-    expect(await connections.open("alice", eds, "mcp")).toBeNull();
+    expect(await db.select().from(dataConnections).where(eq(dataConnections.id, eds))).toEqual([]);
+    expect((await appsService.get("alice", appId))?.connections.map((row) => row.id)).not.toContain(eds);
     expect(await connections.open("alice", key, "posthog")).not.toBeNull();
+
+    // Leaving: their sign-in stays theirs, but serves nobody else.
 
     expect(await orgsService.leave("vera", { orgId: acme })).toEqual({ ok: true, data: undefined });
     expect(await connections.open("alice", veras, "mcp")).toBeNull();

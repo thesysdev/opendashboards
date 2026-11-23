@@ -562,10 +562,12 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
 
         const personal = (await connectionBadges([id])).filter((connection) => connection.sharing === "personal");
         if (personal.length) {
+          const names = personal.map((connection) => connection.name).join(", ");
           return fail({
             code: "validation",
             field: "email",
-            message: `This app uses ${personal.map((connection) => connection.name).join(", ")} with a personal sign-in, which a guest can't query. Share that connection with the workspace, or remove it from the app, first.`,
+            // A connection can't be taken off an app (a known limitation), so the way out is a new app without it.
+            message: `This app uses ${names} with a personal sign-in, which a guest can't query. Share ${names} with the workspace first, or make a new app without it and share that one.`,
           });
         }
         // A teammate is shared with by name, with the access that goes with it: never as a guest.
