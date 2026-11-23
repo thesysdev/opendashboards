@@ -6,7 +6,7 @@ import { LiveDashboard } from "@/components/apps/live-dashboard";
 import { getCurrentUserApp } from "@/lib/apps";
 
 /** An app's home: its first dashboard, or the empty state when it has none. */
-export default function AppHomePage({ params }: { params: Promise<{ appId: string }> }) {
+export default function AppHomePage({ params }: { params: Promise<{ orgId: string; appId: string }> }) {
   return (
     <Suspense fallback={null}>
       <AppHome params={params} />
@@ -14,10 +14,10 @@ export default function AppHomePage({ params }: { params: Promise<{ appId: strin
   );
 }
 
-async function AppHome({ params }: { params: Promise<{ appId: string }> }) {
-  const { appId } = await params;
+async function AppHome({ params }: { params: Promise<{ orgId: string; appId: string }> }) {
+  const { orgId, appId } = await params;
   const app = await getCurrentUserApp(appId);
-  if (!app) notFound();
+  if (!app || app.orgId !== orgId) notFound();
 
   const first = app.dashboards[0];
   return first ? (

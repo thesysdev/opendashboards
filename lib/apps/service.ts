@@ -37,6 +37,8 @@ export type AppConnectionBadge = { id: string; name: string };
 
 export type AppSummary = {
   id: string;
+  /** Its workspace, for its address. */
+  orgId: string;
   name: string;
   updatedAt: Date;
   dashboardCount: number;
@@ -64,6 +66,8 @@ export const MAX_GUESTS_PER_APP = 50;
 
 export type AppTreeNode = {
   id: string;
+  /** Its workspace, for its address. A guest's app is in a workspace they aren't in. */
+  orgId: string;
   name: string;
   /** Whether the caller owns it. Otherwise a teammate shared it with the workspace, or they're its guest. */
   mine: boolean;
@@ -182,6 +186,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
       const badges = await connectionBadges(rows.map((row) => row.id));
       return rows.map(({ ownerId, ownerEmail, ...row }) => ({
         ...row,
+        orgId: scope.orgId,
         mine: ownerId === scope.userId,
         sharedBy: ownerId === scope.userId ? null : ownerEmail,
         connections: badges
@@ -219,6 +224,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
 
       return appRows.map(({ userId: ownerId, teamAccess, ...app }) => ({
         ...app,
+        orgId: scope.orgId,
         mine: ownerId === scope.userId,
         canChange: canChange(accessFor({ userId: ownerId, teamAccess }, scope.userId, role, own.get(app.id) ?? null) ?? "view", role),
         dashboards: dashboardRows
@@ -489,8 +495,9 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
           ),
         )
         .orderBy(asc(dashboards.position), asc(dashboards.createdAt));
-      return guestOf.map(({ id, name }) => ({
+      return guestOf.map(({ id, name, orgId }) => ({
         id,
+        orgId: orgId!,
         name,
         mine: false,
         canChange: false,

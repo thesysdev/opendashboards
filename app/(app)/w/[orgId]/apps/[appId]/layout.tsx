@@ -12,9 +12,9 @@ import { AppWorkspace } from "@/components/apps/app-workspace";
 import { BuildChat } from "@/components/apps/build-chat";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getAppService, getCurrentUserApp, type AppDetail } from "@/lib/apps";
-import { OpenAppOrg } from "@/components/shell/open-app-org";
 import { GuestAppMarker } from "@/components/shell/sidebar";
-import { requireMember } from "@/lib/orgs";
+import { requireUser } from "@/lib/auth/user";
+import { memberOf } from "@/lib/orgs";
 import { getConnectionService } from "@/lib/connections";
 
 /**
@@ -22,12 +22,13 @@ import { getConnectionService } from "@/lib/connections";
  * reaches one level down, so this passes the root's on to the dashboards.
  */
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
-  const { appId } = await params;
+  const { orgId, appId } = await params;
   const app = await getCurrentUserApp(appId);
-  return { title: { default: app?.name ?? "App", template: "%s · OpenDashboards" } };
+  const name = app?.orgId === orgId ? app.name : null;
+  return { title: { default: name ?? "App", template: "%s · OpenDashboards" } };
 }
 
-type Params = Promise<{ appId: string }>;
+type Params = Promise<{ orgId: string; appId: string }>;
 
 /**
  * The chrome shared by an app's pages: header, Build panel, and the mobile
@@ -42,22 +43,22 @@ export default function AppLayout({ params, children }: { params: Params; childr
 }
 
 async function AppView({ params, children }: { params: Params; children: React.ReactNode }) {
-  const { appId } = await params;
+  const { orgId, appId } = await params;
   const app = await getCurrentUserApp(appId);
-  if (!app) notFound();
-  const member = await requireMember();
-  // The connections of the app's own org, whichever org the user had open.
-  const connections = app.canChange ? await getConnectionService().list({ userId: member.userId, orgId: app.orgId }) : [];
+  // Only at its own workspace's address.
+  if (!app || app.orgId !== orgId) notFound();
+  const user = await requireUser();
+  const connections = app.canChange ? await getConnectionService().list({ userId: user.id, orgId: app.orgId }) : [];
   const inApp = new Set(app.connections.map((connection) => connection.id));
-  const guests = app.canChange ? await getAppService().guests(member.userId, app.id) : [];
-  const teammates = app.canChange ? await getAppService().teammates(member.userId, app.id) : [];
+  const guests = app.canChange ? await getAppService().guests(user.id, app.id) : [];
+  const teammates = app.canChange ? await getAppService().teammates(user.id, app.id) : [];
+  // Whoever can change the app is a member of its workspace.
+  const workspace = app.canChange ? (await memberOf(app.orgId))?.orgName : null;
 
   return (
     <>
     {/* A guest came for the dashboard: the sidebar starts collapsed for them. */}
     {app.guest && <GuestAppMarker />}
-    {/* A guest isn't in the app's workspace, so there's nothing of theirs to open there. */}
-    {!app.guest && member.orgId !== app.orgId && <OpenAppOrg orgId={app.orgId} />}
     <AppWorkspace
       // A fresh workspace per app, so the Build panel's open/closed default applies to each.
       key={app.id}
@@ -101,7 +102,7 @@ async function AppView({ params, children }: { params: Params; children: React.R
           <>
             <ShareApp
               app={{ id: app.id, name: app.name, teamAccess: app.teamAccess }}
-              workspace={member.orgs.find((org) => org.id === app.orgId)?.name ?? "your workspace"}
+              workspace={workspace ?? "your workspace"}
               owner={{ email: app.ownerEmail ?? "The owner", you: app.access === "owner" }}
               personalConnections={app.connections.filter((connection) => connection.sharing === "personal").length}
               guests={guests.map(({ email }) => email)}

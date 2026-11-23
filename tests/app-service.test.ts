@@ -202,11 +202,13 @@ describe("tree", () => {
       { appId: first, userId: "alice", artifactId: "art_a", title: "First tab", position: 0 },
     ]);
 
-    expect(await appsService.tree(workspaceOf("alice"))).toEqual([
-      { id: second, name: "Production: App 2", mine: true, canChange: true, dashboards: [] },
+    const scope = workspaceOf("alice");
+    expect(await appsService.tree(scope)).toEqual([
+      { id: second, orgId: scope.orgId, name: "Production: App 2", mine: true, canChange: true, dashboards: [] },
       {
         id: first,
         name: "Production: App 1",
+        orgId: scope.orgId,
         mine: true,
         canChange: true,
         dashboards: [

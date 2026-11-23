@@ -12,7 +12,8 @@ import { getAppService } from "@/lib/apps";
 import { getConnectionService } from "@/lib/connections";
 import { fail, type AppResult } from "@/lib/apps/errors";
 import { deleteAppDashboardsInCloud, deleteDashboard, getDashboardService, shareDashboardsWithApp } from "@/lib/dashboards";
-import { getAppGrant, requireMember } from "@/lib/orgs";
+import { getAppGrant, inWorkspace, memberOf } from "@/lib/orgs";
+import { appPath, workspacePath } from "@/lib/apps/paths";
 
 /*
  * Public POST endpoints like every Server Action: each authenticates itself,
@@ -27,12 +28,14 @@ const revalidateShell = () => revalidatePath("/", "layout");
 
 /** Creates the app and opens it. Returns only on failure. */
 export async function createAppAction(input: unknown): Promise<AppResult<never>> {
-  // In the org the user has open.
-  const member = await requireMember();
+  // In the workspace of the page it was sent from.
+  const { orgId, fields } = inWorkspace(input);
+  const member = await memberOf(orgId);
+  if (!member) return fail({ code: "not_found", message: "You aren't a member of this workspace any more. Reload the page." });
   const { user } = member;
-  const result = await getAppService().create(member, input);
+  const result = await getAppService().create(member, fields);
   if (!result.ok) return result;
-  const { prompt, connectionIds } = input as { prompt: string; connectionIds: string[] };
+  const { prompt, connectionIds } = fields as { prompt: string; connectionIds: string[] };
   const connections = (await getConnectionService().list(member)).filter((connection) => connectionIds.includes(connection.id));
   track(user.id, "app_created", {
     app_id: result.data.id,
@@ -47,7 +50,7 @@ export async function createAppAction(input: unknown): Promise<AppResult<never>>
           : "custom",
   });
   revalidateShell();
-  redirect(`/apps/${result.data.id}`);
+  redirect(appPath(member.orgId, result.data.id));
 }
 
 export async function renameAppAction(input: unknown): Promise<AppResult> {
@@ -165,6 +168,8 @@ export async function deleteAppAction(input: unknown): Promise<AppResult<never>>
   const user = await requireUser();
   // Its dashboards live in OpenUI Cloud; delete them first so none are left behind.
   const appId = (input as { id?: unknown } | null)?.id;
+  // Back to the app's own workspace afterwards.
+  const orgId = typeof appId === "string" ? (await getAppGrant(appId))?.orgId : undefined;
   if (typeof appId === "string" && z.uuid().safeParse(appId).success) {
     if (!(await deleteAppDashboardsInCloud(user.id, appId))) {
       return fail({ code: "internal", message: "OpenUI Cloud couldn't delete the app's dashboards. Try again." });
@@ -173,7 +178,7 @@ export async function deleteAppAction(input: unknown): Promise<AppResult<never>>
   const result = await getAppService().remove(user.id, input);
   if (!result.ok) return result;
   revalidateShell();
-  redirect("/apps");
+  redirect(orgId ? workspacePath(orgId) : "/apps");
 }
 
 /**

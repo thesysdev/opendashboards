@@ -43,6 +43,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/apps/paths";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 import { usePublishDashboardResponse, useSetCreatingDashboard } from "./app-workspace";
 import { scopeStorageToApp } from "@/lib/apps/thread-storage";
 import { cn } from "@/lib/utils";
@@ -481,6 +482,7 @@ function TurnEffects({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const orgId = useWorkspaceId();
   const processMessage = useThread((s) => s.processMessage);
   const isRunning = useThread((s) => s.isRunning);
 
@@ -556,8 +558,8 @@ function TurnEffects({
     const created = dashboards.find((dashboard) => dashboard.artifactId === opening.current);
     if (!created) return;
     opening.current = null;
-    if (parseAppPath(pathname).dashboardId !== created.id) router.push(dashboardPath(appId, created.id));
-  }, [appId, dashboards, pathname, router]);
+    if (parseAppPath(pathname).dashboardId !== created.id) router.push(dashboardPath(orgId, appId, created.id));
+  }, [appId, orgId, dashboards, pathname, router]);
 
   // When a turn ends, pick up titles and deletions.
   const wasRunning = useRef(false);

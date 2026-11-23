@@ -4,7 +4,7 @@ import { Suspense } from "react";
 
 import { Brand } from "@/components/shell/brand";
 import { CreateFirstWorkspace } from "@/components/settings/create-first-workspace";
-import { currentMember } from "@/lib/orgs";
+import { lastMember } from "@/lib/orgs";
 import { defaultWorkspaceName } from "@/lib/orgs/service";
 import { requireUser } from "@/lib/auth/user";
 
@@ -32,7 +32,7 @@ export default function WelcomePage() {
 
 async function NoWorkspace() {
   // Anyone who already has a workspace has no business here.
-  if (await currentMember()) redirect("/apps");
+  if (await lastMember()) redirect("/apps");
   const user = await requireUser();
   return (
     <>

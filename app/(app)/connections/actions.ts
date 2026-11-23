@@ -5,9 +5,10 @@ import { refresh } from "next/cache";
 import { track } from "@/lib/analytics";
 import { getConnectionService } from "@/lib/connections";
 import { startMcpSignIn } from "@/lib/connections/mcp-sign-in";
-import type { Result } from "@/lib/connections/errors";
 import { withLogContext } from "@/lib/log";
-import { requireMember, type Member } from "@/lib/orgs";
+import { requireUser } from "@/lib/auth/user";
+import { fail, type Result } from "@/lib/connections/errors";
+import { inWorkspace, memberOf, type Member } from "@/lib/orgs";
 
 /*
  * Each action is a public POST endpoint: it authenticates itself, and the
@@ -16,13 +17,24 @@ import { requireMember, type Member } from "@/lib/orgs";
  * Inputs are typed `unknown` on purpose: nothing from the client is trusted.
  */
 
+/** For a change to a connection that exists: it's in its own workspace, whichever page it's changed from. */
 async function run<T>(
-  call: (member: Member) => Promise<Result<T>>,
+  call: (user: { userId: string }) => Promise<Result<T>>,
   { refreshOnFailure = false } = {},
 ): Promise<Result<T>> {
-  const member = await requireMember();
-  const result = await withLogContext({ user: member.userId }, () => call(member));
+  const user = await requireUser();
+  const result = await withLogContext({ user: user.id }, () => call({ userId: user.id }));
   if (result.ok || refreshOnFailure) refresh();
+  return result;
+}
+
+/** For something new: it goes in the workspace of the page it was sent from, never another tab's. */
+async function runIn<T>(input: unknown, call: (member: Member, fields: unknown) => Promise<Result<T>>): Promise<Result<T>> {
+  const { orgId, fields } = inWorkspace(input);
+  const member = await memberOf(orgId);
+  if (!member) return fail({ code: "not_found", message: "You aren't a member of this workspace any more. Reload the page." });
+  const result = await withLogContext({ user: member.userId }, () => call(member, fields));
+  if (result.ok) refresh();
   return result;
 }
 
@@ -32,13 +44,16 @@ async function run<T>(
  * connection is saved when it comes back to /api/mcp/oauth/callback.
  */
 export async function startMcpSignInAction(input: unknown) {
-  return startMcpSignIn(await requireMember(), input);
+  const { orgId, fields } = inWorkspace(input);
+  const member = await memberOf(orgId);
+  if (!member) return fail({ code: "not_found", message: "You aren't a member of this workspace any more. Reload the page." });
+  return startMcpSignIn(member, fields);
 }
 
 export async function createConnectionAction(input: unknown) {
-  return run(async (member) => {
-    const result = await getConnectionService().create(member, input);
-    const type = (input as { type?: unknown } | null)?.type;
+  return runIn(input, async (member, fields) => {
+    const result = await getConnectionService().create(member, fields);
+    const type = (fields as { type?: unknown } | null)?.type;
     trackConnection(member.userId, typeof type === "string" ? type : "unknown", false, result);
     return result;
   });
@@ -76,8 +91,8 @@ export async function setConnectionSharingAction(input: unknown) {
 
 /** Installs a demo dataset: a connection of the org's that points at it. */
 export async function installDemoAction(input: unknown) {
-  return run(async (member) => {
-    const result = await getConnectionService().installDemo(member, input);
+  return runIn(input, async (member, fields) => {
+    const result = await getConnectionService().installDemo(member, fields);
     trackConnection(member.userId, "postgres", true, result);
     return result;
   });
@@ -85,7 +100,7 @@ export async function installDemoAction(input: unknown) {
 
 /** Uninstalls a demo dataset, unless an app uses it. */
 export async function uninstallDemoAction(input: unknown) {
-  return run((member) => getConnectionService().uninstallDemo(member, input));
+  return runIn(input, (member, fields) => getConnectionService().uninstallDemo(member, fields));
 }
 
 function trackConnection(userId: string, sourceType: string, isDemo: boolean, result: Result<unknown>) {

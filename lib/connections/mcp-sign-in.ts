@@ -39,7 +39,7 @@ export const mcpSignInRedirectUri = () => `${appConfig().appOrigin}/api/mcp/oaut
  * dashboards, on our own site. Anything else (another site, another path) is
  * refused, so the callback can never be an open redirect.
  */
-const RETURN_PATH = /^\/apps\/[0-9a-f-]{36}(\/dashboards\/[0-9a-f-]{36})?$/;
+const RETURN_PATH = /^\/w\/[0-9a-f-]{36}\/apps\/[0-9a-f-]{36}(\/[0-9a-f-]{36})?$/;
 
 const startSchema = z.union([
   z.object({ name: connectionNameSchema, url: z.string() }).strict(),
@@ -133,7 +133,7 @@ export async function finishMcpSignIn(
   userId: string,
   params: URLSearchParams,
   deps: Deps = {},
-): Promise<Result<{ id: string; returnTo: string | null }>> {
+): Promise<Result<{ id: string; orgId: string | null; returnTo: string | null }>> {
   const service = deps.service ?? getConnectionService();
   const state = params.get("state");
   if (!state) return fail({ code: "oauth_failed", message: "The sign-in came back without its state, so it can't be trusted. Start again." });
@@ -167,7 +167,7 @@ export async function finishMcpSignIn(
     const saved = await service.saveSignedIn(userId, { orgId: taken.orgId, connectionId: taken.connectionId, name: taken.name, config: taken.config, credential });
     // Checked again on the way out: only our own app paths, ever.
     const back = pending.returnTo && RETURN_PATH.test(pending.returnTo) ? pending.returnTo : null;
-    return saved.ok ? ok({ id: saved.data.id, returnTo: back }) : saved;
+    return saved.ok ? ok({ id: saved.data.id, orgId: taken.orgId, returnTo: back }) : saved;
   } catch (error) {
     return failure("finish", error);
   }

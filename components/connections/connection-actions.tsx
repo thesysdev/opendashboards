@@ -44,6 +44,7 @@ import type { ConnectionType } from "@/lib/sources/catalog";
 import { PostHogFormDialog, type SecretMode } from "./connection-form-dialog";
 import { PostgresFormDialog } from "./postgres-form-dialog";
 import { SourceFormDialog } from "./source-form-dialog";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 type Connection = {
   id: string;
@@ -70,6 +71,7 @@ export function ConnectionActions({
   /** The workspace this connection is in, by name, when it has other people. Null when there's nobody to share with. */
   team?: string | null;
 }) {
+  const orgId = useWorkspaceId();
   const [dialog, setDialog] = useState<OpenDialog>(null);
   // A sign-in runs as one person, so only that person signs in again or decides who else it serves.
   const ownSignIn = connection.signIn === "oauth" && connection.mine !== false;
@@ -86,7 +88,7 @@ export function ConnectionActions({
 
   function signInAgain() {
     startTest(async () => {
-      const result = await startMcpSignInAction({ connectionId: connection.id });
+      const result = await startMcpSignInAction({ orgId, connectionId: connection.id });
       if (result.ok) window.location.assign(result.data.authorizationUrl);
       else toast.error(result.error.message);
     });

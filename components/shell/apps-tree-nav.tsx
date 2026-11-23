@@ -86,7 +86,7 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                 </div>
               ) : (
               <Link
-                href={appPath(app.id)}
+                href={appPath(app.orgId, app.id)}
                 onDoubleClick={(event) => {
                   // Renaming is for whoever can change the app.
                   if (!app.canChange) return;
@@ -151,7 +151,7 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                           event.preventDefault();
                           setEditing(dashboard.id);
                         }}
-                        href={dashboardPath(app.id, dashboard.id)}
+                        href={dashboardPath(app.orgId, app.id, dashboard.id)}
                         aria-current={active ? "page" : undefined}
                         title={dashboard.title}
                         className={cn(

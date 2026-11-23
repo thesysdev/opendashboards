@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { installDemoAction, uninstallDemoAction } from "@/app/(app)/connections/actions";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 /**
  * Installs or uninstalls a demo dataset. Locked while any app uses it, since
@@ -24,14 +25,15 @@ export function DemoDatasetSwitch({
   installed: boolean;
   apps: { id: string; name: string }[];
 }) {
+  const orgId = useWorkspaceId();
   const [pending, startTransition] = useTransition();
   const locked = installed && apps.length > 0;
 
   function toggle() {
     startTransition(async () => {
       const result = installed
-        ? await uninstallDemoAction({ dataset })
-        : await installDemoAction({ dataset });
+        ? await uninstallDemoAction({ orgId, dataset })
+        : await installDemoAction({ orgId, dataset });
       if (result.ok) toast.success(installed ? `${name} uninstalled` : `${name} installed`);
       else toast.error(result.error.message);
     });

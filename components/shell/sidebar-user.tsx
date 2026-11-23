@@ -1,15 +1,11 @@
 import { config } from "@/config";
 import { DEV_USER_NAMES } from "@/lib/auth/providers/dev";
-import { requireMember } from "@/lib/orgs";
+import type { Member } from "@/lib/orgs";
 
 import { OrgSwitcher } from "./org-switcher";
 
-/**
- * The signed-in user and the workspace they have open, with the menu to
- * switch. Reads the request, so it renders behind Suspense.
- */
-export async function CurrentOrgSwitcher({ compact = false }: { compact?: boolean }) {
-  const member = await requireMember();
+/** The signed-in user and the workspace on screen, with the menu to switch. */
+export function SidebarUser({ member, compact = false }: { member: Member; compact?: boolean }) {
   const { env, auth } = config();
   return (
     <OrgSwitcher
@@ -21,11 +17,6 @@ export async function CurrentOrgSwitcher({ compact = false }: { compact?: boolea
       devUsers={env === "local" && auth.devUser ? DEV_USER_NAMES : undefined}
     />
   );
-}
-
-/** The signed-in user and their open workspace at the bottom of the sidebar. */
-export function SidebarUser() {
-  return <CurrentOrgSwitcher />;
 }
 
 export function SidebarUserFallback() {

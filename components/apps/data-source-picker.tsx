@@ -13,6 +13,8 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { cn } from "@/lib/utils";
+import { workspacePath } from "@/lib/apps/paths";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 /** `source` is a short label such as "PostHog US" or "Postgres". */
 export type PickerConnection = { id: string; name: string; source: string };
@@ -32,6 +34,7 @@ export function DataSourcePicker({
   onToggle: (id: string, checked: boolean) => void;
   disabled?: boolean;
 }) {
+  const orgId = useWorkspaceId();
   const chosen = connections.filter((connection) => selected.has(connection.id));
 
   const label =
@@ -83,7 +86,7 @@ export function DataSourcePicker({
             </>
           )}
           <DropdownMenuItem asChild>
-            <Link href="/connections">
+            <Link href={workspacePath(orgId, "connections")}>
               <PlusIcon aria-hidden />
               Add data source
             </Link>

@@ -7,6 +7,7 @@ import { toast } from "sonner";
 
 import { startMcpSignInAction } from "@/app/(app)/connections/actions";
 import { Button } from "@/components/ui/button";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 /**
  * Above the dashboard when one of the app's sources signed in with OAuth has
@@ -32,13 +33,14 @@ export function SignInAgainBanner({
    */
   expired?: { id: string; name: string; owner: string | null }[];
 }) {
+  const orgId = useWorkspaceId();
   const pathname = usePathname();
   const [pending, startTransition] = useTransition();
   if (!connections.length && !others.length && !expired.length) return null;
 
   function signIn(connectionId: string, own = true) {
     startTransition(async () => {
-      const result = await startMcpSignInAction(own ? { connectionId, returnTo: pathname } : { like: connectionId, returnTo: pathname });
+      const result = await startMcpSignInAction(own ? { orgId, connectionId, returnTo: pathname } : { orgId, like: connectionId, returnTo: pathname });
       if (result.ok) window.location.assign(result.data.authorizationUrl);
       else toast.error(result.error.message);
     });

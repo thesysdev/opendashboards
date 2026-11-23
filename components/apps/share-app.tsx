@@ -17,6 +17,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Input } from "@/components/ui/input";
 import type { AppResult } from "@/lib/apps/errors";
 import { appPath } from "@/lib/apps/paths";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 import type { AppTeamAccess } from "@/lib/db/schema";
 
 type App = { id: string; name: string; teamAccess: AppTeamAccess };
@@ -452,11 +453,12 @@ function useShareNudge(appId: string, dashboardCount: number) {
  * for nobody else: they still have to sign in as someone who's been let in.
  */
 function CopyLink({ appId }: { appId: string }) {
+  const orgId = useWorkspaceId();
   const [copied, setCopied] = useState(false);
 
   async function copy() {
     try {
-      await navigator.clipboard.writeText(new URL(appPath(appId), window.location.origin).href);
+      await navigator.clipboard.writeText(new URL(appPath(orgId, appId), window.location.origin).href);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch {

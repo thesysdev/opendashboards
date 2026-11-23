@@ -14,14 +14,16 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getConnectionService, type ConnectionSummary, type DemoDatasetSummary } from "@/lib/connections";
 import type { ConnectionStatus } from "@/lib/db/schema";
 import { formatRelative } from "@/lib/format";
-import { getOrgService, requireMember } from "@/lib/orgs";
+import { getOrgService, requireMemberOf } from "@/lib/orgs";
 import { canManageConnections } from "@/lib/orgs/access";
 import { getSecretMode } from "@/lib/secrets";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Data Connections" };
 
-export default function ConnectionsPage() {
+type Params = Promise<{ orgId: string }>;
+
+export default function ConnectionsPage({ params }: { params: Params }) {
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
       <PageHeader
@@ -29,15 +31,15 @@ export default function ConnectionsPage() {
         description="Connect your analytics and databases. OpenDashboards only runs read-only queries against them to build live dashboards."
       />
       <Suspense fallback={<ConnectionsSkeleton />}>
-        <ConnectionsContent />
+        <ConnectionsContent params={params} />
       </Suspense>
     </div>
   );
 }
 
 /** Reads the user and their connections, so it streams in behind the boundary. */
-async function ConnectionsContent() {
-  const member = await requireMember();
+async function ConnectionsContent({ params }: { params: Params }) {
+  const member = await requireMemberOf((await params).orgId);
   const service = getConnectionService();
   const [all, demos, org] = await Promise.all([
     service.list(member),

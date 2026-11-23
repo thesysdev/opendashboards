@@ -109,7 +109,8 @@ function DeleteDashboardDialog({
       onOpenChange(false);
       toast.success(`${dashboard.title} deleted`);
       // Leaving the deleted dashboard: the app's home shows its next one, or the empty state.
-      if (parseAppPath(pathname).dashboardId === dashboard.id) router.push(appPath(appId));
+      const onScreen = parseAppPath(pathname);
+      if (onScreen.orgId && onScreen.dashboardId === dashboard.id) router.push(appPath(onScreen.orgId, appId));
     });
   }
 

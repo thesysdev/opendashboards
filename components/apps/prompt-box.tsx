@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
 import { DataSourcePicker, type PickerConnection } from "./data-source-picker";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 /**
  * The "What do you want to build?" composer. Sending creates an app with the
@@ -23,6 +24,7 @@ export function PromptBox({
   initiallySelected?: string[];
   autoFocus?: boolean;
 }) {
+  const orgId = useWorkspaceId();
   const [prompt, setPrompt] = useState("");
   // Track what was unticked rather than what's ticked, so a newly added
   // source starts out selected.
@@ -55,7 +57,7 @@ export function PromptBox({
     setError(null);
     startTransition(async () => {
       // Only returns when creating failed; on success it navigates to the app.
-      const result = await createAppAction({ prompt, connectionIds: [...selected] });
+      const result = await createAppAction({ orgId, prompt, connectionIds: [...selected] });
       if (result && !result.ok) setError(result.error.message);
     });
   }

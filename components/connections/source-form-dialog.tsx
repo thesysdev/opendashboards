@@ -17,6 +17,7 @@ import { CertificateCheckField } from "./certificate-check-field";
 import { showConnectionWarnings } from "./connection-feedback";
 import type { SecretMode } from "./connection-form-dialog";
 import { mcpPresetForm, SOURCE_FORMS, type FieldSpec } from "./source-forms";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 export type FormSourceType = keyof typeof SOURCE_FORMS;
 
@@ -34,6 +35,7 @@ type Props = {
 
 /** Adds a MySQL, ClickHouse or BigQuery connection, or replaces its password or key. */
 export function SourceFormDialog(props: Props) {
+  const orgId = useWorkspaceId();
   const { type, open, onOpenChange, secretMode, service } = props;
   const replacing = props.mode === "replace";
   const spec = service && type === "mcp" && !replacing ? mcpPresetForm(MCP_SERVICES[service]) : SOURCE_FORMS[type];
@@ -89,7 +91,7 @@ export function SourceFormDialog(props: Props) {
   function signIn() {
     startTransition(async () => {
       const name = values.name ?? "";
-      const result = await startMcpSignInAction(service ? { name, service } : { name, url: values.url ?? "" });
+      const result = await startMcpSignInAction(service ? { orgId, name, service } : { orgId, name, url: values.url ?? "" });
       if (!result.ok) {
         // Each result replaces the last one's message: a stale error under a field would contradict it.
         if (result.error.field && fields.some((field) => field.name === result.error.field)) {
@@ -149,7 +151,7 @@ export function SourceFormDialog(props: Props) {
       const result =
         props.mode === "replace"
           ? await replaceCredentialAction({ id: props.connection.id, credential: values[spec.credential.name] ?? "" })
-          : await createConnectionAction(service ? { type, name: values.name ?? "", apiKey: values.apiKey ?? "", service } : { type, ...values });
+          : await createConnectionAction(service ? { orgId, type, name: values.name ?? "", apiKey: values.apiKey ?? "", service } : { orgId, type, ...values });
 
       if (result.ok) {
         toast.success(replacing ? "Saved" : `Connected to ${(values.name ?? "").trim()}`);

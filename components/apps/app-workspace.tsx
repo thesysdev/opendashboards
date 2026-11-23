@@ -11,6 +11,7 @@ import { InlineRename } from "@/components/inline-rename";
 import { OpenSidebarButton } from "@/components/shell/sidebar";
 import { Button } from "@/components/ui/button";
 import { appPath, dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/apps/paths";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 import { cn } from "@/lib/utils";
 
 import { NewDashboard } from "./live-dashboard";
@@ -279,6 +280,7 @@ export function AppWorkspace({
 /** Below md there's no sidebar, so the app's dashboards show as a strip of tabs. */
 function MobileDashboardTabs({ appId, dashboards }: { appId: string; dashboards: Dashboard[] }) {
   const { dashboardId } = parseAppPath(usePathname());
+  const orgId = useWorkspaceId();
   if (!dashboards.length) return null;
   const activeId = dashboardId ?? dashboards[0].id;
 
@@ -290,7 +292,7 @@ function MobileDashboardTabs({ appId, dashboards }: { appId: string; dashboards:
       {dashboards.map((dashboard, index) => (
         <Link
           key={dashboard.id}
-          href={index === 0 ? appPath(appId) : dashboardPath(appId, dashboard.id)}
+          href={index === 0 ? appPath(orgId, appId) : dashboardPath(orgId, appId, dashboard.id)}
           aria-current={dashboard.id === activeId ? "page" : undefined}
           className="shrink-0 rounded-md px-3 py-1 text-sm text-muted-foreground aria-[current=page]:bg-neutral-100 aria-[current=page]:font-medium aria-[current=page]:text-foreground"
         >

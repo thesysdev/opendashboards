@@ -22,6 +22,7 @@ import { connectionNameSchema } from "@/lib/connections/schemas";
 import { apiKeySchema, posthogConfigSchema } from "@/lib/sources/posthog/catalog";
 import { HOST_KINDS, POSTHOG_HOSTS, type HostKind } from "@/lib/sources/posthog/hosts";
 import type { SecretProvider } from "@/lib/secrets/types";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 export type SecretMode = SecretProvider | "unconfigured";
 
@@ -42,6 +43,7 @@ const EMPTY: Values = { name: "", hostKind: "posthog_us", projectId: "", apiKey:
 
 /** Adds a PostHog connection, or replaces an existing PostHog connection's key. */
 export function PostHogFormDialog(props: Props) {
+  const orgId = useWorkspaceId();
   const { open, onOpenChange, secretMode } = props;
   const replacing = props.mode === "replace";
   const initial: Values = EMPTY;
@@ -98,7 +100,7 @@ export function PostHogFormDialog(props: Props) {
     startTransition(async () => {
       const result = replacing
         ? await replaceCredentialAction({ id: props.connection.id, credential: values.apiKey })
-        : await createConnectionAction({ type: "posthog", ...values });
+        : await createConnectionAction({ orgId, type: "posthog", ...values });
 
       if (result.ok) {
         toast.success(replacing ? "Key replaced" : `Connected to ${values.name.trim()}`);

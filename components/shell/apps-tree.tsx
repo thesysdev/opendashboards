@@ -1,19 +1,17 @@
 import { getAppService, type AppTreeNode } from "@/lib/apps";
-import { requireMember } from "@/lib/orgs";
+import type { Member } from "@/lib/orgs";
 
 import { AppsTreeNav } from "./apps-tree-nav";
 
 /**
  * Every app the user can open, in three groups, each newest first with its
- * dashboards nested below: their own in the workspace they have open; the
+ * dashboards nested below: their own in the workspace on screen; the
  * ones teammates shared with that workspace; and the apps of other workspaces
  * they were let into as a guest. A group with nothing in it isn't shown, and
  * the labels only appear once there's more than their own apps to tell apart.
- * The sidebar gives this list the leftover height and scrolls it. Reads the
- * request, so it renders behind Suspense.
+ * The sidebar gives this list the leftover height and scrolls it.
  */
-export async function AppsTree() {
-  const member = await requireMember();
+export async function AppsTree({ member }: { member: Member }) {
   const [apps, guestOf] = await Promise.all([getAppService().tree(member), getAppService().sharedWithGuest(member.userId)]);
   const mine = apps.filter((app) => app.mine);
   const workspace = apps.filter((app) => !app.mine);

@@ -6,24 +6,26 @@ import { PageHeader, SectionLabel } from "@/components/page-header";
 import { DangerZone, GuestRow, InviteForm, MemberRow, PendingInviteRow, WorkspaceNameForm } from "@/components/settings/workspace";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getAppService } from "@/lib/apps";
-import { getOrgService, requireMember } from "@/lib/orgs";
+import { getOrgService, requireMemberOf } from "@/lib/orgs";
 import { canManageMembers } from "@/lib/orgs/access";
 
 export const metadata: Metadata = { title: "Workspace settings" };
 
-export default function WorkspaceSettingsPage() {
+type Params = Promise<{ orgId: string }>;
+
+export default function WorkspaceSettingsPage({ params }: { params: Params }) {
   return (
     <div className="mx-auto w-full max-w-3xl px-6 py-12">
       <Suspense fallback={<SettingsSkeleton />}>
-        <WorkspaceSettings />
+        <WorkspaceSettings params={params} />
       </Suspense>
     </div>
   );
 }
 
-/** Reads the user and the workspace they have open, so it streams in behind the boundary. */
-async function WorkspaceSettings() {
-  const member = await requireMember();
+/** Reads the user and the workspace in the address, so it streams in behind the boundary. */
+async function WorkspaceSettings({ params }: { params: Params }) {
+  const member = await requireMemberOf((await params).orgId);
   const org = await getOrgService().get(member.userId, member.orgId);
   if (!org) notFound();
 

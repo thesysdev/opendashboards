@@ -4,9 +4,8 @@ import { CheckIcon, ChevronsUpDownIcon, PlusIcon, UsersIcon } from "lucide-react
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
-import { toast } from "sonner";
 
-import { createOrgAction, switchDevUserAction, switchOrgAction } from "@/app/(app)/settings/actions";
+import { createOrgAction, switchDevUserAction } from "@/app/(app)/settings/actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -19,6 +18,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import { workspacePath } from "@/lib/apps/paths";
 import { cn } from "@/lib/utils";
 
 import { AvatarCircle } from "./avatar-circle";
@@ -26,9 +26,9 @@ import { AvatarCircle } from "./avatar-circle";
 export type SwitcherOrg = { id: string; name: string };
 
 /**
- * Who is signed in and which workspace they have open, with the menu to switch
- * to another, create one, or manage the open one. `compact` is the avatar
- * alone, for the mobile top bar.
+ * Who is signed in and which workspace is on screen, with the menu to go to
+ * another (its own address), create one, or manage this one. `compact` is
+ * the avatar alone, for the mobile top bar.
  */
 export function OrgSwitcher({
   email,
@@ -44,23 +44,9 @@ export function OrgSwitcher({
   /** Local development only: stand-in people to act as. */
   devUsers?: readonly string[];
 }) {
-  const router = useRouter();
   const [pending, startTransition] = useTransition();
   const [creating, setCreating] = useState(false);
   const active = orgs.find((org) => org.id === activeId);
-
-  function open(orgId: string) {
-    if (orgId === activeId) return;
-    startTransition(async () => {
-      const result = await switchOrgAction(orgId);
-      if (!result.ok) {
-        toast.error(result.error.message);
-        return;
-      }
-      // Whatever was on screen belonged to the org just left.
-      router.push("/apps");
-    });
-  }
 
   function actAs(name: string | null) {
     startTransition(async () => {
@@ -107,14 +93,16 @@ export function OrgSwitcher({
         <DropdownMenuContent align={compact ? "end" : "start"} side={compact ? "bottom" : "top"} className="w-60">
           <DropdownMenuLabel className="truncate text-xs font-normal text-muted-foreground">{email}</DropdownMenuLabel>
           {orgs.map((org) => (
-            <DropdownMenuItem key={org.id} onSelect={() => open(org.id)} disabled={pending}>
-              <span className="min-w-0 flex-1 truncate">{org.name}</span>
-              {org.id === activeId && <CheckIcon aria-label="Open now" />}
+            <DropdownMenuItem key={org.id} asChild disabled={pending}>
+              <Link href={workspacePath(org.id)}>
+                <span className="min-w-0 flex-1 truncate">{org.name}</span>
+                {org.id === activeId && <CheckIcon aria-label="Open now" />}
+              </Link>
             </DropdownMenuItem>
           ))}
           <DropdownMenuSeparator />
           <DropdownMenuItem asChild>
-            <Link href="/settings">
+            <Link href={workspacePath(activeId, "settings")}>
               <UsersIcon aria-hidden />
               Workspace settings
             </Link>
@@ -161,7 +149,7 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; o
       }
       onOpenChange(false);
       setName("");
-      router.push("/settings");
+      router.push(workspacePath(result.data.id, "settings"));
     });
   }
 
