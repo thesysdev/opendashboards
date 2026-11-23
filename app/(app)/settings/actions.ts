@@ -102,34 +102,51 @@ export async function changeMemberRoleAction(input: unknown): Promise<OrgResult>
 }
 
 /**
- * Removes someone from a workspace, with every app they own in it. Their
- * dashboards are deleted in OpenUI Cloud first, so none are left behind;
- * then the rest.
+ * Ends someone's membership, removed by an admin or leaving on their own, the
+ * same way: their dashboards are deleted in OpenUI Cloud first, so none are
+ * left behind, then their apps, sign-ins and the rest (OrgService `depart`).
+ * If Cloud can't delete them, nothing changes.
  */
-export async function removeMemberAction(input: unknown): Promise<OrgResult> {
-  const user = await requireKnownUser();
-  const orgs = getOrgService();
-  const plan = await orgs.memberDashboardsToDelete(user.id, input);
+async function departWithCloud(
+  userId: string,
+  departure: { orgId: unknown; userId: unknown },
+  end: () => Promise<OrgResult>,
+): Promise<OrgResult<{ dashboards: number }>> {
+  const plan = await getOrgService().dashboardsToDeleteOnDeparture(userId, departure);
   if (!plan.ok) return plan;
   if (!(await deleteDashboardsInCloud(plan.data.artifactIds))) {
-    return fail({ code: "internal", message: "OpenUI Cloud couldn't delete some of their dashboards. Nobody was removed. Try again." });
+    return fail({ code: "internal", message: "OpenUI Cloud couldn't delete some of the dashboards. Nothing changed. Try again." });
   }
-  const result = await orgs.removeMember(user.id, input);
-  if (result.ok) {
-    track(user.id, "workspace_member_removed", { dashboards_deleted: plan.data.artifactIds.length });
-    revalidateShell();
-  }
-  return result;
+  const result = await end();
+  return result.ok ? { ok: true, data: { dashboards: plan.data.artifactIds.length } } : result;
 }
 
-/** Leaves a workspace. Whichever of their others opens next; with none left, they're asked to create one. */
+/** Removes someone from a workspace, with every app they own in it. */
+export async function removeMemberAction(input: unknown): Promise<OrgResult> {
+  const user = await requireKnownUser();
+  const departure = input as { orgId?: unknown; userId?: unknown } | null;
+  const result = await departWithCloud(user.id, { orgId: departure?.orgId, userId: departure?.userId }, () =>
+    getOrgService().removeMember(user.id, input),
+  );
+  if (!result.ok) return result;
+  track(user.id, "workspace_member_removed", { dashboards_deleted: result.data.dashboards });
+  revalidateShell();
+  return { ok: true, data: undefined };
+}
+
+/**
+ * Leaves a workspace, with every app you own in it. Whichever of your others
+ * opens next; with none left, you're asked to create one.
+ */
 export async function leaveOrgAction(input: unknown): Promise<OrgResult> {
   const user = await requireKnownUser();
-  const result = await getOrgService().leave(user.id, input);
+  const orgId = (input as { orgId?: unknown } | null)?.orgId;
+  const result = await departWithCloud(user.id, { orgId, userId: user.id }, () => getOrgService().leave(user.id, input));
   if (!result.ok) return result;
+  track(user.id, "workspace_left", { dashboards_deleted: result.data.dashboards });
   (await cookies()).delete(LAST_ORG_COOKIE);
   revalidateShell();
-  return result;
+  return { ok: true, data: undefined };
 }
 
 /**

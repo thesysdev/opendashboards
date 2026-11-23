@@ -102,7 +102,12 @@ async function WorkspaceSettings({ params }: { params: Params }) {
 
       <section aria-labelledby="danger-zone" className="mt-12">
         <SectionLabel id="danger-zone">Danger zone</SectionLabel>
-        <DangerZone orgId={org.id} name={org.name} canDelete={admin} />
+        <DangerZone
+          orgId={org.id}
+          name={org.name}
+          canDelete={admin}
+          appCount={org.members.find((entry) => entry.you)?.appCount ?? 0}
+        />
       </section>
     </>
   );

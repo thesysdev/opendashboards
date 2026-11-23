@@ -255,13 +255,31 @@ describe("roles and leaving", () => {
       { userId: bob.id, appCount: 1 },
     ]);
     // Their dashboards are named first, for the caller to delete in OpenUI Cloud; only an admin may ask.
-    expect(await service.memberDashboardsToDelete(alice.id, { orgId, userId: bob.id })).toEqual({ ok: true, data: { artifactIds: ["art_bob"] } });
-    expect(await service.memberDashboardsToDelete(bob.id, { orgId, userId: alice.id })).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect(await service.dashboardsToDeleteOnDeparture(alice.id, { orgId, userId: bob.id })).toEqual({ ok: true, data: { artifactIds: ["art_bob"] } });
+    expect(await service.dashboardsToDeleteOnDeparture(bob.id, { orgId, userId: alice.id })).toMatchObject({ ok: false, error: { code: "forbidden" } });
 
     expect(await service.removeMember(alice.id, { orgId, userId: bob.id })).toEqual({ ok: true, data: undefined });
     const left = (await db.select({ id: apps.id }).from(apps)).map((row) => row.id).sort();
     expect(left).toEqual([alices.id, elsewhere.id].sort());
     expect(await db.select().from(dashboards).where(eq(dashboards.appId, bobs.id))).toEqual([]);
+  });
+
+  it("deletes the apps of someone who leaves, as it does for someone removed", async () => {
+    const orgId = await withBob();
+    const [bobs] = await db.insert(apps).values({ userId: bob.id, orgId, name: "Bob's app" }).returning();
+    await db.insert(dashboards).values({ appId: bobs.id, userId: bob.id, artifactId: "art_bob", title: "Signups", position: 0 });
+    const [alices] = await db.insert(apps).values({ userId: alice.id, orgId, name: "Alice's app" }).returning();
+
+    // Their own dashboards, named for OpenUI Cloud first; nobody asks for someone else's this way.
+    expect(await service.dashboardsToDeleteOnDeparture(bob.id, { orgId, userId: bob.id })).toEqual({ ok: true, data: { artifactIds: ["art_bob"] } });
+    expect(await service.leave(bob.id, { orgId })).toEqual({ ok: true, data: undefined });
+    expect((await db.select({ id: apps.id }).from(apps)).map((row) => row.id)).toEqual([alices.id]);
+    expect(await roleIn(db, bob.id, orgId)).toBeNull();
+  });
+
+  it("never lets the last admin leave, even to delete their apps", async () => {
+    const orgId = await team();
+    expect(await service.dashboardsToDeleteOnDeparture(alice.id, { orgId, userId: alice.id })).toMatchObject({ ok: false, error: { code: "conflict" } });
   });
 
   it("lets a member who isn't the last admin leave", async () => {

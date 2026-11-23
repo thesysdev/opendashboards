@@ -245,7 +245,7 @@ export function MemberRow({
                         can&apos;t be undone.
                       </p>
                     )}
-                    <p>They lose access to this workspace straight away. Connections they added keep working.</p>
+                    <p>They lose access to this workspace straight away. Connections they added with a key or password keep working.</p>
                   </div>
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -327,17 +327,28 @@ export function GuestRow({ guest }: { guest: { appId: string; appName: string; e
  * The actions that can't be taken back, set apart at the end of the page:
  * leaving the workspace, and for an admin, deleting it.
  */
-export function DangerZone({ orgId, name, canDelete }: { orgId: string; name: string; canDelete: boolean }) {
+export function DangerZone({
+  orgId,
+  name,
+  canDelete,
+  appCount,
+}: {
+  orgId: string;
+  name: string;
+  canDelete: boolean;
+  /** How many apps the reader made here: leaving deletes them. */
+  appCount: number;
+}) {
   return (
     <ul className="divide-y divide-destructive/20 rounded-xl border border-destructive/30">
       <li className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3.5">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">Leave this workspace</p>
           <p className="text-sm text-muted-foreground">
-            You lose access to its apps and data connections. Apps you made here stay in it.
+            You lose access to its apps and data connections, and the apps you made here are deleted.
           </p>
         </div>
-        <LeaveWorkspaceButton orgId={orgId} name={name} />
+        <LeaveWorkspaceButton orgId={orgId} name={name} appCount={appCount} />
       </li>
       {canDelete && (
         <li className="flex flex-wrap items-center gap-x-4 gap-y-2 p-3.5">
@@ -437,7 +448,7 @@ export function DeleteWorkspaceButton({ orgId, name }: { orgId: string; name: st
   );
 }
 
-export function LeaveWorkspaceButton({ orgId, name }: { orgId: string; name: string }) {
+export function LeaveWorkspaceButton({ orgId, name, appCount }: { orgId: string; name: string; appCount: number }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [pending, startTransition] = useTransition();
@@ -460,14 +471,23 @@ export function LeaveWorkspaceButton({ orgId, name }: { orgId: string; name: str
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Leave {name}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              You lose access to its apps and data connections. Apps you made here stay in it.
+            <AlertDialogDescription asChild>
+              <div className="space-y-2">
+                {appCount > 0 && (
+                  <p className="font-medium text-destructive">
+                    This also deletes {appCount === 1 ? "the 1 app" : `the ${appCount} apps`} you made here, with every
+                    dashboard in {appCount === 1 ? "it" : "them"}, for everyone {appCount === 1 ? "it's" : "they're"} shared
+                    with. It can&apos;t be undone.
+                  </p>
+                )}
+                <p>You lose access to its apps and data connections straight away. Connections you added with a key or password keep working.</p>
+              </div>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={leave}>
-              Leave workspace
+              {appCount > 0 ? "Leave and delete my apps" : "Leave workspace"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

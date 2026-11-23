@@ -262,7 +262,7 @@ describe("connections in a team", () => {
     expect(await connections.open("vera", connectionId, "mcp")).toBeNull();
   });
 
-  it("stop serving the workspace when whoever signed in leaves or is removed, and keys keep serving it", async () => {
+  it("are deleted when whoever signed in leaves or is removed, and keys keep serving the workspace", async () => {
     const eds = await signedIn("ed", "org");
     const key = await keyed("ed");
     const veras = await signedIn("vera", "org");
@@ -276,10 +276,9 @@ describe("connections in a team", () => {
     expect((await appsService.get("alice", appId))?.connections.map((row) => row.id)).not.toContain(eds);
     expect(await connections.open("alice", key, "posthog")).not.toBeNull();
 
-    // Leaving: their sign-in stays theirs, but serves nobody else.
-
+    // Leaving ends the same way: their sign-in is deleted too.
     expect(await orgsService.leave("vera", { orgId: acme })).toEqual({ ok: true, data: undefined });
-    expect(await connections.open("alice", veras, "mcp")).toBeNull();
+    expect(await db.select().from(dataConnections).where(eq(dataConnections.id, veras))).toEqual([]);
   });
 
   it("never make a key personal", async () => {

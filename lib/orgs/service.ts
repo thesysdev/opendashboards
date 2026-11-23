@@ -104,17 +104,11 @@ export function createOrgService({ db }: { db: Database }) {
   }
 
   /**
-   * Someone who leaves a workspace, or is removed, stops serving it: sign-ins
-   * they shared with it go back to being theirs alone, so nobody there keeps
-   * querying as them. Teammates are asked to sign in themselves. Connections
-   * with a key or password aren't sign-ins, and keep serving the workspace.
-   */
-  /**
-   * Someone removed from a workspace leaves no sign-in behind: their
-   * sign-ins there are deleted with their stored credentials, and taken off
-   * any teammate's app that used them, along with sign-ins they had started
-   * and not finished. Nobody left could use, renew or delete them. Teammates
-   * are asked to sign in themselves. Connections with a key or password stay.
+   * Someone no longer in a workspace leaves no sign-in behind: their sign-ins
+   * there are deleted with their stored credentials, and taken off any
+   * teammate's app that used them, along with sign-ins they had started and
+   * not finished. Nobody left could use, renew or delete them. Teammates are
+   * asked to sign in themselves. Connections with a key or password stay.
    */
   async function deleteSignIns(orgId: string, userId: string): Promise<void> {
     await db.transaction(async (tx) => {
@@ -137,18 +131,47 @@ export function createOrgService({ db }: { db: Database }) {
     });
   }
 
-  async function stopSharingSignIns(orgId: string, userId: string): Promise<void> {
-    await db
-      .update(dataConnections)
-      .set({ sharing: "personal", updatedAt: new Date() })
-      .where(
-        and(
-          eq(dataConnections.orgId, orgId),
-          eq(dataConnections.userId, userId),
-          eq(dataConnections.sharing, "org"),
-          sql`${dataConnections.config} -> 'oauth' is not null`,
-        ),
-      );
+  /**
+   * Whether `actorId` may end `memberId`'s membership: themselves leaving,
+   * unless they're its last admin, or an admin removing someone else.
+   */
+  async function mayDepart(actorId: string, orgId: string, memberId: string): Promise<OrgResult> {
+    if (actorId === memberId) {
+      const role = await roleIn(db, actorId, orgId);
+      if (!role) return notFound();
+      if (role === "admin" && (await adminCount(orgId)) <= 1) {
+        return fail({ code: "conflict", message: "You're the only admin. Make someone else an admin before you leave." });
+      }
+      return ok(undefined);
+    }
+    const allowed = await managed(actorId, orgId);
+    if (!allowed.ok) return allowed;
+    if (!(await roleIn(db, memberId, orgId))) return fail({ code: "not_found", message: "This person is no longer a member." });
+    return ok(undefined);
+  }
+
+  /**
+   * Ends someone's membership the same way whether they left or were
+   * removed: every app they own in the workspace goes, with its dashboards,
+   * chat threads and guests (nobody left could open or delete a private
+   * one); their sign-ins there go (`deleteSignIns`); and so do the apps
+   * shared with them by name. Connections they added with a key or password
+   * stay. The caller has already deleted their dashboards in OpenUI Cloud.
+   * False if they weren't a member.
+   */
+  async function depart(orgId: string, memberId: string): Promise<boolean> {
+    const gone = await db.transaction(async (tx) => {
+      const removed = await tx
+        .delete(orgMembers)
+        .where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, memberId)))
+        .returning({ userId: orgMembers.userId });
+      if (removed.length) await tx.delete(apps).where(and(eq(apps.orgId, orgId), eq(apps.userId, memberId)));
+      return removed.length > 0;
+    });
+    if (!gone) return false;
+    await forgetAppShares(orgId, memberId);
+    await deleteSignIns(orgId, memberId);
+    return true;
   }
 
   /**
@@ -384,18 +407,17 @@ export function createOrgService({ db }: { db: Database }) {
 
     /** Removes someone else from a workspace. Their apps and connections stay where they are. */
     /**
-     * The OpenUI Cloud dashboards of the apps a member owns here, which
-     * removing them deletes. Checked as `removeMember` checks: the caller
-     * deletes these in Cloud first, then calls it.
+     * The OpenUI Cloud dashboards of the apps someone owns in a workspace,
+     * which their departure deletes: an admin removing them, or they leaving
+     * (`userId` is then their own). Checked as `removeMember` and `leave`
+     * check. The caller deletes these in Cloud first, then calls one of them.
      */
-    async memberDashboardsToDelete(userId: string, input: unknown): Promise<OrgResult<{ artifactIds: string[] }>> {
+    async dashboardsToDeleteOnDeparture(userId: string, input: unknown): Promise<OrgResult<{ artifactIds: string[] }>> {
       const parsed = memberRefSchema.safeParse(input);
       if (!parsed.success) return notFound();
       const { orgId, userId: memberId } = parsed.data;
-      const allowed = await managed(userId, orgId);
+      const allowed = await mayDepart(userId, orgId, memberId);
       if (!allowed.ok) return allowed;
-      if (memberId === userId) return fail({ code: "conflict", message: "To remove yourself, leave the workspace." });
-      if (!(await roleIn(db, memberId, orgId))) return fail({ code: "not_found", message: "This person is no longer a member." });
       const rows = await db
         .select({ artifactId: dashboards.artifactId })
         .from(dashboards)
@@ -404,52 +426,32 @@ export function createOrgService({ db }: { db: Database }) {
       return ok({ artifactIds: rows.map((row) => row.artifactId) });
     },
 
-    /**
-     * Removes someone from a workspace, and deletes every app they own in it
-     * with its dashboards, chat threads and guests: nobody left could open
-     * or delete a private one. Connections they added stay. Admins only.
-     */
+    /** An admin removes someone else from a workspace. It ends as leaving does (`depart`). */
     removeMember(userId: string, input: unknown): Promise<OrgResult> {
       return guard("removeMember", async () => {
         const parsed = memberRefSchema.safeParse(input);
         if (!parsed.success) return notFound();
         const { orgId, userId: memberId } = parsed.data;
-        const allowed = await managed(userId, orgId);
-        if (!allowed.ok) return allowed;
         if (memberId === userId) return fail({ code: "conflict", message: "To remove yourself, leave the workspace." });
-        const removed = await db.transaction(async (tx) => {
-          const gone = await tx
-            .delete(orgMembers)
-            .where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, memberId)))
-            .returning({ userId: orgMembers.userId });
-          if (gone.length) await tx.delete(apps).where(and(eq(apps.orgId, orgId), eq(apps.userId, memberId)));
-          return gone.length > 0;
-        });
-        await forgetAppShares(orgId, memberId);
-        await deleteSignIns(orgId, memberId);
-        return removed ? ok(undefined) : fail({ code: "not_found", message: "This person is no longer a member." });
+        const allowed = await mayDepart(userId, orgId, memberId);
+        if (!allowed.ok) return allowed;
+        return (await depart(orgId, memberId)) ? ok(undefined) : fail({ code: "not_found", message: "This person is no longer a member." });
       });
     },
 
     /**
-     * Leaves a workspace. The last admin can't: someone has to be able to
-     * manage it. Leaving your only workspace is allowed; the app then asks you
-     * to create one.
+     * Someone leaves a workspace. The last admin can't: someone has to be
+     * able to manage it. Leaving your only workspace is allowed; the app then
+     * asks you to create one. It ends as being removed does (`depart`).
      */
     leave(userId: string, input: unknown): Promise<OrgResult> {
       return guard("leave", async () => {
         const parsed = orgRefSchema.safeParse(input);
         if (!parsed.success) return notFound();
         const { orgId } = parsed.data;
-        const role = await roleIn(db, userId, orgId);
-        if (!role) return notFound();
-        if (role === "admin" && (await adminCount(orgId)) <= 1) {
-          return fail({ code: "conflict", message: "You're the only admin. Make someone else an admin before you leave." });
-        }
-        await db.delete(orgMembers).where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, userId)));
-        await forgetAppShares(orgId, userId);
-        await stopSharingSignIns(orgId, userId);
-        return ok(undefined);
+        const allowed = await mayDepart(userId, orgId, userId);
+        if (!allowed.ok) return allowed;
+        return (await depart(orgId, userId)) ? ok(undefined) : notFound();
       });
     },
 
