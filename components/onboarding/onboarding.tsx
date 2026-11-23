@@ -66,6 +66,25 @@ export function Onboarding({
     setStep("build");
   }
 
+  // The page keeps this state when the user goes elsewhere and comes back, and
+  // a source picked here may have been removed meanwhile (sample data removed
+  // and added again gets a new id). When the list changes, sources that were in
+  // it and are gone are unpicked, and with none left it's back to choosing data.
+  // One just added and not in the list yet is kept. Adjusted during render, as
+  // React allows, so a Build step with no sources never shows.
+  const [listed, setListed] = useState(connections);
+  if (listed !== connections) {
+    setListed(connections);
+    const now = new Set(connections.map((connection) => connection.id));
+    const gone = listed.filter((connection) => selected.has(connection.id) && !now.has(connection.id));
+    if (gone.length) {
+      const next = new Set([...selected].filter((id) => !gone.some((connection) => connection.id === id)));
+      setSelected(next);
+      if (next.size === 0) setStep("data");
+    }
+  }
+  const chosen = connections.filter((connection) => selected.has(connection.id));
+
   return (
     <div className="relative mx-auto w-full max-w-2xl px-6 pt-16 pb-16 sm:pt-24">
       <Steps step={step} />
@@ -89,7 +108,7 @@ export function Onboarding({
         />
       ) : (
         <BuildStep
-          connections={connections.filter((connection) => selected.has(connection.id))}
+          connections={chosen}
           allConnections={connections}
           demos={demos}
           onBack={() => setStep("data")}
