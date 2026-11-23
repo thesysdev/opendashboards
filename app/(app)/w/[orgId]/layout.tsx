@@ -100,7 +100,7 @@ async function IdentifyUser() {
 function HomeLink({ orgId, className }: { orgId: string; className?: string }) {
   return (
     <Link
-      href={workspacePath(orgId, "connections")}
+      href={workspacePath(orgId)}
       aria-label="OpenDashboards home"
       className={`rounded-md focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none ${className ?? ""}`}
     >

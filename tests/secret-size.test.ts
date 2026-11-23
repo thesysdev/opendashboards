@@ -14,7 +14,7 @@ import { TEST_DATABASE_URL } from "./global-setup";
 import { workspaceOf, seedWorkspaces } from "./orgs";
 
 /*
- * KMS encrypts at most 4,096 bytes of plaintext. Credentials over that are
+ * Secrets are capped at MAX_SECRET_BYTES (64 KB). Credentials over that are
  * refused on their form field before any secret store sees them, and logged
  * (source and size only), so we learn if real credentials ever hit it.
  */
@@ -34,14 +34,14 @@ describe("the secret stores", () => {
 
     const send = vi.fn();
     const kms = createKmsSecretBox("key", { client: { send } as unknown as KmsClient, roleArn: "role" });
-    const error = await kms.seal("é".repeat(2_049), context).catch((e: unknown) => e);
+    const error = await kms.seal("é".repeat(32_769), context).catch((e: unknown) => e);
     expect(error).toBeInstanceOf(SecretTooLargeError);
-    expect((error as SecretTooLargeError).bytes).toBe(4_098);
+    expect((error as SecretTooLargeError).bytes).toBe(65_538);
     expect(send).not.toHaveBeenCalled();
   });
 
   it("never put the secret in the error", () => {
-    const secret = "sk_live_" + "s".repeat(5_000);
+    const secret = "sk_live_" + "s".repeat(70_000);
     const error = new SecretTooLargeError(secretBytes(secret));
     expect(error.message).not.toContain("sk_live_");
   });
@@ -75,9 +75,10 @@ describe("the connection service", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 
+  // Over the byte limit while under the key field's 65,536-character cap.
   it.each([
-    ["ASCII", "k".repeat(5_000), 5_000],
-    ["multi-byte text under 4,096 characters", "é".repeat(2_100), 4_200],
+    ["two-byte characters", "é".repeat(33_000), 66_000],
+    ["four-byte characters", "🔑".repeat(16_500), 66_000],
   ])("refuses an oversized credential (%s) on its field, saves nothing, and logs only its size", async (_label, apiKey, bytes) => {
     const result = await service.create(workspaceOf("alice"), input(apiKey));
     expect(result).toMatchObject({ ok: false, error: { code: "credential_too_large", field: "apiKey" } });
@@ -99,7 +100,7 @@ describe("the connection service", () => {
   it("refuses an oversized replacement and keeps the old credential", async () => {
     const created = await service.create(workspaceOf("alice"), input("small-key"));
     if (!created.ok) throw new Error(created.error.code);
-    const result = await service.replaceCredential("alice", { id: created.data.id, credential: "k".repeat(6_000) });
+    const result = await service.replaceCredential("alice", { id: created.data.id, credential: "é".repeat(33_000) });
     expect(result).toMatchObject({ ok: false, error: { code: "credential_too_large", field: "apiKey" } });
     expect(String(warn.mock.calls[0]?.[0])).toContain("operation=replace");
     expect(await service.open("alice", created.data.id, "mcp")).toMatchObject({ credential: "small-key" });

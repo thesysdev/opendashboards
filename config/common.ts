@@ -44,6 +44,7 @@ export const common: CommonSettings = {
       {
         key: "retail",
         name: "Retail sales",
+        summary: "A retail store's orders, products and customers.",
         description:
           "A sample retail business: orders, order lines, products, customers, promotions, refunds and sales targets. " +
           "Raw tables are in the retail schema; the analytics schema has ready-made reporting views " +

@@ -12,9 +12,10 @@ import { SourceTile } from "./source-tile";
 
 /**
  * Every source and known MCP server, by what people build dashboards about.
- * Picking one opens its connect dialog.
+ * Picking one opens its connect dialog. `sampleData` is a tile that adds the
+ * sample dataset, for someone who has connections but hasn't added it.
  */
-export function ConnectorCatalog({ secretMode }: { secretMode: SecretMode }) {
+export function ConnectorCatalog({ secretMode, sampleData }: { secretMode: SecretMode; sampleData?: React.ReactNode }) {
   const [query, setQuery] = useState("");
   const [selected, setSelected] = useState<CatalogEntry | null>(null);
   const [open, setOpen] = useState(false);
@@ -50,6 +51,14 @@ export function ConnectorCatalog({ secretMode }: { secretMode: SecretMode }) {
         )
       ) : (
         <>
+          {sampleData && (
+            <section className="mb-7">
+              <h3 className="mb-2.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">Try it out</h3>
+              <ul className="grid grid-cols-[repeat(auto-fill,minmax(11.5rem,1fr))] gap-2.5">
+                <li>{sampleData}</li>
+              </ul>
+            </section>
+          )}
           <Group label="Popular" entries={POPULAR} onPick={pick} />
           {CATALOG_CATEGORIES.map((category) => (
             <Group key={category.key} label={category.label} entries={category.entries} onPick={pick} />

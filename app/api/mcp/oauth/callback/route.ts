@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 
+import { config } from "@/config";
 import { workspacePath } from "@/lib/apps/paths";
 import { UnauthorizedError } from "@/lib/auth/user";
 import { finishMcpSignIn } from "@/lib/connections/mcp-sign-in";
@@ -26,7 +27,8 @@ export async function GET(request: NextRequest) {
   const orgId = (result.ok && result.data.orgId) || (await lastMember())?.orgId;
   // A dashboard path was checked when it was stored.
   const path = result.ok && result.data.returnTo ? result.data.returnTo : orgId ? workspacePath(orgId, "connections") : "/apps";
-  const back = new URL(path, request.nextUrl.origin);
+  // The public app origin: behind the gateway, the request's own origin may be an internal one.
+  const back = new URL(path, config().appOrigin);
   if (result.ok) back.searchParams.set("signed_in", result.data.id);
   else back.searchParams.set("sign_in_error", /^[a-z_]{1,40}$/.test(result.error.code) ? result.error.code : "oauth_failed");
   return NextResponse.redirect(back, { status: 303 });

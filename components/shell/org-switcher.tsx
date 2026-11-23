@@ -1,9 +1,10 @@
 "use client";
 
-import { CheckIcon, ChevronsUpDownIcon, PlusIcon, UsersIcon } from "lucide-react";
+import { CheckIcon, ChevronsUpDownIcon, LogOutIcon, PlusIcon, UsersIcon } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import posthog from "posthog-js";
+import { useRef, useState, useTransition } from "react";
 
 import { createOrgAction, switchDevUserAction } from "@/app/(app)/settings/actions";
 import { Button } from "@/components/ui/button";
@@ -24,6 +25,9 @@ import { cn } from "@/lib/utils";
 import { AvatarCircle } from "./avatar-circle";
 
 export type SwitcherOrg = { id: string; name: string };
+
+/** The gateway in front of OpenDashboards owns the session: it signs out on a POST here and sends the browser to `next`. */
+const SIGN_OUT_URL = "/auth/signout?next=/";
 
 /**
  * Who is signed in and which workspace is on screen, with the menu to go to
@@ -55,6 +59,13 @@ export function OrgSwitcher({
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
       window.location.assign("/apps");
     });
+  }
+
+  const signOut = useRef<HTMLFormElement>(null);
+  function logOut() {
+    // Whoever signs in next on this browser isn't counted as this person.
+    if (posthog.__loaded) posthog.reset();
+    signOut.current?.submit();
   }
 
   return (
@@ -125,8 +136,14 @@ export function OrgSwitcher({
               ))}
             </>
           )}
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={logOut}>
+            <LogOutIcon aria-hidden />
+            Log out
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
+      <form ref={signOut} method="post" action={SIGN_OUT_URL} hidden />
       <CreateWorkspaceDialog open={creating} onOpenChange={setCreating} />
     </>
   );

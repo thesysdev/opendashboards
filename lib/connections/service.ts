@@ -70,7 +70,7 @@ export type ConnectionSummary = {
   /** "oauth" for a connection signed in with OAuth, which can be signed in to again. */
   signIn: "oauth" | null;
   /** Set for an installed demo dataset: which one, and what's in it. */
-  demo: { key: string; description: string } | null;
+  demo: { key: string; description: string; summary: string } | null;
   /** org: every member of the org queries with it. personal: only whoever signed in. */
   sharing: ConnectionSharing;
   /** Whether the caller added it (for a sign-in: whether it's theirs). */
@@ -86,6 +86,7 @@ export type DemoDatasetSummary = {
   key: string;
   name: string;
   description: string;
+  summary: string;
   prompts: string[];
   /** The user's connection to it, when installed. */
   connectionId: string | null;
@@ -453,7 +454,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           ...access,
           signIn: null,
           apps: used,
-          demo: { key: dataset.key, description: dataset.description },
+          demo: { key: dataset.key, description: dataset.description, summary: dataset.summary },
         });
       }
       return summaries;
@@ -470,6 +471,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           key: dataset.key,
           name: dataset.name,
           description: dataset.description,
+          summary: dataset.summary,
           prompts: dataset.prompts,
           connectionId: connection?.id ?? null,
           apps: connection?.apps ?? [],

@@ -14,10 +14,16 @@ export type SecretContext = {
  * A secret as stored. `provider` and `v` say how to open it. "none" records
  * that there is no secret: a server that needs no password. It holds nothing,
  * so there is nothing to encrypt.
+ *
+ * KMS v1 is encrypted by KMS itself, which takes at most 4,096 bytes. KMS v2
+ * is for larger secrets, such as an OAuth sign-in's tokens: KMS issues a data
+ * key bound to the same context, the secret is encrypted with it here
+ * (AES-256-GCM), and only the KMS-encrypted data key is stored with it.
  */
 export type SealedSecret =
   | { v: 1; provider: "plaintext"; value: string }
   | { v: 1; provider: "kms"; keyId: string; ciphertext: string }
+  | { v: 2; provider: "kms"; keyId: string; dataKey: string; iv: string; ciphertext: string }
   | { v: 1; provider: "none" };
 
 export type SecretProvider = Exclude<SealedSecret["provider"], "none">;
@@ -29,11 +35,12 @@ export interface SecretBox {
 }
 
 /**
- * The largest secret we store, in bytes of UTF-8. KMS's Encrypt takes at most
- * 4,096 bytes of plaintext with a symmetric key, and every provider applies the
- * same limit so local development fails exactly where production would.
+ * The largest secret we store, in bytes of UTF-8: room for any real
+ * credential, OAuth sign-ins with large tokens included, while still refusing
+ * a pasted file. Every provider applies the same limit so local development
+ * fails exactly where production would.
  */
-export const MAX_SECRET_BYTES = 4_096;
+export const MAX_SECRET_BYTES = 65_536;
 
 /** Bytes a secret takes: KMS counts bytes, not characters. */
 export const secretBytes = (plaintext: string) => Buffer.byteLength(plaintext, "utf8");

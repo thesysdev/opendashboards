@@ -5,15 +5,15 @@ import { Suspense } from "react";
 import { ConnectionActions, StopSharingButton } from "@/components/connections/connection-actions";
 import { ConnectorCatalog } from "@/components/connections/connector-catalog";
 import { SignInResult } from "@/components/connections/sign-in-result";
-import { DemoDatasetSwitch } from "@/components/connections/demo-dataset-switch";
+import { BuildButton } from "@/components/connections/build-button";
+import { AddSampleDataButton, SampleDataActions, SampleDataTile } from "@/components/connections/sample-data";
 import type { SecretMode } from "@/components/connections/connection-form-dialog";
 import { SourceTile } from "@/components/connections/source-tile";
 import { UsedBy } from "@/components/connections/used-by";
 import { EmptyState, PageHeader, SectionLabel } from "@/components/page-header";
 import { Skeleton } from "@/components/ui/skeleton";
-import { getConnectionService, type ConnectionSummary, type DemoDatasetSummary } from "@/lib/connections";
+import { getConnectionService, type ConnectionSummary } from "@/lib/connections";
 import type { ConnectionStatus } from "@/lib/db/schema";
-import { formatRelative } from "@/lib/format";
 import { getOrgService, requireMemberOf } from "@/lib/orgs";
 import { canManageConnections } from "@/lib/orgs/access";
 import { getSecretMode } from "@/lib/secrets";
@@ -41,7 +41,7 @@ export default function ConnectionsPage({ params }: { params: Params }) {
 async function ConnectionsContent({ params }: { params: Params }) {
   const member = await requireMemberOf((await params).orgId);
   const service = getConnectionService();
-  const [all, demos, org] = await Promise.all([
+  const [connections, demos, org] = await Promise.all([
     service.list(member),
     service.listDemoDatasets(member),
     getOrgService().get(member.userId, member.orgId),
@@ -49,11 +49,11 @@ async function ConnectionsContent({ params }: { params: Params }) {
   // Who serves whom only matters once someone else is here (or is about to be): alone, there's nobody to share with.
   const shared = (org?.members.length ?? 1) + (org?.invites.length ?? 0) > 1;
   const team = shared ? member.orgName : null;
+  // Viewers can't add, change or build on connections: they only use what's here.
   const canManage = canManageConnections(member.role);
-  // Installed demo datasets are listed with their switch below, not here.
-  const connections = all.filter((connection) => !connection.demo);
   const secretMode = getSecretMode();
-  const now = new Date();
+  // Sample data that isn't added yet: offered on the empty state, or as a catalog tile once there are connections.
+  const sample = demos.find((demo) => demo.connectionId === null);
 
   return (
     <>
@@ -64,18 +64,19 @@ async function ConnectionsContent({ params }: { params: Params }) {
           <EmptyState
             icon={PlugIcon}
             title="No connections yet"
-            description={canManage ? "Add a source below to get started." : "An editor or admin of this workspace can add one."}
+            description={
+              !canManage
+                ? "An editor or admin of this workspace can add one."
+                : sample
+                  ? "Add a source below, or try OpenDashboards with sample data."
+                  : "Add a source below to get started."
+            }
+            action={canManage && sample && <AddSampleDataButton dataset={sample.key} name={sample.name} />}
           />
         ) : (
           <ul className="divide-y rounded-xl border">
             {connections.map((connection) => (
-              <ConnectionRow
-                key={connection.id}
-                connection={connection}
-                secretMode={secretMode}
-                now={now}
-                team={team}
-              />
+              <ConnectionRow key={connection.id} connection={connection} secretMode={secretMode} team={team} canBuild={canManage} />
             ))}
           </ul>
         )}
@@ -89,21 +90,13 @@ async function ConnectionsContent({ params }: { params: Params }) {
               A key or password serves everyone in {team}. A sign-in is yours alone until you share it.
             </p>
           )}
-          <ConnectorCatalog secretMode={secretMode} />
-        </section>
-      )}
-
-      {canManage && demos.length > 0 && (
-        <section aria-labelledby="demo-datasets" className="mt-10">
-          <SectionLabel id="demo-datasets">Demo datasets</SectionLabel>
-          <p className="-mt-1 mb-3 text-sm text-muted-foreground">
-            Sample data to try OpenDashboards with. Install one to use it like any connection.
-          </p>
-          <ul className="divide-y rounded-xl border">
-            {demos.map((demo) => (
-              <DemoRow key={demo.key} demo={demo} />
-            ))}
-          </ul>
+          <ConnectorCatalog
+            secretMode={secretMode}
+            sampleData={
+              sample &&
+              connections.length > 0 && <SampleDataTile dataset={sample.key} name={sample.name} summary={sample.summary} />
+            }
+          />
         </section>
       )}
 
@@ -112,42 +105,56 @@ async function ConnectionsContent({ params }: { params: Params }) {
   );
 }
 
-
+/**
+ * One connection, sample data included: the same row for every source, with
+ * Build to start an app on it. A working connection gets only a faint dot;
+ * a broken one says what's wrong. With others in the workspace, it also says
+ * whether it serves everyone, and whose account a shared sign-in runs as.
+ */
 function ConnectionRow({
   connection,
   secretMode,
-  now,
   team,
+  canBuild,
 }: {
   connection: ConnectionSummary;
   secretMode: SecretMode;
-  now: Date;
+  /** The workspace's name, when it has other people. Null when there's nobody to share with. */
   team: string | null;
+  /** Whether the reader may build apps and manage connections: not a viewer. */
+  canBuild: boolean;
 }) {
   const signedIn = connection.signIn === "oauth";
-  const details = [
-    connection.source,
-    connection.detail,
-    connection.credentialHint,
-    // Whose account a shared sign-in runs as, and who added anything that isn't the reader's own.
-    ...(team && connection.addedBy
-      ? [signedIn ? `signed in by ${connection.addedBy} · everyone queries as them` : `added by ${connection.addedBy}`]
-      : []),
-    ...(team && signedIn && connection.mine && connection.sharing === "org" ? ["everyone queries as you"] : []),
-    `checked ${formatRelative(connection.lastCheckedAt, now)}`,
-  ];
+  const detail = connection.demo
+    ? `Sample data · ${connection.demo.summary}`
+    : [
+        connection.source,
+        connection.detail,
+        // Whose account a shared sign-in runs as, and who added anything that isn't the reader's own.
+        ...(team && connection.addedBy
+          ? [signedIn ? `signed in by ${connection.addedBy} · everyone queries as them` : `added by ${connection.addedBy}`]
+          : []),
+        ...(team && signedIn && connection.mine && connection.sharing === "org" ? ["everyone queries as you"] : []),
+      ]
+        .filter(Boolean)
+        .join(" · ");
 
   return (
     <li className="p-3.5">
       <div className="flex items-center gap-3">
         <SourceTile label={connection.tile} />
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{connection.name}</p>
-          <p className="truncate text-sm text-muted-foreground">{details.join(" · ")}</p>
+          <p className="flex items-center gap-1.5 text-sm font-medium">
+            <span className="truncate">{connection.name}</span>
+            <Status status={connection.status} />
+          </p>
+          <p className="truncate text-sm text-muted-foreground">{detail}</p>
         </div>
-        {team && <SharingBadge sharing={connection.sharing} />}
-        <StatusBadge status={connection.status} />
-        {connection.canManage && (
+        {team && !connection.demo && <SharingBadge sharing={connection.sharing} />}
+        {canBuild && <BuildButton connectionId={connection.id} name={connection.name} />}
+        {connection.demo ? (
+          canBuild && <SampleDataActions dataset={connection.demo.key} name={connection.name} apps={connection.apps} />
+        ) : connection.canManage ? (
           <ConnectionActions
             connection={{
               id: connection.id,
@@ -161,10 +168,11 @@ function ConnectionRow({
             secretMode={secretMode}
             team={team}
           />
-        )}
-        {/* A viewer can't manage connections, but can always take back a sign-in of theirs that everyone queries as. */}
-        {!connection.canManage && signedIn && connection.mine && connection.sharing === "org" && (
-          <StopSharingButton connection={{ id: connection.id, name: connection.name }} />
+        ) : (
+          // A viewer can't manage connections, but can always take back a sign-in of theirs that everyone queries as.
+          signedIn &&
+          connection.mine &&
+          connection.sharing === "org" && <StopSharingButton connection={{ id: connection.id, name: connection.name }} />
         )}
       </div>
       <UsedBy apps={connection.apps} />
@@ -172,32 +180,16 @@ function ConnectionRow({
   );
 }
 
-function DemoRow({ demo }: { demo: DemoDatasetSummary }) {
+function Status({ status }: { status: ConnectionStatus }) {
+  if (status === "ok") {
+    return <span role="img" aria-label="Connected" className="size-1.5 shrink-0 rounded-full bg-emerald-500/50" />;
+  }
   return (
-    <li className="p-3.5">
-      <div className="flex items-center gap-3">
-        <SourceTile label="DM" />
-        <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-medium">{demo.name}</p>
-          <p className="line-clamp-2 text-sm text-muted-foreground">{demo.description}</p>
-        </div>
-        <DemoDatasetSwitch
-          dataset={demo.key}
-          name={demo.name}
-          installed={demo.connectionId !== null}
-          apps={demo.apps}
-        />
-      </div>
-      <UsedBy apps={demo.apps} />
-    </li>
+    <span className={cn("shrink-0 text-xs font-normal", status === "invalid" ? "text-red-600" : "text-amber-600")}>
+      {status === "invalid" ? "Invalid" : "Unavailable"}
+    </span>
   );
 }
-
-const STATUS: Record<ConnectionStatus, { label: string; dot: string }> = {
-  ok: { label: "Connected", dot: "bg-emerald-500" },
-  invalid: { label: "Invalid", dot: "bg-red-500" },
-  unavailable: { label: "Unavailable", dot: "bg-amber-500" },
-};
 
 /** With others in the workspace: whether a connection serves everyone, or only the person who signed in. */
 function SharingBadge({ sharing }: { sharing: ConnectionSummary["sharing"] }) {
@@ -206,16 +198,6 @@ function SharingBadge({ sharing }: { sharing: ConnectionSummary["sharing"] }) {
     <span className="hidden shrink-0 items-center gap-1 rounded-md bg-neutral-100 px-1.5 py-0.5 text-[0.6875rem] text-neutral-600 sm:flex">
       <Icon className="size-3" aria-hidden />
       {sharing === "org" ? "Everyone" : "Only you"}
-    </span>
-  );
-}
-
-function StatusBadge({ status }: { status: ConnectionStatus }) {
-  const { label, dot } = STATUS[status];
-  return (
-    <span className="hidden shrink-0 items-center gap-1.5 text-xs text-muted-foreground sm:flex">
-      <span className={cn("size-1.5 rounded-full", dot)} aria-hidden />
-      {label}
     </span>
   );
 }
