@@ -14,7 +14,7 @@ export async function CurrentOrgSwitcher({ compact = false }: { compact?: boolea
   return (
     <OrgSwitcher
       email={member.user.email}
-      orgs={member.orgs.map(({ id, name, isNew }) => ({ id, name, isNew }))}
+      orgs={member.orgs.map(({ id, name }) => ({ id, name }))}
       activeId={member.orgId}
       compact={compact}
       // Only where the dev sign-in is what decides who a request is for.

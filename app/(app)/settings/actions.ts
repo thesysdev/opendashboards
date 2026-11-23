@@ -40,7 +40,6 @@ export async function switchOrgAction(orgId: unknown): Promise<OrgResult> {
     return fail({ code: "not_found", message: "This workspace doesn't exist, or you aren't a member." });
   }
   await openOrg(orgId);
-  await getOrgService().markSeen(user.id, orgId);
   revalidateShell();
   return { ok: true, data: undefined };
 }

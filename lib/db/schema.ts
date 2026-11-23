@@ -78,7 +78,7 @@ export const orgMembers = pgTable(
     role: orgRoleEnum("role").notNull(),
     /** Who added them. Null for the person who created the org. */
     addedBy: text("added_by"),
-    /** When they first opened the org: until then the switcher marks it as new. */
+    /** No longer read or written: it backed a "New" mark in the switcher that was removed. Kept because migrations only add. */
     seenAt: timestamp("seen_at", { withTimezone: true }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   },

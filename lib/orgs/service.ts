@@ -5,7 +5,7 @@ import type { Database } from "@/lib/db";
 import { appMembers, apps, dashboards, dataConnections, mcpOAuthSignIns, orgInvites, orgMembers, orgs, users, type OrgRole } from "@/lib/db/schema";
 import { logError } from "@/lib/log";
 
-import { canManageMembers, isUuid, roleIn } from "./access";
+import { canManageMembers, roleIn } from "./access";
 import { fail, forbidden, fromValidation, internalError, notFound, ok, type OrgResult } from "./errors";
 
 export type OrgSummary = {
@@ -13,7 +13,6 @@ export type OrgSummary = {
   name: string;
   role: OrgRole;
   /** They were added and haven't opened it yet. */
-  isNew: boolean;
 };
 
 export type OrgMember = { userId: string; email: string | null; role: OrgRole; you: boolean; joinedAt: Date };
@@ -64,7 +63,7 @@ const deleteSchema = z.object({ orgId: z.uuid(), name: z.string().max(200) }).st
  * asks them to create one before anything else. Every change checks the
  * caller's own role in the database first.
  */
-export function createOrgService({ db, now = () => new Date() }: { db: Database; now?: () => Date }) {
+export function createOrgService({ db }: { db: Database }) {
   async function guard<T>(operation: string, fn: () => Promise<OrgResult<T>>): Promise<OrgResult<T>> {
     try {
       return await fn();
@@ -152,7 +151,7 @@ export function createOrgService({ db, now = () => new Date() }: { db: Database;
         if (!memberships.length) {
           // Signed up on their own: a workspace of their own.
           const [org] = await tx.insert(orgs).values({ name: defaultWorkspaceName(email) }).returning({ id: orgs.id });
-          await tx.insert(orgMembers).values({ orgId: org.id, userId: user.id, role: "admin", seenAt: now() });
+          await tx.insert(orgMembers).values({ orgId: org.id, userId: user.id, role: "admin" });
           return;
         }
         // Here before workspaces: theirs was made by the migration, which couldn't know their email.
@@ -195,21 +194,12 @@ export function createOrgService({ db, now = () => new Date() }: { db: Database;
     /** The workspaces the user is in, the one they've been in longest first. */
     async list(userId: string): Promise<OrgSummary[]> {
       const rows = await db
-        .select({ id: orgs.id, name: orgs.name, role: orgMembers.role, seenAt: orgMembers.seenAt })
+        .select({ id: orgs.id, name: orgs.name, role: orgMembers.role })
         .from(orgMembers)
         .innerJoin(orgs, eq(orgs.id, orgMembers.orgId))
         .where(eq(orgMembers.userId, userId))
         .orderBy(asc(orgMembers.createdAt), asc(orgs.id));
-      return rows.map(({ seenAt, ...row }) => ({ ...row, isNew: seenAt === null }));
-    },
-
-    /** Marks an org as opened, so the switcher stops flagging it as new. */
-    async markSeen(userId: string, orgId: string): Promise<void> {
-      if (!isUuid(orgId)) return;
-      await db
-        .update(orgMembers)
-        .set({ seenAt: now() })
-        .where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, userId), isNull(orgMembers.seenAt)));
+      return rows;
     },
 
     /**
@@ -224,7 +214,7 @@ export function createOrgService({ db, now = () => new Date() }: { db: Database;
         if (!parsed.success) return fromValidation(parsed.error);
         return db.transaction(async (tx) => {
           const [org] = await tx.insert(orgs).values({ name: parsed.data.name }).returning({ id: orgs.id });
-          await tx.insert(orgMembers).values({ orgId: org.id, userId, role: "admin", seenAt: now() });
+          await tx.insert(orgMembers).values({ orgId: org.id, userId, role: "admin" });
           return ok({ id: org.id });
         });
       });

@@ -23,7 +23,7 @@ import { cn } from "@/lib/utils";
 
 import { AvatarCircle } from "./avatar-circle";
 
-export type SwitcherOrg = { id: string; name: string; isNew: boolean };
+export type SwitcherOrg = { id: string; name: string };
 
 /**
  * Who is signed in and which workspace they have open, with the menu to switch
@@ -48,7 +48,6 @@ export function OrgSwitcher({
   const [pending, startTransition] = useTransition();
   const [creating, setCreating] = useState(false);
   const active = orgs.find((org) => org.id === activeId);
-  const hasNew = orgs.some((org) => org.isNew);
 
   function open(orgId: string) {
     if (orgId === activeId) return;
@@ -80,10 +79,9 @@ export function OrgSwitcher({
             <button
               type="button"
               aria-label={`Signed in as ${email}. Switch workspace`}
-              className="relative rounded-full focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
+              className="rounded-full focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none"
             >
               <AvatarCircle name={email} />
-              {hasNew && <NewDot className="absolute -top-0.5 -right-0.5" />}
             </button>
           ) : (
             <button
@@ -95,10 +93,7 @@ export function OrgSwitcher({
                 pending && "opacity-60",
               )}
             >
-              <span className="relative">
-                <AvatarCircle name={email} className="size-7" />
-                {hasNew && <NewDot className="absolute -top-0.5 -right-0.5" />}
-              </span>
+              <AvatarCircle name={email} className="size-7" />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-sm font-medium text-foreground/90">{active?.name}</span>
                 <span className="block truncate text-xs text-muted-foreground" title={email}>
@@ -114,7 +109,6 @@ export function OrgSwitcher({
           {orgs.map((org) => (
             <DropdownMenuItem key={org.id} onSelect={() => open(org.id)} disabled={pending}>
               <span className="min-w-0 flex-1 truncate">{org.name}</span>
-              {org.isNew && <span className="rounded bg-blue-50 px-1.5 py-0.5 text-[0.6875rem] font-medium text-blue-700">New</span>}
               {org.id === activeId && <CheckIcon aria-label="Open now" />}
             </DropdownMenuItem>
           ))}
@@ -148,10 +142,6 @@ export function OrgSwitcher({
       <CreateWorkspaceDialog open={creating} onOpenChange={setCreating} />
     </>
   );
-}
-
-function NewDot({ className }: { className?: string }) {
-  return <span aria-hidden className={cn("size-2 rounded-full bg-blue-600 ring-2 ring-neutral-50", className)} />;
 }
 
 /** Names a new workspace. Its creator is its first admin, and it opens straight away. */

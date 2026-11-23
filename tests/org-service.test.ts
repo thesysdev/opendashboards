@@ -33,8 +33,8 @@ describe("signing up", () => {
     await service.ensureUser(bob);
     await service.ensureUser(bob);
     expect(await service.isKnown(bob)).toBe(true);
-    expect((await service.list(bob.id)).map(({ name, role, isNew }) => ({ name, role, isNew }))).toEqual([
-      { name: "bob's workspace", role: "admin", isNew: false },
+    expect((await service.list(bob.id)).map(({ name, role }) => ({ name, role }))).toEqual([
+      { name: "bob's workspace", role: "admin" },
     ]);
   });
 
@@ -44,7 +44,7 @@ describe("signing up", () => {
 
     await service.ensureUser(carol);
 
-    expect(await service.list(carol.id)).toEqual([{ id: orgId, name: "Acme", role: "viewer", isNew: true }]);
+    expect(await service.list(carol.id)).toEqual([{ id: orgId, name: "Acme", role: "viewer" }]);
     expect(await db.select().from(orgInvites)).toEqual([]);
   });
 
@@ -151,15 +151,12 @@ describe("workspaces", () => {
 });
 
 describe("adding people", () => {
-  it("adds someone who already has an account straight away, marked as new to them", async () => {
+  it("adds someone who already has an account straight away", async () => {
     const orgId = await team();
     await service.ensureUser(bob);
     expect(await service.invite(alice.id, { orgId, email: "BOB@example.com", role: "editor" })).toEqual({ ok: true, data: { status: "added" } });
     expect(await roleIn(db, bob.id, orgId)).toBe("editor");
-    expect((await service.list(bob.id)).find((org) => org.id === orgId)).toMatchObject({ role: "editor", isNew: true });
-
-    await service.markSeen(bob.id, orgId);
-    expect((await service.list(bob.id)).find((org) => org.id === orgId)).toMatchObject({ isNew: false });
+    expect((await service.list(bob.id)).find((org) => org.id === orgId)).toMatchObject({ role: "editor" });
   });
 
   it("says so when they're already a member", async () => {
@@ -181,7 +178,6 @@ describe("adding people", () => {
 
     expect(await roleIn(db, carol.id, orgId)).toBe("viewer");
     expect(await db.select().from(orgInvites)).toEqual([]);
-    expect((await service.list(carol.id)).find((org) => org.id === orgId)).toMatchObject({ isNew: true });
   });
 
   it("gives nothing to someone who signs in with a different email", async () => {
