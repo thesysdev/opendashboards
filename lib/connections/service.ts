@@ -13,9 +13,11 @@ import {
   type ConnectionSharing,
   type ConnectionStatus,
   type DataConnectionRow,
+  type OrgRole,
 } from "@/lib/db/schema";
 import { logError, logRejection, logWarning } from "@/lib/log";
-import { appAccess, appOpenTo, appsOpenTo, canManageConnections, isUuid, roleIn, type Scope } from "@/lib/orgs/access";
+import { appAccess, appOpenTo, appsOpenTo, isUuid, roleIn, workspaceFacts, type Scope } from "@/lib/orgs/access";
+import { can, decide, refusal, type ConnectionFacts } from "@/lib/orgs/policy";
 import { count } from "@/lib/metrics";
 import type { SecretBox, SecretContext } from "@/lib/secrets";
 import { MAX_SECRET_BYTES, SecretTooLargeError, secretBytes, type SealedSecret } from "@/lib/secrets/types";
@@ -30,7 +32,6 @@ import type { ConnectionSource, ConnectionWarning, OpenConnection } from "@/lib/
 
 import {
   fail,
-  forbidden,
   fromCheckError,
   fromValidation,
   internalError,
@@ -77,8 +78,10 @@ export type ConnectionSummary = {
   mine: boolean;
   /** Who added it, by email, when it isn't the caller. */
   addedBy: string | null;
-  /** Whether the caller may rename, re-key, test or delete it. */
+  /** Whether the caller may rename, re-key, test or delete it (the policy's connection.update). */
   canManage: boolean;
+  /** What the policy decides on, for pages to ask `can`. */
+  facts: ConnectionFacts;
 };
 
 /** A demo dataset as the Connections and home pages show it. */
@@ -199,25 +202,31 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
   const usableBy = ({ userId, orgId }: Scope) =>
     and(eq(dataConnections.orgId, orgId), or(eq(dataConnections.sharing, "org"), eq(dataConnections.userId, userId)));
 
+  /** A connection's facts for the policy. */
+  const asConnection = (row: { userId: string; sharing: DataConnectionRow["sharing"] }, userId: string, role: OrgRole | null): ConnectionFacts => ({
+    kind: "connection",
+    role,
+    own: row.userId === userId,
+    sharing: row.sharing,
+  });
+
   /** A connection and the caller's role in its org, or null: no such connection, or they aren't a member. */
   async function lookup(userId: string, id: string) {
     if (!isUuid(id)) return null;
     const [row] = await db.select().from(dataConnections).where(eq(dataConnections.id, id)).limit(1);
     if (!row) return null;
     const role = await roleIn(db, userId, row.orgId);
-    return role ? { row, role, own: row.userId === userId } : null;
+    return role ? { row, role, own: row.userId === userId, facts: asConnection(row, userId, role) } : null;
   }
 
   /**
-   * A connection and what the caller may do with it, or null when they can't
-   * even use it. `manage`: rename, re-key, test, delete, share. `own`: they
-   * added it, which is what signing in again needs.
+   * A connection and the caller's facts about it, or null when they can't
+   * even use it (the policy's connection.use). `own`: they added it.
    */
   async function find(userId: string, id: string) {
     const found = await lookup(userId, id);
-    if (!found) return null;
-    if (found.row.sharing === "personal" && !found.own) return null;
-    return { ...found, manage: canManageConnections(found.role) && (found.own || found.row.sharing === "org") };
+    if (!found || !can("connection", "use", found.facts)) return null;
+    return found;
   }
 
   /** Which server a stored connection points at, for matching two sign-ins to the same place. */
@@ -276,11 +285,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     return row?.connection ?? null;
   }
 
-  /** A connection the caller may manage, as a result: missing and "use only" stay distinct. */
-  async function findManaged(userId: string, id: string): Promise<Result<DataConnectionRow>> {
+  /** A connection the caller may change or delete, as a result: missing and "use only" stay distinct. */
+  async function findManaged(userId: string, id: string, action: "update" | "delete"): Promise<Result<DataConnectionRow>> {
     const found = await find(userId, id);
     if (!found) return notFound();
-    return found.manage ? ok(found.row) : forbidden();
+    const decision = decide("connection", action, found.facts);
+    return decision.allowed ? ok(found.row) : refusal(decision);
   }
 
   /** The apps that use a connection: the ones the caller can open by name, the rest as a count. */
@@ -434,10 +444,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       for (const { config, demoDataset, ownerId, ownerEmail, ...row } of rows) {
         const used = appRows.filter((app) => app.connectionId === row.id).map(({ id, name }) => ({ id, name }));
         const mine = ownerId === scope.userId;
+        const facts = asConnection({ userId: ownerId, sharing: row.sharing }, scope.userId, role);
         const access = {
           mine,
           addedBy: mine ? null : ownerEmail,
-          canManage: canManageConnections(role) && (mine || row.sharing === "org"),
+          canManage: can("connection", "update", facts),
+          facts,
         };
         if (demoDataset === null) {
           const parsed = configOf({ config });
@@ -485,9 +497,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
      */
     installDemo(scope: Scope, input: unknown): Promise<Result<{ id: string }>> {
       return guard("installDemo", async () => {
-        const role = await roleIn(db, scope.userId, scope.orgId);
-        if (!role) return notFound();
-        if (!canManageConnections(role)) return forbidden();
+        const adding = decide("sampleData", "create", await workspaceFacts(db, scope.userId, scope.orgId));
+        if (!adding.allowed) return refusal(adding);
         const parsed = demoRefSchema.safeParse(input);
         const dataset = parsed.success ? demoDatasetFor(parsed.data.dataset) : undefined;
         if (!dataset) return fail({ code: "not_found", message: "This demo dataset isn't available." });
@@ -521,9 +532,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     /** Uninstalls a demo dataset no app uses. Uninstalling one that isn't installed succeeds. */
     uninstallDemo(scope: Scope, input: unknown): Promise<Result<undefined>> {
       return guard("uninstallDemo", async () => {
-        const role = await roleIn(db, scope.userId, scope.orgId);
-        if (!role) return notFound();
-        if (!canManageConnections(role)) return forbidden();
+        const removing = decide("sampleData", "delete", await workspaceFacts(db, scope.userId, scope.orgId));
+        if (!removing.allowed) return refusal(removing);
         const parsed = demoRefSchema.safeParse(input);
         if (!parsed.success) return fail({ code: "not_found", message: "This demo dataset isn't available." });
         const [row] = await db
@@ -543,9 +553,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     create(scope: Scope, input: unknown): Promise<Result<{ id: string; warnings: ConnectionWarning[] }>> {
       return guard("create", async () => {
         const { userId, orgId } = scope;
-        const role = await roleIn(db, userId, orgId);
-        if (!role) return notFound();
-        if (!canManageConnections(role)) return forbidden();
+        const creating = decide("connection", "create", await workspaceFacts(db, userId, orgId));
+        if (!creating.allowed) return refusal(creating);
         const envelope = createEnvelopeSchema.safeParse(input);
         if (!envelope.success) return fromValidation(envelope.error);
         const type = envelope.data.type as ConnectionType;
@@ -594,7 +603,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       return guard("retest", async () => {
         const parsed = connectionRefSchema.safeParse(input);
         if (!parsed.success) return notFound();
-        const managed = await findManaged(userId, parsed.data.id);
+        const managed = await findManaged(userId, parsed.data.id, "update");
         if (!managed.ok) return managed;
         const row = managed.data;
         if (row.demoDataset !== null) return demoReadOnly();
@@ -641,7 +650,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!parsed.success) {
           return parsed.error.issues[0]?.path[0] === "id" ? notFound() : fromValidation(parsed.error);
         }
-        const managed = await findManaged(userId, parsed.data.id);
+        const managed = await findManaged(userId, parsed.data.id, "update");
         if (!managed.ok) return managed;
         const row = managed.data;
         if (row.demoDataset !== null) return demoReadOnly();
@@ -680,7 +689,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       return guard("rename", async () => {
         const parsed = renameSchema.safeParse(input);
         if (!parsed.success) return fromValidation(parsed.error);
-        const managed = await findManaged(userId, parsed.data.id);
+        const managed = await findManaged(userId, parsed.data.id, "update");
         if (!managed.ok) return managed;
         const updated = await db
           .update(dataConnections)
@@ -696,7 +705,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       return guard("remove", async () => {
         const parsed = connectionRefSchema.safeParse(input);
         if (!parsed.success) return notFound();
-        const managed = await findManaged(userId, parsed.data.id);
+        const managed = await findManaged(userId, parsed.data.id, "delete");
         if (!managed.ok) return managed;
         return removeRow(userId, managed.data);
       });
@@ -715,8 +724,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!parsed.success) return notFound();
         const found = await find(userId, parsed.data.id);
         if (!found) return notFound();
-        if (!found.own) return forbidden("Only the person who signed in can share or unshare this connection.");
-        if (!found.manage && parsed.data.sharing === "org") return forbidden();
+        // Taking it back is theirs whatever their role; sharing it also needs an editor or admin.
+        const unsharing = decide("connection", "stopSharing", found.facts);
+        if (!unsharing.allowed) return refusal(unsharing);
+        if (parsed.data.sharing === "org") {
+          const sharing = decide("connection", "share", found.facts);
+          if (!sharing.allowed) return refusal(sharing);
+        }
         const config = found.row.demoDataset === null ? configOf(found.row) : null;
         if (!config || !("oauth" in config && config.oauth)) {
           return fail({ code: "validation", message: "Only a connection you signed in to can be personal. This one serves the whole workspace." });
@@ -814,11 +828,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           // Signing in again is for whoever signed in the first time: the connection keeps running as them.
           const existing = await find(userId, sign.connectionId);
           if (!existing) return notFound();
-          if (!existing.own) return forbidden("Only the person who signed in can sign in to this connection again.");
+          const again = decide("connection", "signInAgain", existing.facts);
+          if (!again.allowed) return refusal(again);
         } else {
-          const role = await roleIn(db, userId, orgId);
-          if (!role) return notFound();
-          if (!ownCopy && !canManageConnections(role)) return forbidden();
+          const workspace = await workspaceFacts(db, userId, orgId);
+          const starting = ownCopy ? decide("connection", "signInAsSelf", workspace) : decide("connection", "create", workspace);
+          if (!starting.allowed) return refusal(starting);
         }
         const tooLarge = refuseIfTooLarge(sign.config.type, sign.pending, "create");
         if (tooLarge) return tooLarge;
@@ -872,7 +887,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 
         if (input.connectionId) {
           const existing = await find(userId, input.connectionId);
-          if (!existing?.own) return notFound();
+          // Only ever the sign-in's own owner, finishing what they started: anything else reads as gone.
+          if (!existing || !can("connection", "signInAgain", existing.facts)) return notFound();
           const { row } = existing;
           if (row.type !== config.type || row.demoDataset !== null) return notFound();
           try {
@@ -892,8 +908,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 
         // A new sign-in is its owner's alone until they choose to share it. Starting it was what needed
         // permission; this only finishes one this user started, in a workspace they're still in.
-        const role = await roleIn(db, userId, input.orgId);
-        if (!role || !input.orgId) return notFound();
+        if (!input.orgId || !can("workspace", "view", await workspaceFacts(db, userId, input.orgId))) return notFound();
         const id = randomUUID();
         try {
           const secret = await sealCredential(input.credential, context(config.type, userId, id));

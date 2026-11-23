@@ -7,7 +7,8 @@ import { DangerZone, GuestRow, InviteForm, MemberRow, PendingInviteRow, Workspac
 import { Skeleton } from "@/components/ui/skeleton";
 import { getAppService } from "@/lib/apps";
 import { getOrgService, requireMemberOf } from "@/lib/orgs";
-import { canManageMembers } from "@/lib/orgs/access";
+import { asWorkspace } from "@/lib/orgs/access";
+import { can } from "@/lib/orgs/policy";
 
 export const metadata: Metadata = { title: "Workspace settings" };
 
@@ -29,9 +30,9 @@ async function WorkspaceSettings({ params }: { params: Params }) {
   const org = await getOrgService().get(member.userId, member.orgId);
   if (!org) notFound();
 
-  const admin = canManageMembers(org.role);
+  const workspace = asWorkspace(org.role);
   // Everyone let in from outside, on any app here: for admins to oversee.
-  const guests = admin ? await getAppService().workspaceGuests(member) : [];
+  const guests = can("guest", "viewAll", workspace) ? await getAppService().workspaceGuests(member) : [];
   const admins = org.members.filter((entry) => entry.role === "admin").length;
   return (
     <>
@@ -42,7 +43,7 @@ async function WorkspaceSettings({ params }: { params: Params }) {
 
       <section aria-labelledby="workspace-name" className="mb-10">
         <SectionLabel id="workspace-name">General</SectionLabel>
-        {admin ? (
+        {can("workspace", "update", workspace) ? (
           <WorkspaceNameForm key={org.name} orgId={org.id} name={org.name} />
         ) : (
           <div className="rounded-xl border p-4">
@@ -55,7 +56,7 @@ async function WorkspaceSettings({ params }: { params: Params }) {
       <section aria-labelledby="members">
         <SectionLabel id="members">Members</SectionLabel>
         <div className="rounded-xl border">
-          {admin && (
+          {can("member", "create", workspace) && (
             <div className="rounded-t-xl border-b bg-neutral-50/70 p-3.5">
               <InviteForm orgId={org.id} />
               <p className="mt-2 text-xs text-muted-foreground">
@@ -70,14 +71,15 @@ async function WorkspaceSettings({ params }: { params: Params }) {
                 key={entry.userId}
                 orgId={org.id}
                 member={{ userId: entry.userId, email: entry.email, role: entry.role, you: entry.you, appCount: entry.appCount }}
-                canManage={admin}
+                // Changing their role and removing them.
+                canManage={can("member", "update", workspace) && can("member", "delete", workspace)}
                 // A workspace always keeps an admin: the last one can't be demoted.
                 lastAdmin={entry.role === "admin" && admins <= 1}
               />
             ))}
             {/* Invited by email and not signed in yet: members-to-be, in the same list. */}
             {org.invites.map((invite) => (
-              <PendingInviteRow key={invite.email} orgId={org.id} invite={{ email: invite.email, role: invite.role }} canManage={admin} />
+              <PendingInviteRow key={invite.email} orgId={org.id} invite={{ email: invite.email, role: invite.role }} canManage={can("invite", "delete", workspace)} />
             ))}
           </ul>
         </div>
@@ -105,7 +107,7 @@ async function WorkspaceSettings({ params }: { params: Params }) {
         <DangerZone
           orgId={org.id}
           name={org.name}
-          canDelete={admin}
+          canDelete={can("workspace", "delete", workspace)}
           appCount={org.members.find((entry) => entry.you)?.appCount ?? 0}
         />
       </section>

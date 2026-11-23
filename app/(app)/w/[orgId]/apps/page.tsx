@@ -12,7 +12,8 @@ import { getConnectionService } from "@/lib/connections";
 import { formatRelative } from "@/lib/format";
 import { requireMemberOf } from "@/lib/orgs";
 import { appPath } from "@/lib/apps/paths";
-import { canBuild } from "@/lib/orgs/access";
+import { asWorkspace } from "@/lib/orgs/access";
+import { can } from "@/lib/orgs/policy";
 import { getSecretMode } from "@/lib/secrets";
 import { SOURCE_OPTIONS } from "@/lib/sources/catalog";
 
@@ -42,7 +43,7 @@ async function Home({ params }: { params: Params }) {
   const [apps, connections] = await Promise.all([getAppService().list(member), connectionService.list(member)]);
 
   // A viewer only opens what's shared with them: no composer, and nothing to set up.
-  if (!canBuild(member.role)) return <SharedApps apps={apps} />;
+  if (!can("app", "create", asWorkspace(member.role))) return <SharedApps apps={apps} />;
   if (!apps.length) {
     const demos = await connectionService.listDemoDatasets(member);
     return (

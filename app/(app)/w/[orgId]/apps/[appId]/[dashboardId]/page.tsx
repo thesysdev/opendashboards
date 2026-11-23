@@ -4,6 +4,7 @@ import { Suspense } from "react";
 
 import { LiveDashboard } from "@/components/apps/live-dashboard";
 import { getCurrentUserApp } from "@/lib/apps";
+import { can } from "@/lib/orgs/policy";
 import { appPath } from "@/lib/apps/paths";
 
 type Params = Promise<{ orgId: string; appId: string; dashboardId: string }>;
@@ -36,5 +37,5 @@ async function Dashboard({ params }: { params: Params }) {
   const dashboard = app.dashboards.find((candidate) => candidate.id === dashboardId);
   if (!dashboard) redirect(appPath(app.orgId, app.id));
 
-  return <LiveDashboard key={dashboard.id} appId={app.id} dashboard={dashboard} readOnly={!app.canChange} />;
+  return <LiveDashboard key={dashboard.id} appId={app.id} dashboard={dashboard} readOnly={!can("dashboard", "update", app.facts)} />;
 }

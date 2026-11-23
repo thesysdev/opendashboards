@@ -2,7 +2,8 @@ import { and, asc, count, eq, gt, sql } from "drizzle-orm";
 
 import type { Database } from "@/lib/db";
 import { dashboards } from "@/lib/db/schema";
-import { appAccess, type AppGrant } from "@/lib/orgs/access";
+import { appAccess, appFacts, type AppGrant } from "@/lib/orgs/access";
+import { can } from "@/lib/orgs/policy";
 
 /**
  * OpenDashboards' record of dashboards: which app each OpenUI Cloud artifact belongs
@@ -23,7 +24,7 @@ export function createDashboardService({ db }: { db: Database }) {
       appId: string,
       { artifactId, title, description = null }: { artifactId: string; title: string; description?: string | null },
     ): Promise<{ id: string } | null> {
-      if (!(await appAccess(db, userId, appId))?.canChange) return null;
+      if (!can("dashboard", "create", (await appFacts(db, userId, appId))?.facts ?? null)) return null;
       const [existing] = await db
         .select({ id: dashboards.id, appId: dashboards.appId })
         .from(dashboards)
@@ -51,7 +52,7 @@ export function createDashboardService({ db }: { db: Database }) {
      * sidebar order. Returns false if the caller can't change that app, or it has no such dashboard.
      */
     async remove(userId: string, appId: string, artifactId: string): Promise<boolean> {
-      if (!(await appAccess(db, userId, appId))?.canChange) return false;
+      if (!can("dashboard", "delete", (await appFacts(db, userId, appId))?.facts ?? null)) return false;
       return db.transaction(async (tx) => {
         const [removed] = await tx
           .delete(dashboards)
@@ -79,7 +80,7 @@ export function createDashboardService({ db }: { db: Database }) {
       dashboardId: string,
       changes: { title?: string; description?: string | null },
     ): Promise<boolean> {
-      if (!(await appAccess(db, userId, appId))?.canChange) return false;
+      if (!can("dashboard", "rename", (await appFacts(db, userId, appId))?.facts ?? null)) return false;
       const renamed = await db
         .update(dashboards)
         .set(changes)
@@ -93,7 +94,7 @@ export function createDashboardService({ db }: { db: Database }) {
       userId: string,
       appId: string,
     ): Promise<{ id: string; artifactId: string; title: string; description: string | null }[]> {
-      if (!(await appAccess(db, userId, appId))) return [];
+      if (!can("dashboard", "view", (await appFacts(db, userId, appId))?.facts ?? null)) return [];
       return db
         .select({
           id: dashboards.id,

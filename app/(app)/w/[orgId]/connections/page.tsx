@@ -15,7 +15,8 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getConnectionService, type ConnectionSummary } from "@/lib/connections";
 import type { ConnectionStatus } from "@/lib/db/schema";
 import { getOrgService, requireMemberOf } from "@/lib/orgs";
-import { canManageConnections } from "@/lib/orgs/access";
+import { asWorkspace } from "@/lib/orgs/access";
+import { can } from "@/lib/orgs/policy";
 import { getSecretMode } from "@/lib/secrets";
 import { cn } from "@/lib/utils";
 
@@ -50,7 +51,10 @@ async function ConnectionsContent({ params }: { params: Params }) {
   const shared = (org?.members.length ?? 1) + (org?.invites.length ?? 0) > 1;
   const team = shared ? member.orgName : null;
   // Viewers can't add, change or build on connections: they only use what's here.
-  const canManage = canManageConnections(member.role);
+  const workspace = asWorkspace(member.role);
+  const canAdd = can("connection", "create", workspace);
+  const canBuild = can("app", "create", workspace);
+  const sampleData = { add: can("sampleData", "create", workspace), remove: can("sampleData", "delete", workspace) };
   const secretMode = getSecretMode();
   // Sample data that isn't added yet: offered on the empty state, or as a catalog tile once there are connections.
   const sample = demos.find((demo) => demo.connectionId === null);
@@ -65,24 +69,31 @@ async function ConnectionsContent({ params }: { params: Params }) {
             icon={PlugIcon}
             title="No connections yet"
             description={
-              !canManage
+              !canAdd
                 ? "An editor or admin of this workspace can add one."
                 : sample
                   ? "Add a source below, or try OpenDashboards with sample data."
                   : "Add a source below to get started."
             }
-            action={canManage && sample && <AddSampleDataButton dataset={sample.key} name={sample.name} />}
+            action={sampleData.add && sample && <AddSampleDataButton dataset={sample.key} name={sample.name} />}
           />
         ) : (
           <ul className="divide-y rounded-xl border">
             {connections.map((connection) => (
-              <ConnectionRow key={connection.id} connection={connection} secretMode={secretMode} team={team} canBuild={canManage} />
+              <ConnectionRow
+                key={connection.id}
+                connection={connection}
+                secretMode={secretMode}
+                team={team}
+                canBuild={canBuild}
+                canRemoveSample={sampleData.remove}
+              />
             ))}
           </ul>
         )}
       </section>
 
-      {canManage && (
+      {canAdd && (
         <section aria-labelledby="add-connection" className="mt-10">
           <SectionLabel id="add-connection">Add a connection</SectionLabel>
           {team && (
@@ -116,13 +127,16 @@ function ConnectionRow({
   secretMode,
   team,
   canBuild,
+  canRemoveSample,
 }: {
   connection: ConnectionSummary;
   secretMode: SecretMode;
   /** The workspace's name, when it has other people. Null when there's nobody to share with. */
   team: string | null;
-  /** Whether the reader may build apps and manage connections: not a viewer. */
+  /** Whether the reader may start an app on a connection: not a viewer. */
   canBuild: boolean;
+  /** Whether the reader may remove sample data from the workspace. */
+  canRemoveSample: boolean;
 }) {
   const signedIn = connection.signIn === "oauth";
   const detail = connection.demo
@@ -153,7 +167,7 @@ function ConnectionRow({
         {team && !connection.demo && <SharingBadge sharing={connection.sharing} />}
         {canBuild && <BuildButton connectionId={connection.id} name={connection.name} />}
         {connection.demo ? (
-          canBuild && <SampleDataActions dataset={connection.demo.key} name={connection.name} apps={connection.apps} />
+          canRemoveSample && <SampleDataActions dataset={connection.demo.key} name={connection.name} apps={connection.apps} />
         ) : connection.canManage ? (
           <ConnectionActions
             connection={{
@@ -171,8 +185,8 @@ function ConnectionRow({
         ) : (
           // A viewer can't manage connections, but can always take back a sign-in of theirs that everyone queries as.
           signedIn &&
-          connection.mine &&
-          connection.sharing === "org" && <StopSharingButton connection={{ id: connection.id, name: connection.name }} />
+          connection.sharing === "org" &&
+          can("connection", "stopSharing", connection.facts) && <StopSharingButton connection={{ id: connection.id, name: connection.name }} />
         )}
       </div>
       <UsedBy apps={connection.apps} />

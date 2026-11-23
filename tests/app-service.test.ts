@@ -203,14 +203,17 @@ describe("tree", () => {
     ]);
 
     const scope = workspaceOf("alice");
+    // Her own apps, in her own workspace: what the sidebar asks the policy about.
+    const facts = { kind: "app", access: "owner", role: "admin", guest: false };
     expect(await appsService.tree(scope)).toEqual([
-      { id: second, orgId: scope.orgId, name: "Production: App 2", mine: true, canChange: true, dashboards: [] },
+      { id: second, orgId: scope.orgId, name: "Production: App 2", mine: true, canChange: true, facts, dashboards: [] },
       {
         id: first,
         name: "Production: App 1",
         orgId: scope.orgId,
         mine: true,
         canChange: true,
+        facts,
         dashboards: [
           { id: expect.any(String), title: "First tab" },
           { id: expect.any(String), title: "Second tab" },

@@ -9,6 +9,7 @@ import { renameAppAction, updateDashboardAction } from "@/app/(app)/apps/actions
 import { InlineRename } from "@/components/inline-rename";
 import type { AppTreeNode } from "@/lib/apps";
 import { appPath, dashboardPath, parseAppPath } from "@/lib/apps/paths";
+import { can } from "@/lib/orgs/policy";
 import { cn } from "@/lib/utils";
 
 import { DashboardMenu } from "./dashboard-menu";
@@ -89,7 +90,7 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                 href={appPath(app.orgId, app.id)}
                 onDoubleClick={(event) => {
                   // Renaming is for whoever can change the app.
-                  if (!app.canChange) return;
+                  if (!can("app", "update", app.facts)) return;
                   event.preventDefault();
                   setEditing(app.id);
                 }}
@@ -147,7 +148,7 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                       <>
                       <Link
                         onDoubleClick={(event) => {
-                          if (!app.canChange) return;
+                          if (!can("dashboard", "rename", app.facts)) return;
                           event.preventDefault();
                           setEditing(dashboard.id);
                         }}
@@ -163,7 +164,8 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                       >
                         <span className="truncate">{shown(dashboard.id, dashboard.title)}</span>
                       </Link>
-                      {app.canChange && (
+                      {/* Its menu renames and deletes it. */}
+                      {can("dashboard", "rename", app.facts) && can("dashboard", "delete", app.facts) && (
                         <DashboardMenu
                           appId={app.id}
                           dashboard={{ id: dashboard.id, title: shown(dashboard.id, dashboard.title) }}

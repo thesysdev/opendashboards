@@ -13,7 +13,8 @@ import { parseMessage } from "@openuidev/lang-core";
 import { config, secrets } from "@/config";
 import { getDb } from "@/lib/db";
 import { logError } from "@/lib/log";
-import { appAccess } from "@/lib/orgs/access";
+import { appFacts } from "@/lib/orgs/access";
+import { can } from "@/lib/orgs/policy";
 import { ToolError, toolsFor, type Tool, type ToolContext } from "@/lib/tools";
 
 import promptOptions from "./generated/dashboard.prompt.json";
@@ -92,7 +93,7 @@ export type DeleteResult = { ok: true } | { ok: false; reason: "not_found" | "cl
  */
 export async function deleteDashboard(userId: string, appId: string, artifactId: string): Promise<DeleteResult> {
   const dashboard = await getDashboardService().findByArtifact(userId, artifactId);
-  if (!dashboard || dashboard.appId !== appId || !dashboard.grant.canChange) return { ok: false, reason: "not_found" };
+  if (!dashboard || dashboard.appId !== appId || !can("dashboard", "delete", dashboard.grant.facts)) return { ok: false, reason: "not_found" };
   if (!(await deleteDashboardsInCloud([artifactId]))) return { ok: false, reason: "cloud_failed" };
   await getDashboardService().remove(userId, appId, artifactId);
   return { ok: true };
@@ -104,8 +105,8 @@ export async function deleteDashboard(userId: string, appId: string, artifactId:
  * any couldn't be deleted.
  */
 export async function deleteAppDashboardsInCloud(userId: string, appId: string): Promise<boolean> {
-  const grant = await appAccess(getDb(), userId, appId);
-  if (grant?.access !== "owner") return true;
+  // Not theirs to delete: the app's own delete refuses them, so there's nothing to do here.
+  if (!can("app", "delete", (await appFacts(getDb(), userId, appId))?.facts ?? null)) return true;
   const all = await getDashboardService().list(userId, appId);
   return deleteDashboardsInCloud(all.map(({ artifactId }) => artifactId));
 }

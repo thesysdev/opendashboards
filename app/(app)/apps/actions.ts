@@ -12,6 +12,7 @@ import { getConnectionService } from "@/lib/connections";
 import { fail, type AppResult } from "@/lib/apps/errors";
 import { deleteAppDashboardsInCloud, deleteDashboard, getDashboardService, shareDashboardsWithApp } from "@/lib/dashboards";
 import { getAppGrant, inWorkspace, memberOf, requireKnownUser } from "@/lib/orgs";
+import { decide, refusal } from "@/lib/orgs/policy";
 import { appPath, workspacePath } from "@/lib/apps/paths";
 
 /*
@@ -73,7 +74,8 @@ export async function setAppTeamAccessAction(input: unknown): Promise<AppResult>
   const { id, teamAccess } = parsed.data;
   const app = await getAppService().get(user.id, id);
   if (!app) return fail({ code: "not_found", message: "This app doesn't exist or was deleted." });
-  if (!app.canChange) return fail({ code: "forbidden", message: "You can view this app, but you can't change who it's shared with." });
+  const sharing = decide("appSharing", "update", app.facts);
+  if (!sharing.allowed) return refusal(sharing);
   if (teamAccess !== "private") {
     const shared = await shareDashboardsWithApp(id, app.dashboards.map((dashboard) => dashboard.artifactId));
     if (!shared) {
@@ -101,7 +103,8 @@ export async function addAppGuestAction(input: unknown): Promise<AppResult> {
   if (!parsed.success) return fail({ code: "not_found", message: "This app doesn't exist or was deleted." });
   const app = await getAppService().get(user.id, parsed.data.id);
   if (!app) return fail({ code: "not_found", message: "This app doesn't exist or was deleted." });
-  if (!app.canChange) return fail({ code: "forbidden", message: "You can view this app, but you can't change who it's shared with." });
+  const adding = decide("guest", "create", app.facts);
+  if (!adding.allowed) return refusal(adding);
   const shared = await shareDashboardsWithApp(app.id, app.dashboards.map((dashboard) => dashboard.artifactId));
   if (!shared) return fail({ code: "internal", message: "OpenUI Cloud couldn't share the app's dashboards. Nothing changed. Try again." });
   const result = await getAppService().addGuest(user.id, parsed.data);
@@ -134,7 +137,8 @@ export async function shareAppWithMemberAction(input: unknown): Promise<AppResul
   if (!parsed.success) return fail({ code: "not_found", message: "This app doesn't exist or was deleted." });
   const app = await getAppService().get(user.id, parsed.data.id);
   if (!app) return fail({ code: "not_found", message: "This app doesn't exist or was deleted." });
-  if (!app.canChange) return fail({ code: "forbidden", message: "You can view this app, but you can't change who it's shared with." });
+  const sharing = decide("appSharing", "create", app.facts);
+  if (!sharing.allowed) return refusal(sharing);
   const shared = await shareDashboardsWithApp(app.id, app.dashboards.map((dashboard) => dashboard.artifactId));
   if (!shared) return fail({ code: "internal", message: "OpenUI Cloud couldn't share the app's dashboards. Nothing changed. Try again." });
   const result = await getAppService().shareWithMember(user.id, parsed.data);

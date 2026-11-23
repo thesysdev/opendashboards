@@ -5,14 +5,14 @@ import type { Database } from "@/lib/db";
 import { appConnections, appMembers, apps, dashboards, dataConnections, mcpOAuthSignIns, orgInvites, orgMembers, orgs, users, type OrgRole } from "@/lib/db/schema";
 import { logError } from "@/lib/log";
 
-import { canManageMembers, roleIn } from "./access";
-import { fail, forbidden, fromValidation, internalError, notFound, ok, type OrgResult } from "./errors";
+import { roleIn, workspaceFacts } from "./access";
+import { fail, fromValidation, internalError, notFound, ok, type OrgResult } from "./errors";
+import { decide, refusal, type Decision, type WorkspaceFacts } from "./policy";
 
 export type OrgSummary = {
   id: string;
   name: string;
   role: OrgRole;
-  /** They were added and haven't opened it yet. */
 };
 
 export type OrgMember = {
@@ -81,11 +81,10 @@ export function createOrgService({ db }: { db: Database }) {
     }
   }
 
-  /** Whether the caller may manage the workspace's members: they're an admin of it. */
-  async function managed(userId: string, orgId: string): Promise<OrgResult> {
-    const role = await roleIn(db, userId, orgId);
-    if (!role) return notFound();
-    return canManageMembers(role) ? ok(undefined) : forbidden();
+  /** Asks the policy about the caller in a workspace. */
+  async function permit(userId: string, orgId: string, ask: (facts: WorkspaceFacts) => Decision): Promise<OrgResult> {
+    const decision = ask(await workspaceFacts(db, userId, orgId));
+    return decision.allowed ? ok(undefined) : refusal(decision);
   }
 
   async function adminCount(orgId: string): Promise<number> {
@@ -137,15 +136,15 @@ export function createOrgService({ db }: { db: Database }) {
    */
   async function mayDepart(actorId: string, orgId: string, memberId: string): Promise<OrgResult> {
     if (actorId === memberId) {
-      const role = await roleIn(db, actorId, orgId);
-      if (!role) return notFound();
-      if (role === "admin" && (await adminCount(orgId)) <= 1) {
+      const leaving = await permit(actorId, orgId, (f) => decide("workspace", "leave", f));
+      if (!leaving.ok) return leaving;
+      if ((await roleIn(db, actorId, orgId)) === "admin" && (await adminCount(orgId)) <= 1) {
         return fail({ code: "conflict", message: "You're the only admin. Make someone else an admin before you leave." });
       }
       return ok(undefined);
     }
-    const allowed = await managed(actorId, orgId);
-    if (!allowed.ok) return allowed;
+    const removing = await permit(actorId, orgId, (f) => decide("member", "delete", f));
+    if (!removing.ok) return removing;
     if (!(await roleIn(db, memberId, orgId))) return fail({ code: "not_found", message: "This person is no longer a member." });
     return ok(undefined);
   }
@@ -182,9 +181,8 @@ export function createOrgService({ db }: { db: Database }) {
     const parsed = deleteSchema.safeParse(input);
     if (!parsed.success) return notFound();
     const { orgId } = parsed.data;
-    const role = await roleIn(db, userId, orgId);
-    if (!role) return notFound();
-    if (!canManageMembers(role)) return forbidden("Only an admin can delete this workspace.");
+    const deleting = await permit(userId, orgId, (f) => decide("workspace", "delete", f));
+    if (!deleting.ok) return deleting;
     const [org] = await db.select({ name: orgs.name }).from(orgs).where(eq(orgs.id, orgId)).limit(1);
     if (!org) return notFound();
     if (parsed.data.name.trim() !== org.name) {
@@ -306,8 +304,8 @@ export function createOrgService({ db }: { db: Database }) {
       return guard("rename", async () => {
         const parsed = renameSchema.safeParse(input);
         if (!parsed.success) return parsed.error.issues[0]?.path[0] === "name" ? fromValidation(parsed.error) : notFound();
-        const allowed = await managed(userId, parsed.data.orgId);
-        if (!allowed.ok) return allowed;
+        const renaming = await permit(userId, parsed.data.orgId, (f) => decide("workspace", "update", f));
+        if (!renaming.ok) return renaming;
         await db.update(orgs).set({ name: parsed.data.name }).where(eq(orgs.id, parsed.data.orgId));
         return ok(undefined);
       });
@@ -315,8 +313,9 @@ export function createOrgService({ db }: { db: Database }) {
 
     /** An org with its members and pending invites, for any of its members. */
     async get(userId: string, orgId: string): Promise<OrgDetail | null> {
-      const role = await roleIn(db, userId, orgId);
-      if (!role) return null;
+      const facts = await workspaceFacts(db, userId, orgId);
+      if (!decide("workspace", "view", facts).allowed || !facts.role) return null;
+      const { role } = facts;
       const [org] = await db.select().from(orgs).where(eq(orgs.id, orgId)).limit(1);
       if (!org) return null;
       const members = await db
@@ -358,8 +357,9 @@ export function createOrgService({ db }: { db: Database }) {
         const parsed = inviteSchema.safeParse(input);
         if (!parsed.success) return parsed.error.issues[0]?.path[0] === "orgId" ? notFound() : fromValidation(parsed.error);
         const { orgId, email, role } = parsed.data;
-        const allowed = await managed(userId, orgId);
-        if (!allowed.ok) return allowed;
+        // Adding someone: as a member straight away if they have an account, otherwise as an invite. Admins only either way.
+        const adding = await permit(userId, orgId, (f) => decide("member", "create", f));
+        if (!adding.ok) return adding;
 
         const known = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
         if (!known.length) {
@@ -384,8 +384,8 @@ export function createOrgService({ db }: { db: Database }) {
       return guard("revokeInvite", async () => {
         const parsed = inviteRefSchema.safeParse(input);
         if (!parsed.success) return notFound();
-        const allowed = await managed(userId, parsed.data.orgId);
-        if (!allowed.ok) return allowed;
+        const revoking = await permit(userId, parsed.data.orgId, (f) => decide("invite", "delete", f));
+        if (!revoking.ok) return revoking;
         await db.delete(orgInvites).where(and(eq(orgInvites.orgId, parsed.data.orgId), eq(orgInvites.email, parsed.data.email)));
         return ok(undefined);
       });
@@ -397,8 +397,8 @@ export function createOrgService({ db }: { db: Database }) {
         const parsed = roleChangeSchema.safeParse(input);
         if (!parsed.success) return notFound();
         const { orgId, userId: memberId, role } = parsed.data;
-        const allowed = await managed(userId, orgId);
-        if (!allowed.ok) return allowed;
+        const changing = await permit(userId, orgId, (f) => decide("member", "update", f));
+        if (!changing.ok) return changing;
         const current = await roleIn(db, memberId, orgId);
         if (!current) return fail({ code: "not_found", message: "This person is no longer a member." });
         if (current === "admin" && role !== "admin" && (await adminCount(orgId)) <= 1) {
@@ -409,7 +409,6 @@ export function createOrgService({ db }: { db: Database }) {
       });
     },
 
-    /** Removes someone else from a workspace. Their apps and connections stay where they are. */
     /**
      * The OpenUI Cloud dashboards of the apps someone owns in a workspace,
      * which their departure deletes: an admin removing them, or they leaving

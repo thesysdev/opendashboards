@@ -14,6 +14,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { getAppService, getCurrentUserApp, type AppDetail } from "@/lib/apps";
 import { GuestAppMarker } from "@/components/shell/sidebar";
 import { memberOf, requireKnownUser } from "@/lib/orgs";
+import { can } from "@/lib/orgs/policy";
 import { getConnectionService } from "@/lib/connections";
 
 /**
@@ -47,12 +48,13 @@ async function AppView({ params, children }: { params: Params; children: React.R
   // Only at its own workspace's address.
   if (!app || app.orgId !== orgId) notFound();
   const user = await requireKnownUser();
-  const connections = app.canChange ? await getConnectionService().list({ userId: user.id, orgId: app.orgId }) : [];
+  const { facts } = app;
+  const connections = can("app", "addConnection", facts) ? await getConnectionService().list({ userId: user.id, orgId: app.orgId }) : [];
   const inApp = new Set(app.connections.map((connection) => connection.id));
-  const guests = app.canChange ? await getAppService().guests(user.id, app.id) : [];
-  const teammates = app.canChange ? await getAppService().teammates(user.id, app.id) : [];
-  // Whoever can change the app is a member of its workspace.
-  const workspace = app.canChange ? (await memberOf(app.orgId))?.orgName : null;
+  const guests = can("guest", "view", facts) ? await getAppService().guests(user.id, app.id) : [];
+  const teammates = can("appSharing", "view", facts) ? await getAppService().teammates(user.id, app.id) : [];
+  // Whoever can share the app is a member of its workspace.
+  const workspace = can("appSharing", "view", facts) ? (await memberOf(app.orgId))?.orgName : null;
 
   return (
     <>
@@ -67,7 +69,7 @@ async function AppView({ params, children }: { params: Params; children: React.R
         <>
           {/* A guest sees the app, not what the workspace is connected to. */}
           {!app.guest && <ConnectionBadges app={app} />}
-          {app.canChange && (
+          {can("app", "addConnection", facts) && (
             <AddAppConnection
               appId={app.id}
               connections={connections
@@ -99,10 +101,11 @@ async function AppView({ params, children }: { params: Params; children: React.R
         </>
       }
       // Viewing only: no Build panel, no rename, no menu. The server refuses those anyway.
-      readOnly={!app.canChange}
+      readOnly={!can("app", "update", facts)}
       menu={
-        app.canChange && (
+        can("app", "update", facts) && (
           <>
+            {can("appSharing", "update", facts) && (
             <ShareApp
               app={{ id: app.id, name: app.name, teamAccess: app.teamAccess }}
               workspace={workspace ?? "your workspace"}
@@ -112,15 +115,16 @@ async function AppView({ params, children }: { params: Params; children: React.R
               teammates={teammates.map(({ userId, email, role, access }) => ({ id: userId, email: email ?? "Someone", viewer: role === "viewer", access }))}
               dashboardCount={app.dashboards.length}
             />
+            )}
             <AppMenu
               app={{ id: app.id, name: app.name, dashboardCount: app.dashboards.length }}
-              canDelete={app.access === "owner"}
+              canDelete={can("app", "delete", facts)}
             />
           </>
         )
       }
       builder={
-        app.canChange && (
+        can("app", "build", facts) && (
           <BuildChat
             appId={app.id}
             dashboards={app.dashboards.map(({ id, artifactId }) => ({ id, artifactId }))}

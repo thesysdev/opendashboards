@@ -1,4 +1,5 @@
 import type { AppGrant } from "@/lib/orgs/access";
+import { can } from "@/lib/orgs/policy";
 
 /**
  * How OpenDashboards' access to an app is told to OpenUI Cloud.
@@ -28,5 +29,5 @@ export type CloudIdentity = { userId: string; groupIds: string[] };
  */
 export function cloudIdentity(userId: string, grant: AppGrant): CloudIdentity {
   const groups = appGroups(grant.appId);
-  return { userId, groupIds: [grant.canChange ? groups.edit : groups.view] };
+  return { userId, groupIds: [can("dashboard", "update", grant.facts) ? groups.edit : groups.view] };
 }

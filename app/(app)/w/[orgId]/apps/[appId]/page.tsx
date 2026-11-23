@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { NoDashboards } from "@/components/apps/dashboard-views";
 import { LiveDashboard } from "@/components/apps/live-dashboard";
 import { getCurrentUserApp } from "@/lib/apps";
+import { can } from "@/lib/orgs/policy";
 
 /** An app's home: its first dashboard, or the empty state when it has none. */
 export default function AppHomePage({ params }: { params: Promise<{ orgId: string; appId: string }> }) {
@@ -21,8 +22,8 @@ async function AppHome({ params }: { params: Promise<{ orgId: string; appId: str
 
   const first = app.dashboards[0];
   return first ? (
-    <LiveDashboard key={first.id} appId={app.id} dashboard={first} readOnly={!app.canChange} />
+    <LiveDashboard key={first.id} appId={app.id} dashboard={first} readOnly={!can("dashboard", "update", app.facts)} />
   ) : (
-    <NoDashboards hasPendingPrompt={Boolean(app.pendingPrompt)} readOnly={!app.canChange} />
+    <NoDashboards hasPendingPrompt={Boolean(app.pendingPrompt)} readOnly={!can("dashboard", "update", app.facts)} />
   );
 }

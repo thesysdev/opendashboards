@@ -18,9 +18,10 @@ import {
 } from "@/lib/db/schema";
 import type { ConnectionType } from "@/lib/sources/catalog";
 import { logError } from "@/lib/log";
-import { accessFor, appAccess, appsOpenTo, canBuild, canChange, canManageMembers, roleIn, type AppAccess, type Scope } from "@/lib/orgs/access";
+import { accessFor, appAccess, appFacts, appsOpenTo, asApp, roleIn, workspaceFacts, type AppAccess, type Scope } from "@/lib/orgs/access";
+import { can, decide, refusal, type AppFacts } from "@/lib/orgs/policy";
 
-import { fail, forbidden, fromValidation, internalError, notFound, ok, type AppResult } from "./errors";
+import { fail, fromValidation, internalError, notFound, ok, type AppResult } from "./errors";
 import {
   addAppConnectionSchema,
   appGuestSchema,
@@ -71,8 +72,10 @@ export type AppTreeNode = {
   name: string;
   /** Whether the caller owns it. Otherwise a teammate shared it with the workspace, or they're its guest. */
   mine: boolean;
-  /** Whether the caller may rename or delete its dashboards. False when they can only view it. */
+  /** Whether the caller may change it (the policy's app.update). False when they can only view it. */
   canChange: boolean;
+  /** What the policy decides on, for the sidebar to ask `can`. */
+  facts: AppFacts;
   dashboards: { id: string; title: string }[];
 };
 
@@ -85,8 +88,10 @@ export type AppDetail = {
   ownerEmail: string | null;
   /** What the caller may do with it. */
   access: AppAccess;
-  /** Whether the caller may build in it: chat, rename, change its dashboards. Never true for a viewer. */
+  /** Whether the caller may change it (the policy's app.update). Never true for a viewer. */
   canChange: boolean;
+  /** What the policy decides on, for pages to ask `can`. */
+  facts: AppFacts;
   /** The caller is a guest: not in the app's workspace, let in to view this app alone. */
   guest: boolean;
   /** How many people outside the workspace can view it. */
@@ -228,15 +233,19 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         ).map((row) => [row.appId, row.access]),
       );
 
-      return appRows.map(({ userId: ownerId, teamAccess, ...app }) => ({
+      return appRows.map(({ userId: ownerId, teamAccess, ...app }) => {
+        const facts = asApp(accessFor({ userId: ownerId, teamAccess }, scope.userId, role, own.get(app.id) ?? null) ?? "view", role);
+        return {
         ...app,
         orgId: scope.orgId,
         mine: ownerId === scope.userId,
-        canChange: canChange(accessFor({ userId: ownerId, teamAccess }, scope.userId, role, own.get(app.id) ?? null) ?? "view", role),
+        canChange: can("app", "update", facts),
+        facts,
         dashboards: dashboardRows
           .filter((dashboard) => dashboard.appId === app.id)
           .map(({ id, title }) => ({ id, title })),
-      }));
+        };
+      });
     },
 
     async get(userId: string, appId: string): Promise<AppDetail | null> {
@@ -319,6 +328,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         ownerEmail: ownedBy?.email ?? null,
         access: grant.access,
         canChange: grant.canChange,
+        facts: grant.facts,
         guest: grant.guest,
         guestCount,
         teammateCount,
@@ -347,9 +357,8 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
      */
     create(scope: Scope, input: unknown): Promise<AppResult<{ id: string }>> {
       return guard("create", async () => {
-        const role = await roleIn(db, scope.userId, scope.orgId);
-        if (!role) return notFound();
-        if (!canBuild(role)) return forbidden();
+        const creating = decide("app", "create", await workspaceFacts(db, scope.userId, scope.orgId));
+        if (!creating.allowed) return refusal(creating);
         const parsed = createAppSchema.safeParse(input);
         if (!parsed.success) return fromValidation(parsed.error);
         const { prompt, connectionIds } = parsed.data;
@@ -392,9 +401,8 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
       return guard("rename", async () => {
         const parsed = renameAppSchema.safeParse(input);
         if (!parsed.success) return fromValidation(parsed.error);
-        const grant = await appAccess(db, userId, parsed.data.id);
-        if (!grant) return notFound();
-        if (!grant.canChange) return forbidden();
+        const renaming = decide("app", "update", (await appFacts(db, userId, parsed.data.id))?.facts ?? null);
+        if (!renaming.allowed) return refusal(renaming);
         const updated = await db
           .update(apps)
           .set({ name: parsed.data.name, updatedAt: now() })
@@ -413,9 +421,8 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
       return guard("setTeamAccess", async () => {
         const parsed = teamAccessSchema.safeParse(input);
         if (!parsed.success) return notFound();
-        const grant = await appAccess(db, userId, parsed.data.id);
-        if (!grant) return notFound();
-        if (!grant.canChange) return forbidden();
+        const sharing = decide("appSharing", "update", (await appFacts(db, userId, parsed.data.id))?.facts ?? null);
+        if (!sharing.allowed) return refusal(sharing);
         await db.update(apps).set({ teamAccess: parsed.data.teamAccess, updatedAt: now() }).where(eq(apps.id, parsed.data.id));
         return ok(undefined);
       });
@@ -428,7 +435,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
      */
     async teammates(userId: string, appId: string): Promise<AppTeammate[]> {
       const grant = await appAccess(db, userId, appId);
-      if (!grant?.canChange) return [];
+      if (!grant || !can("appSharing", "view", grant.facts)) return [];
       return db
         .select({ userId: orgMembers.userId, email: users.email, role: orgMembers.role, access: appMembers.access })
         .from(orgMembers)
@@ -449,13 +456,15 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         const parsed = appMemberSchema.safeParse(input);
         if (!parsed.success) return notFound();
         const { id, memberId, access } = parsed.data;
-        const grant = await appAccess(db, userId, id);
+        const grant = await appFacts(db, userId, id);
         if (!grant) return notFound();
-        if (!grant.canChange) return forbidden();
+        const sharing = decide("appSharing", "create", grant.facts);
+        if (!sharing.allowed) return refusal(sharing);
         if (memberId === grant.ownerId) return fail({ code: "validation", field: "memberId", message: "The app's owner already has full access." });
         const role = await roleIn(db, memberId, grant.orgId);
         if (!role) return fail({ code: "validation", field: "memberId", message: "This person isn't in the workspace any more." });
-        if (access === "edit" && !canBuild(role)) {
+        // Their role is the ceiling: a viewer in the workspace can only be let in to view.
+        if (access === "edit" && role === "viewer") {
           return fail({
             code: "validation",
             field: "memberId",
@@ -476,9 +485,8 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         const parsed = appMemberRefSchema.safeParse(input);
         if (!parsed.success) return notFound();
         const { id, memberId } = parsed.data;
-        const grant = await appAccess(db, userId, id);
-        if (!grant) return notFound();
-        if (!grant.canChange) return forbidden();
+        const unsharing = decide("appSharing", "delete", (await appFacts(db, userId, id))?.facts ?? null);
+        if (!unsharing.allowed) return refusal(unsharing);
         await db.delete(appMembers).where(and(eq(appMembers.appId, id), eq(appMembers.userId, memberId)));
         return ok(undefined);
       });
@@ -523,12 +531,13 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
           ),
         )
         .orderBy(asc(dashboards.position), asc(dashboards.createdAt));
-      return guestOf.map(({ id, name, orgId }) => ({
+      return guestOf.map(({ id, name, orgId, role }) => ({
         id,
         orgId: orgId!,
         name,
         mine: false,
         canChange: false,
+        facts: asApp("view", role, true),
         dashboards: dashboardRows.filter((dashboard) => dashboard.appId === id).map(({ id: dashboardId, title }) => ({ id: dashboardId, title })),
       }));
     },
@@ -536,7 +545,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
     /** The people outside the workspace who may view an app, for whoever can change it. */
     async guests(userId: string, appId: string): Promise<AppGuest[]> {
       const grant = await appAccess(db, userId, appId);
-      if (!grant?.canChange) return [];
+      if (!grant || !can("guest", "view", grant.facts)) return [];
       return db
         .select({ email: appGuests.email, invitedBy: users.email, invitedAt: appGuests.createdAt })
         .from(appGuests)
@@ -556,9 +565,10 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         const parsed = appGuestSchema.safeParse(input);
         if (!parsed.success) return parsed.error.issues[0]?.path[0] === "id" ? notFound() : fromValidation(parsed.error);
         const { id, email } = parsed.data;
-        const grant = await appAccess(db, userId, id);
+        const grant = await appFacts(db, userId, id);
         if (!grant) return notFound();
-        if (!grant.canChange) return forbidden();
+        const adding = decide("guest", "create", grant.facts);
+        if (!adding.allowed) return refusal(adding);
 
         const personal = (await connectionBadges([id])).filter((connection) => connection.sharing === "personal");
         if (personal.length) {
@@ -600,13 +610,8 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         const parsed = appGuestSchema.safeParse(input);
         if (!parsed.success) return notFound();
         const { id, email } = parsed.data;
-        const grant = await appAccess(db, userId, id);
-        if (!grant?.canChange) {
-          const [app] = await db.select({ orgId: apps.orgId }).from(apps).where(eq(apps.id, id)).limit(1);
-          const role = app ? await roleIn(db, userId, app.orgId) : null;
-          if (!role) return notFound();
-          if (!canManageMembers(role)) return grant ? forbidden() : notFound();
-        }
+        const removing = decide("guest", "delete", (await appFacts(db, userId, id))?.facts ?? null);
+        if (!removing.allowed) return refusal(removing);
         await db.delete(appGuests).where(and(eq(appGuests.appId, id), eq(appGuests.email, email)));
         return ok(undefined);
       });
@@ -618,8 +623,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
      * only.
      */
     async workspaceGuests(scope: Scope): Promise<WorkspaceGuest[]> {
-      const role = await roleIn(db, scope.userId, scope.orgId);
-      if (!role || !canManageMembers(role)) return [];
+      if (!can("guest", "viewAll", await workspaceFacts(db, scope.userId, scope.orgId))) return [];
       return db
         .select({ appId: apps.id, appName: apps.name, email: appGuests.email, invitedBy: users.email, invitedAt: appGuests.createdAt })
         .from(appGuests)
@@ -638,9 +642,8 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
       return guard("remove", async () => {
         const parsed = appRefSchema.safeParse(input);
         if (!parsed.success) return notFound();
-        const grant = await appAccess(db, userId, parsed.data.id);
-        if (!grant) return notFound();
-        if (grant.access !== "owner") return forbidden("Only the app's owner can delete it.");
+        const deleting = decide("app", "delete", (await appFacts(db, userId, parsed.data.id))?.facts ?? null);
+        if (!deleting.allowed) return refusal(deleting);
         const deleted = await db.delete(apps).where(eq(apps.id, parsed.data.id)).returning({ id: apps.id });
         return deleted.length ? ok(undefined) : notFound();
       });
@@ -692,8 +695,11 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         if (!appIdSchema.safeParse(appId).success || !appIdSchema.safeParse(connectionId).success) {
           return notFound();
         }
-        const grant = await appAccess(db, userId, appId);
-        if (!grant?.canChange) return notFound();
+        const app = await appFacts(db, userId, appId);
+        if (!app) return notFound();
+        const adding = decide("app", "addConnection", app.facts);
+        if (!adding.allowed) return refusal(adding);
+        const grant = app;
         const [connection] = await db
           .select({ id: dataConnections.id })
           .from(dataConnections)

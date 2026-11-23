@@ -10,6 +10,7 @@ import { agentTools, getGateway, maxRounds, model, SYSTEM_PROMPT, type TurnConte
 import { createAgUiTranslator, sse } from "@/lib/agent/ag-ui";
 import { answerStoppedCalls, chatBodySchema, VIEWING_DASHBOARD, type ChatBody } from "@/lib/agent/messages";
 import { getAppService, getThreadService } from "@/lib/apps";
+import { decide } from "@/lib/orgs/policy";
 import { getDashboardService } from "@/lib/dashboards";
 import { appGroups } from "@/lib/dashboards/cloud";
 import { HttpError, readJson, route } from "@/lib/http";
@@ -38,7 +39,8 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
   // Building is for members who can change the app: never a viewer, whatever the app grants the team.
   const app = await getAppService().get(user.id, appId);
   if (!app) throw new HttpError(404, "App not found");
-  if (!app.canChange) throw new HttpError(403, "You can view this app, but you can't build in it.");
+  const building = decide("app", "build", app.facts);
+  if (!building.allowed) throw new HttpError(403, building.reason);
 
   const threads = getThreadService();
   if (!(await threads.belongsTo(user.id, appId, threadId))) throw new HttpError(404, "Thread not found");

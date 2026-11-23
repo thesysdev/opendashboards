@@ -11,7 +11,8 @@ import { createDashboardService } from "@/lib/dashboards/service";
 import { createDatabase } from "@/lib/db";
 import { appMembers, apps, dataConnections, mcpOAuthSignIns, orgMembers, type AppTeamAccess, type OrgRole } from "@/lib/db/schema";
 import { appGroups, cloudIdentity } from "@/lib/dashboards/cloud";
-import { accessFor, appAccess, canChange } from "@/lib/orgs/access";
+import { accessFor, appAccess, asApp } from "@/lib/orgs/access";
+import { can } from "@/lib/orgs/policy";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 import { posthogSource } from "@/lib/sources/posthog/source";
 import type { ConnectionSource } from "@/lib/sources/types";
@@ -96,8 +97,8 @@ describe("access to an app", () => {
 
   it("is full for the owner, though a viewer still can't build", () => {
     expect(roles.map((role) => accessFor({ userId: "owner", teamAccess: "private" }, "owner", role))).toEqual(["owner", "owner", "owner"]);
-    expect(roles.map((role) => canChange("owner", role))).toEqual([true, true, false]);
-    expect(canChange("view", "admin")).toBe(false);
+    expect(roles.map((role) => can("app", "update", asApp("owner", role)))).toEqual([true, true, false]);
+    expect(can("app", "update", asApp("view", "admin"))).toBe(false);
   });
 
   it("keeps a private app from everyone else, the team's admin included", async () => {
