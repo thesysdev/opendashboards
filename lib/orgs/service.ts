@@ -104,6 +104,26 @@ export function createOrgService({ db }: { db: Database }) {
   }
 
   /**
+   * Someone who leaves a workspace, or is removed, stops serving it: sign-ins
+   * they shared with it go back to being theirs alone, so nobody there keeps
+   * querying as them. Teammates are asked to sign in themselves. Connections
+   * with a key or password aren't sign-ins, and keep serving the workspace.
+   */
+  async function stopSharingSignIns(orgId: string, userId: string): Promise<void> {
+    await db
+      .update(dataConnections)
+      .set({ sharing: "personal", updatedAt: new Date() })
+      .where(
+        and(
+          eq(dataConnections.orgId, orgId),
+          eq(dataConnections.userId, userId),
+          eq(dataConnections.sharing, "org"),
+          sql`${dataConnections.config} -> 'oauth' is not null`,
+        ),
+      );
+  }
+
+  /**
    * The workspace to delete, if the caller is an admin of it and retyped its
    * name exactly. Both are checked again by `remove` itself.
    */
@@ -378,6 +398,7 @@ export function createOrgService({ db }: { db: Database }) {
           return gone.length > 0;
         });
         await forgetAppShares(orgId, memberId);
+        await stopSharingSignIns(orgId, memberId);
         return removed ? ok(undefined) : fail({ code: "not_found", message: "This person is no longer a member." });
       });
     },
@@ -399,6 +420,7 @@ export function createOrgService({ db }: { db: Database }) {
         }
         await db.delete(orgMembers).where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, userId)));
         await forgetAppShares(orgId, userId);
+        await stopSharingSignIns(orgId, userId);
         return ok(undefined);
       });
     },

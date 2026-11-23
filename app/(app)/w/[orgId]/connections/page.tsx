@@ -2,7 +2,7 @@ import { KeyRoundIcon, LockIcon, PlugIcon, UsersIcon } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { ConnectionActions } from "@/components/connections/connection-actions";
+import { ConnectionActions, StopSharingButton } from "@/components/connections/connection-actions";
 import { ConnectorCatalog } from "@/components/connections/connector-catalog";
 import { SignInResult } from "@/components/connections/sign-in-result";
 import { DemoDatasetSwitch } from "@/components/connections/demo-dataset-switch";
@@ -161,6 +161,10 @@ function ConnectionRow({
             secretMode={secretMode}
             team={team}
           />
+        )}
+        {/* A viewer can't manage connections, but can always take back a sign-in of theirs that everyone queries as. */}
+        {!connection.canManage && signedIn && connection.mine && connection.sharing === "org" && (
+          <StopSharingButton connection={{ id: connection.id, name: connection.name }} />
         )}
       </div>
       <UsedBy apps={connection.apps} />

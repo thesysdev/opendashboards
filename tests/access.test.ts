@@ -253,6 +253,28 @@ describe("connections in a team", () => {
     expect(await connections.open("vera", connectionId, "mcp")).toBeNull();
   });
 
+  it("can always be taken back by whoever signed in, even once they're only a viewer", async () => {
+    const connectionId = await signedIn("ed", "org");
+    await seedTeam(db, "Acme", { ed: "viewer" });
+    // A viewer can't share anything, but can stop everyone querying as them.
+    expect(await connections.setSharing("ed", { id: connectionId, sharing: "org" })).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect(await connections.setSharing("ed", { id: connectionId, sharing: "personal" })).toEqual({ ok: true, data: undefined });
+    expect(await connections.open("vera", connectionId, "mcp")).toBeNull();
+  });
+
+  it("stop serving the workspace when whoever signed in leaves or is removed, and keys keep serving it", async () => {
+    const eds = await signedIn("ed", "org");
+    const key = await keyed("ed");
+    const veras = await signedIn("vera", "org");
+
+    expect(await orgsService.removeMember("alice", { orgId: acme, userId: "ed" })).toEqual({ ok: true, data: undefined });
+    expect(await connections.open("alice", eds, "mcp")).toBeNull();
+    expect(await connections.open("alice", key, "posthog")).not.toBeNull();
+
+    expect(await orgsService.leave("vera", { orgId: acme })).toEqual({ ok: true, data: undefined });
+    expect(await connections.open("alice", veras, "mcp")).toBeNull();
+  });
+
   it("never make a key personal", async () => {
     const connectionId = await keyed("ed");
     expect(await connections.setSharing("ed", { id: connectionId, sharing: "personal" })).toMatchObject({ ok: false, error: { code: "validation" } });

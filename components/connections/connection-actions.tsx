@@ -61,6 +61,28 @@ type Connection = {
 
 type OpenDialog = "replace" | "rename" | "delete" | "share" | null;
 
+/**
+ * For someone who can't manage connections (a viewer) whose own sign-in is
+ * shared with the workspace: the one thing they can still do is take it back,
+ * so nobody keeps querying as them.
+ */
+export function StopSharingButton({ connection }: { connection: { id: string; name: string } }) {
+  const [pending, startTransition] = useTransition();
+  function stop() {
+    startTransition(async () => {
+      const result = await setConnectionSharingAction({ id: connection.id, sharing: "personal" });
+      if (!result.ok) toast.error(result.error.message);
+      else toast.success(`${connection.name} is yours alone again`);
+    });
+  }
+  return (
+    <Button variant="outline" size="sm" onClick={stop} disabled={pending}>
+      {pending ? <Loader2Icon className="animate-spin" aria-hidden /> : <LockIcon aria-hidden />}
+      Stop sharing
+    </Button>
+  );
+}
+
 export function ConnectionActions({
   connection,
   secretMode,

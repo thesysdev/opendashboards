@@ -702,8 +702,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 
     /**
      * Shares a sign-in with the whole org, or takes it back. Only whoever
-     * signed in can: once shared, every member's queries run as them. A
-     * connection with a key or password always serves the org.
+     * signed in can: once shared, every member's queries run as them. Taking
+     * it back is theirs whatever their role, a viewer's included: nobody
+     * should keep querying as them against their will. A connection with a
+     * key or password always serves the org.
      */
     setSharing(userId: string, input: unknown): Promise<Result<undefined>> {
       return guard("setSharing", async () => {
@@ -711,7 +713,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!parsed.success) return notFound();
         const found = await find(userId, parsed.data.id);
         if (!found) return notFound();
-        if (!found.own || !found.manage) return forbidden("Only the person who signed in can share or unshare this connection.");
+        if (!found.own) return forbidden("Only the person who signed in can share or unshare this connection.");
+        if (!found.manage && parsed.data.sharing === "org") return forbidden();
         const config = found.row.demoDataset === null ? configOf(found.row) : null;
         if (!config || !("oauth" in config && config.oauth)) {
           return fail({ code: "validation", message: "Only a connection you signed in to can be personal. This one serves the whole workspace." });
