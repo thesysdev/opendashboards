@@ -108,7 +108,7 @@ export function ShareApp({
             {/* Points at the Share button above. */}
             <span aria-hidden className="absolute -top-1.5 right-6 size-3 rotate-45 border-t border-l bg-popover" />
             <div className="flex items-start gap-2">
-              <p className="min-w-0 flex-1 text-sm">Your dashboard is ready. Share it with your team or a client.</p>
+              <p className="min-w-0 flex-1 text-sm">Your dashboard is ready. Share it with your workspace or a client.</p>
               <Button variant="ghost" size="icon-sm" aria-label="Dismiss" onClick={nudge.dismiss} className="-mt-1 -mr-1">
                 <XIcon aria-hidden />
               </Button>
@@ -228,7 +228,7 @@ export function ShareApp({
             {personalConnections > 0 && (
               <p>
                 This app uses {personalConnections === 1 ? "1 connection" : `${personalConnections} connections`} with a personal
-                sign-in. Teammates sign in themselves to see its data.
+                sign-in. Members sign in themselves to see its data.
               </p>
             )}
           </div>
@@ -352,7 +352,7 @@ function AddPeople({
         aria-controls="share-suggestions"
         aria-label="Add people"
         autoComplete="off"
-        placeholder={teammates.length ? "Add teammates or an email" : "Add someone by email"}
+        placeholder={teammates.length ? "Add members or an email" : "Add someone by email"}
         value={query}
         disabled={pending}
         onFocus={() => setFocused(true)}

@@ -141,7 +141,7 @@ function AppCard({ app, now }: { app: AppSummary; now: Date }) {
           <p className="text-xs text-muted-foreground">
             {dashboards} · edited {formatRelative(app.updatedAt, now)}
           </p>
-          {!app.mine && <p className="truncate text-xs text-muted-foreground">Shared by {app.sharedBy ?? "a teammate"}</p>}
+          {!app.mine && <p className="truncate text-xs text-muted-foreground">Shared by {app.sharedBy ?? "a member"}</p>}
         </div>
       </div>
       {app.connections.length > 0 && (
