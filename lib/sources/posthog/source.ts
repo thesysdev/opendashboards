@@ -35,6 +35,7 @@ const queryTool: SourceTool<PostHogConfig, { hogql: string }> = {
     "Run a read-only HogQL query (PostHog's SQL) on the project: tables events, persons, sessions, groups. " +
     "Read event properties as properties.$current_url, person properties as person.properties.email. " +
     "PostHog returns 100 rows unless the query has its own LIMIT (up to 50000). " +
+    "The events table is sorted by date then event: always filter WHERE on a timestamp range and on event, or the query can time out. " +
     "Returns { columns, rows: [{ column: value }], truncated }.",
   parameters: z.object({ hogql: z.string().min(1).describe("One HogQL SELECT statement.") }),
   output: {
@@ -133,7 +134,7 @@ export const posthogSource: ConnectionSource<PostHogConfig> = {
           status: "unavailable",
           error: {
             code: "timeout",
-            message: "The query took too long. Narrow the date range, or aggregate before joining persons.",
+            message: "PostHog stopped the query because it took too long. Filter on the events you need and a shorter timestamp range in WHERE.",
           },
         };
       case "unavailable":
