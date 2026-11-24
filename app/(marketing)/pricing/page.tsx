@@ -10,7 +10,7 @@ import { alt as OG_ALT } from "../../opengraph-image";
 
 const TITLE = "Pricing";
 const DESCRIPTION =
-  "Start free. Pay per editor as you grow: Standard $19, Team $39 and Business $79 a month, billed annually. Guests are free on every plan.";
+  "Start free. Pay per editor as you grow: Standard $19 and Team $39 a month, billed annually. Enterprise on request. Guests are free on every plan.";
 
 export const metadata: Metadata = {
   title: TITLE,
@@ -40,7 +40,7 @@ const PRICING_FAQS: FaqItem[] = [
     question: "Do guests and viewers cost anything?",
     answer: [
       "No. Guests are people you share an app with by email, like a client or your boss. They can view it but not edit it, and they're free and unlimited on every plan.",
-      "Viewers are teammates who can see the team's apps without being shared each one. They come with Team and Business, also free.",
+      "Viewers are members who can see the workspace's apps without being shared each one. They come with Team and Enterprise, also free.",
     ],
   },
   {
@@ -72,7 +72,7 @@ const PRICING_FAQS: FaqItem[] = [
   },
   {
     question: "What happens to an editor I remove?",
-    answer: ["They stop counting as a seat, and they can still view everything shared with them, for free."],
+    answer: ["Their seat is free for someone else. To pay less, lower your seats in Billing."],
   },
   {
     question: "What if I move to a smaller plan or cancel?",
