@@ -1,7 +1,9 @@
 /**
  * The only paths served without signing in: the landing page, its images in
- * public/, and what crawlers and link previews fetch. Nothing under the app or the API is here. Anything added must
- * work without a user and read nothing that belongs to one.
+ * public/, what crawlers and link previews fetch, and the client metadata
+ * document MCP authorization servers fetch. Nothing under the app or the API
+ * is here. Anything added must work without a user and read nothing that
+ * belongs to one.
  */
 const PUBLIC_PATHS: ReadonlySet<string> = new Set([
   "/",
@@ -10,6 +12,7 @@ const PUBLIC_PATHS: ReadonlySet<string> = new Set([
   "/robots.txt",
   "/sitemap.xml",
   "/opengraph-image",
+  "/oauth/client-metadata.json",
 ]);
 
 /** The folder in public/ that holds only the landing page's images. No route lives under it. */

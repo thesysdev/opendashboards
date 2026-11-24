@@ -68,6 +68,12 @@ describe("settingsProblems", () => {
     expect(problems).toHaveLength(1);
     expect(problems[0]).toContain(setting);
   });
+
+  it("serves the client metadata document only from an https origin, even locally", () => {
+    const local = { ...settingsFor("local"), mcpClientMetadataDocument: true };
+    expect(settingsProblems("local", local)).toEqual([expect.stringContaining("mcpClientMetadataDocument")]);
+    expect(settingsProblems("prod", editedProd((s) => (s.mcpClientMetadataDocument = true)))).toEqual([]);
+  });
 });
 
 describe("secretProblems", () => {

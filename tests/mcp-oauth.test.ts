@@ -16,7 +16,7 @@ import { apps, connectionSignIns, dataConnections, mcpOAuthSignIns } from "@/lib
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 import type { McpConfig } from "@/lib/sources/mcp/catalog";
 import { McpError } from "@/lib/sources/mcp/errors";
-import { discoverOAuth, readOAuthCredential, refreshOAuthTokens, writeOAuthCredential } from "@/lib/sources/mcp/oauth";
+import { clientMetadataDocument, discoverOAuth, readOAuthCredential, refreshOAuthTokens, writeOAuthCredential } from "@/lib/sources/mcp/oauth";
 import { mcpSource, withCredential } from "@/lib/sources/mcp/source";
 import type { ConnectionSource, OpenConnection } from "@/lib/sources/types";
 
@@ -39,19 +39,23 @@ const cert = readFileSync(join(certDir, "cert.pem"), "utf8");
 const key = readFileSync(join(certDir, "key.pem"), "utf8");
 const hooks = { allowAddress: (address: string) => address === "127.0.0.1", ca: cert };
 const REDIRECT = "https://app.example.com/api/mcp/oauth/callback";
+const CLIENT_METADATA_URL = "https://app.example.com/oauth/client-metadata.json";
 
 type Mode = {
   issuer?: string;
   pkce?: boolean;
   registration?: boolean;
+  /** The authorization server fetches client metadata documents (CIMD). */
+  cimd?: boolean;
   resource?: string;
   redirectMetadata?: boolean;
   refresh?: "ok" | "invalid_grant" | "down";
 };
 let mode: Mode = {};
 let base = "";
-const codes = new Map<string, { challenge: string; redirectUri: string; resource: string | null }>();
+const codes = new Map<string, { clientId: string; challenge: string; redirectUri: string; resource: string | null }>();
 let refreshCalls = 0;
+let registrations = 0;
 let issued = 0;
 const live = new Set<string>();
 
@@ -77,6 +81,7 @@ beforeAll(async () => {
         authorization_endpoint: `${base}/authorize`,
         token_endpoint: `${base}/token`,
         ...(mode.registration === false ? {} : { registration_endpoint: `${base}/register` }),
+        ...(mode.cimd ? { client_id_metadata_document_supported: true } : {}),
         response_types_supported: ["code"],
         grant_types_supported: ["authorization_code", "refresh_token"],
         token_endpoint_auth_methods_supported: ["none"],
@@ -89,6 +94,7 @@ beforeAll(async () => {
     req.on("data", (chunk) => (body += chunk));
     req.on("end", () => {
       if (url.pathname === "/register") {
+        registrations++;
         const metadata = JSON.parse(body);
         return json(201, { client_id: "client-1", ...metadata });
       }
@@ -98,8 +104,14 @@ beforeAll(async () => {
           const entry = codes.get(form.get("code") ?? "");
           codes.delete(form.get("code") ?? "");
           const verifierHash = createHash("sha256").update(form.get("code_verifier") ?? "").digest("base64url");
-          if (!entry || verifierHash !== entry.challenge || form.get("redirect_uri") !== entry.redirectUri || form.get("resource") !== entry.resource) {
-            return json(400, { error: "invalid_grant", error_description: "bad code, verifier, redirect or resource" });
+          if (
+            !entry ||
+            verifierHash !== entry.challenge ||
+            form.get("client_id") !== entry.clientId ||
+            form.get("redirect_uri") !== entry.redirectUri ||
+            form.get("resource") !== entry.resource
+          ) {
+            return json(400, { error: "invalid_grant", error_description: "bad code, client, verifier, redirect or resource" });
           }
           return json(200, tokens());
         }
@@ -132,6 +144,7 @@ function approve(authorizationUrl: string) {
   const url = new URL(authorizationUrl);
   const code = `code-${codes.size + 1}-${Math.random().toString(36).slice(2)}`;
   codes.set(code, {
+    clientId: url.searchParams.get("client_id") ?? "",
     challenge: url.searchParams.get("code_challenge") ?? "",
     redirectUri: url.searchParams.get("redirect_uri") ?? "",
     resource: url.searchParams.get("resource"),
@@ -150,6 +163,7 @@ const deps = { service, testHooks: hooks, redirectUri: REDIRECT };
 
 beforeEach(async () => {
   mode = {};
+  registrations = 0;
   await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${mcpOAuthSignIns} CASCADE`);
   await seedWorkspaces(db, ["alice", "mallory"]);
 });
@@ -316,6 +330,56 @@ describe("signing in", () => {
     expect(await db.select().from(dataConnections)).toHaveLength(1);
     // Someone else's connection can't be signed in to again.
     expect(await startMcpSignIn(workspaceOf("mallory"), { connectionId: created.data.id }, deps)).toMatchObject({ ok: false, error: { code: "not_found" } });
+  });
+});
+
+describe("client metadata documents (CIMD)", () => {
+  const cimdDeps = { ...deps, clientMetadataUrl: CLIENT_METADATA_URL };
+
+  /** Signs Alice in to the fake server, returning the client id it signed in as. */
+  async function signIn(using: Parameters<typeof startMcpSignIn>[2]) {
+    const started = await startMcpSignIn(workspaceOf("alice"), { name: "Linear", url: `${base}/mcp` }, using);
+    if (!started.ok) throw new Error(started.error.code);
+    const clientId = new URL(started.data.authorizationUrl).searchParams.get("client_id");
+    // The code exchange must name the same client (the fake token endpoint checks it).
+    expect(await finishMcpSignIn("alice", approve(started.data.authorizationUrl), using)).toMatchObject({ ok: true });
+    const [signedIn] = await db.select().from(connectionSignIns);
+    const credential = readOAuthCredential(await plaintextSecretBox.open(signedIn.secret, { purpose: "", userId: "", connectionId: "" }));
+    expect(credential.client.client_id).toBe(clientId);
+    return clientId;
+  }
+
+  it("signs in as the document's URL, without registering, where the server fetches documents", async () => {
+    mode = { cimd: true };
+    expect(await signIn(cimdDeps)).toBe(CLIENT_METADATA_URL);
+    expect(registrations).toBe(0);
+  });
+
+  it("signs in to a server that only supports documents", async () => {
+    mode = { cimd: true, registration: false };
+    expect(await signIn(cimdDeps)).toBe(CLIENT_METADATA_URL);
+  });
+
+  it("registers where the server doesn't fetch documents", async () => {
+    expect(await signIn(cimdDeps)).toBe("client-1");
+    expect(registrations).toBe(1);
+  });
+
+  it("registers where OpenDashboards doesn't serve its document (locally)", async () => {
+    mode = { cimd: true };
+    expect(await signIn({ ...deps, clientMetadataUrl: null })).toBe("client-1");
+  });
+
+  it("describes a public client whose id is the document's own URL", () => {
+    expect(clientMetadataDocument(CLIENT_METADATA_URL, REDIRECT)).toEqual({
+      client_id: CLIENT_METADATA_URL,
+      client_name: "OpenDashboards",
+      client_uri: "https://app.example.com",
+      redirect_uris: [REDIRECT],
+      grant_types: ["authorization_code", "refresh_token"],
+      response_types: ["code"],
+      token_endpoint_auth_method: "none",
+    });
   });
 });
 
