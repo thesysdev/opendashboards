@@ -39,7 +39,7 @@ export const CATALOG_CATEGORIES: { key: string; label: string; entries: CatalogE
     entries: [source("postgres"), source("supabase"), source("neon"), source("mysql"), source("clickhouse"), source("bigquery")],
   },
   { key: "product", label: "Product analytics", entries: [source("posthog"), mcp("amplitude"), mcp("mixpanel")] },
-  { key: "marketing", label: "Web, SEO and marketing", entries: [source("ga4"), source("searchconsole")] },
+  { key: "marketing", label: "Web, SEO and marketing", entries: [source("ga4"), source("searchconsole"), source("googleads"), source("metaads")] },
   { key: "revenue", label: "Sales and revenue", entries: [mcp("stripe"), mcp("attio")] },
   { key: "support", label: "Support", entries: [mcp("intercom")] },
   { key: "engineering", label: "Engineering", entries: [mcp("linear"), mcp("jira"), mcp("github"), mcp("sentry")] },

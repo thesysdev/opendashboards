@@ -35,6 +35,12 @@ export const common: CommonSettings = {
     oauthSignInTtlMs: 10 * 60 * 1000,
     oauthRefreshMarginMs: 60 * 1000,
   },
+  composio: {
+    apiUrl: "https://backend.composio.dev/api/v3.1",
+    // Meta builds large insight reports on demand: allow it the dashboard interpreter's budget, less margin.
+    requestTimeoutMs: 50_000,
+    maxRows: { agent: 200, dashboard: 10_000 },
+  },
   // Demo data: the "Demo Data" Neon project, shared by several apps. Read-only
   // for us: we connect only as its read-only role (DEMO_DATABASE_PASSWORD) and
   // never migrate, branch or write to it. Our own data is DATABASE_URL's.

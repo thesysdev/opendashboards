@@ -1,10 +1,12 @@
-import type { z } from "zod";
+import { z } from "zod";
 
 import { bigqueryConfigSchema } from "@/lib/sources/bigquery/catalog";
 import { CLICKHOUSE_DEFAULT_PORT, clickhouseConfigSchema, clickhousePasswordSchema } from "@/lib/sources/clickhouse/catalog";
 import { ga4ConfigSchema } from "@/lib/sources/ga4/catalog";
+import { googleAdsConfigSchema } from "@/lib/sources/googleads/catalog";
 import { projectIdOfKey, serviceAccountKeySchema } from "@/lib/sources/google/credential";
 import { mcpConfigSchema, mcpKeySchema } from "@/lib/sources/mcp/catalog";
+import { metaAdsConfigSchema } from "@/lib/sources/metaads/catalog";
 import type { McpAuth, McpService } from "@/lib/sources/mcp/services";
 import { MYSQL_DEFAULT_PORT, mysqlConfigSchema, mysqlPasswordSchema, parseMysqlUrl } from "@/lib/sources/mysql/catalog";
 import { searchConsoleConfigSchema } from "@/lib/sources/searchconsole/catalog";
@@ -80,7 +82,26 @@ const CREATE_SERVICE_ACCOUNT = [
   "Open the account → Keys → Add key → Create new key → JSON.",
 ];
 
-export const SOURCE_FORMS: Record<"mysql" | "clickhouse" | "bigquery" | "ga4" | "searchconsole" | "mcp", FormSpec> = {
+/**
+ * A source that connects only by signing in through Composio: a name, then
+ * the platform's own sign-in page. There's no key to paste.
+ */
+function composioSignInForm(input: { label: string; description: string; placeholder: string; server: string; config: z.ZodType }): FormSpec {
+  return {
+    title: `Connect ${input.label}`,
+    description: input.description,
+    fields: [{ name: "name", label: "Name", kind: "text", placeholder: input.placeholder, initial: input.label }],
+    // Never shown or sent: signing in is the only way.
+    credential: { name: "signIn", label: "Sign-in", kind: "password", optional: true },
+    replaceTitle: "Sign in again",
+    replaceAction: "Sign in",
+    secretNoun: "sign-ins",
+    oauth: { after: "name", options: ["oauth"], server: input.server },
+    schemas: { config: input.config, credential: z.string() },
+  };
+}
+
+export const SOURCE_FORMS: Record<"mysql" | "clickhouse" | "bigquery" | "ga4" | "searchconsole" | "googleads" | "metaads" | "mcp", FormSpec> = {
   mysql: {
     title: "Connect MySQL",
     description: "OpenDashboards runs read-only queries against your MySQL or MariaDB database to build dashboards.",
@@ -229,6 +250,20 @@ GRANT SELECT ON your_db.* TO dashboards_reader;`,
     secretNoun: "keys",
     schemas: { config: searchConsoleConfigSchema, credential: serviceAccountKeySchema },
   },
+  googleads: composioSignInForm({
+    label: "Google Ads",
+    description: "OpenDashboards reads your Google Ads campaigns and performance, read-only, to build dashboards. You sign in with Google.",
+    placeholder: "Google Ads",
+    server: "Google",
+    config: googleAdsConfigSchema,
+  }),
+  metaads: composioSignInForm({
+    label: "Meta Ads",
+    description: "OpenDashboards reads your Facebook and Instagram ad performance, read-only, to build dashboards. You sign in with Facebook.",
+    placeholder: "Meta Ads",
+    server: "Facebook",
+    config: metaAdsConfigSchema,
+  }),
   mcp: {
     title: "Connect an MCP server",
     description: "OpenDashboards calls the server's tools to explore data and build dashboards. Only remote servers over HTTPS.",

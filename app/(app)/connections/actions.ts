@@ -4,7 +4,7 @@ import { refresh } from "next/cache";
 
 import { track } from "@/lib/analytics";
 import { getConnectionService } from "@/lib/connections";
-import { startMcpSignIn } from "@/lib/connections/mcp-sign-in";
+import { startSignIn } from "@/lib/connections/sign-in";
 import { withLogContext } from "@/lib/log";
 import { fail, type Result } from "@/lib/connections/errors";
 import { inWorkspace, type Member, memberOf, requireKnownUser } from "@/lib/orgs";
@@ -38,15 +38,16 @@ async function runIn<T>(input: unknown, call: (member: Member, fields: unknown) 
 }
 
 /**
- * Starts an OAuth sign-in to an MCP server (new, or again for an existing
- * connection). Returns the sign-in page to send the browser to; the
- * connection is saved when it comes back to /api/mcp/oauth/callback.
+ * Starts a sign-in (new, or again for an existing connection): an MCP
+ * server's OAuth, or Composio's for Google Ads and Meta Ads. Returns the
+ * sign-in page to send the browser to; the connection is saved when it comes
+ * back to /api/mcp/oauth/callback or /api/composio/callback.
  */
 export async function startMcpSignInAction(input: unknown) {
   const { orgId, fields } = inWorkspace(input);
   const member = await memberOf(orgId);
   if (!member) return fail({ code: "not_found", message: "You aren't a member of this workspace any more. Reload the page." });
-  return startMcpSignIn(member, fields);
+  return startSignIn(member, fields);
 }
 
 export async function createConnectionAction(input: unknown) {

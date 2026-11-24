@@ -40,7 +40,7 @@ export const mcpSignInRedirectUri = () => `${appConfig().appOrigin}/api/mcp/oaut
  * dashboards, on our own site. Anything else (another site, another path) is
  * refused, so the callback can never be an open redirect.
  */
-const RETURN_PATH = /^\/w\/[0-9a-f-]{36}\/apps\/[0-9a-f-]{36}(\/[0-9a-f-]{36})?$/;
+export const RETURN_PATH = /^\/w\/[0-9a-f-]{36}\/apps\/[0-9a-f-]{36}(\/[0-9a-f-]{36})?$/;
 
 /** How a new connection is used, fixed once added: each member signs in themselves unless it's shared. */
 const sharing = z.enum(["personal", "org"]).default("personal");

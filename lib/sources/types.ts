@@ -114,6 +114,13 @@ export interface ConnectionSource<Config extends Record<string, unknown> = Recor
    * renews itself (an OAuth sign-in) renews it here, as a query would.
    */
   retest?(connection: OpenConnection<Config>): Promise<ConnectionWarning[]>;
+  /**
+   * Lets go of what a credential holds elsewhere, once it's deleted here (signed
+   * out, replaced by a new sign-in, or its connection removed). Optional: only a
+   * source whose sign-ins live with another service (Composio) needs it.
+   * Best effort: a failure is logged, never shown.
+   */
+  release?(credential: string): Promise<void>;
   /** Turns this source's failures into a user-facing error and the status to record. */
   toError(error: unknown): { error: SourceError; status: Exclude<ConnectionStatus, "ok"> } | null;
   // Each tool has its own argument type; the runner validates them with the tool's schema.

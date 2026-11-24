@@ -95,7 +95,11 @@ export function SourceFormDialog(props: Props) {
     startTransition(async () => {
       const name = values.name ?? "";
       const result = await startMcpSignInAction(
-        service ? { orgId, name, service, sharing } : { orgId, name, url: values.url ?? "", sharing },
+        type === "googleads" || type === "metaads"
+          ? { orgId, name, source: type, sharing }
+          : service
+            ? { orgId, name, service, sharing }
+            : { orgId, name, url: values.url ?? "", sharing },
       );
       if (!result.ok) {
         // Each result replaces the last one's message: a stale error under a field would contradict it.

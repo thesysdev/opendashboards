@@ -205,6 +205,22 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
   const openCredential = (sealed: SealedSecret | null, ctx: SecretContext): Promise<string> =>
     sealed?.provider === "none" ? Promise.resolve("") : deps.secrets().open(sealed!, ctx);
 
+  /**
+   * After sign-ins are deleted: lets the source let go of what they held
+   * elsewhere (a Composio account, with its ad platform tokens). Best effort.
+   */
+  async function releaseSignIns(type: ConnectionType, signIns: ConnectionSignInRow[]): Promise<void> {
+    const source = deps.sources(type);
+    if (!source.release) return;
+    for (const signIn of signIns) {
+      try {
+        await source.release(await openCredential(signIn.secret, context(type, signIn.userId, signIn.connectionId)));
+      } catch (error) {
+        logError("connections.releaseSignIn", error);
+      }
+    }
+  }
+
   /** The source's own check, with the settings stripped of their type tag. */
   function check(config: ConnectionConfig, credential: string): Promise<ConnectionWarning[]> {
     const { type, ...settings } = config;
@@ -445,6 +461,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     const users = await appsUsing(userId, row.id);
     if (users.visible.length || users.hidden) return inUse(users);
 
+    const type = row.type as ConnectionType;
+    const signIns = deps.sources(type).release ? await db.select().from(connectionSignIns).where(eq(connectionSignIns.connectionId, row.id)) : [];
     try {
       await db.delete(dataConnections).where(eq(dataConnections.id, row.id));
     } catch (error) {
@@ -453,6 +471,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       throw error;
     }
     keyCache.delete(row.id);
+    await releaseSignIns(type, signIns);
     return ok(undefined);
   }
 
@@ -822,8 +841,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         const removed = await db
           .delete(connectionSignIns)
           .where(and(eq(connectionSignIns.connectionId, found.row.id), eq(connectionSignIns.userId, userId)))
-          .returning({ id: connectionSignIns.id });
+          .returning();
         for (const { id } of removed) keyCache.delete(id);
+        await releaseSignIns(found.row.type as ConnectionType, removed);
         return ok(undefined);
       });
     },
@@ -1061,7 +1081,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           if (!existing || !can("connection", "signIn", existing.facts)) return notFound();
           const { row } = existing;
           if (row.type !== config.type || row.demoDataset !== null) return notFound();
-          const replaced: string[] = [];
+          const replaced: ConnectionSignInRow[] = [];
           try {
             const secret = await sealCredential(input.credential, context(config.type, userId, row.id));
             const warnings = await check(config, input.credential);
@@ -1074,18 +1094,20 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
                     ? eq(connectionSignIns.connectionId, row.id)
                     : and(eq(connectionSignIns.connectionId, row.id), eq(connectionSignIns.userId, userId)),
                 )
-                .returning({ id: connectionSignIns.id });
-              replaced.push(...gone.map((signIn) => signIn.id));
+                .returning();
+              replaced.push(...gone);
               await tx
                 .insert(connectionSignIns)
                 .values({ id: randomUUID(), connectionId: row.id, userId, secret, status: "ok", lastCheckedAt: now() });
               await tx.update(dataConnections).set({ config, updatedAt: now() }).where(eq(dataConnections.id, row.id));
             });
+            // Committed: the sign-ins it replaced are gone for good.
+            await releaseSignIns(config.type, replaced);
             return ok({ id: row.id, warnings });
           } catch (error) {
             return checkFailure(error, config.type);
           } finally {
-            for (const id of replaced) keyCache.delete(id);
+            for (const { id } of replaced) keyCache.delete(id);
           }
         }
 
