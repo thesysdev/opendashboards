@@ -58,8 +58,15 @@ export const STRIPE_PLAN_ENV_VARS = [
 ] as const;
 
 /** Build hosted plans from Stripe env vars; returns null when none are set. */
+function stripEnvValue(raw: string | undefined): string {
+  const value = raw?.trim() ?? "";
+  const withoutAssignment = value.replace(/^[A-Z0-9_]+=\s*/, "");
+  const firstToken = withoutAssignment.split(/\s+/)[0] ?? "";
+  return firstToken.replace(/^["']|["']$/g, "");
+}
+
 export function plansFromEnv(env: Record<string, string | undefined>): PlansSettings | null {
-  const read = (name: (typeof STRIPE_PLAN_ENV_VARS)[number]) => env[name]?.trim() ?? "";
+  const read = (name: (typeof STRIPE_PLAN_ENV_VARS)[number]) => stripEnvValue(env[name]);
   if (!STRIPE_PLAN_ENV_VARS.some((name) => read(name).length > 0)) return null;
   return hostedPlans({
     standard: {

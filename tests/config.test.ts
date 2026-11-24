@@ -128,7 +128,7 @@ describe("plans", () => {
   it("load hosted plans from Stripe env vars when set and catch partial configs", () => {
     const planEnv = {
       STRIPE_PRICE_STANDARD_MONTHLY: "price_sm",
-      STRIPE_PRICE_STANDARD_ANNUAL: "price_sa",
+      STRIPE_PRICE_STANDARD_ANNUAL: "price_sa\nSTRIPE_PORTAL_STANDARD_MONTHLY=bpc_sm",
       STRIPE_PORTAL_STANDARD_MONTHLY: "bpc_sm",
       STRIPE_PORTAL_STANDARD_ANNUAL: "bpc_sa",
       STRIPE_PRICE_TEAM_MONTHLY: "price_tm",
