@@ -1,6 +1,7 @@
 "use client";
 
 import { BuildingIcon, CheckIcon, LinkIcon, Loader2Icon, LockIcon, UsersIcon, XIcon } from "lucide-react";
+import { Popover as PopoverPrimitive } from "radix-ui";
 import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -95,15 +96,25 @@ export function ShareApp({
 
   return (
     <>
-      <div className="relative">
-        <Button variant="outline" size="sm" onClick={() => openDialog(true)}>
-          {unshared ? <LockIcon aria-hidden /> : <UsersIcon aria-hidden />}
-          Share
-        </Button>
-        {showNudge && (
-          <div
+      {/* In a portal, so whatever the page draws under the header can't cover or clip it. */}
+      <PopoverPrimitive.Root open={showNudge}>
+        <PopoverPrimitive.Anchor asChild>
+          <Button variant="outline" size="sm" onClick={() => openDialog(true)}>
+            {unshared ? <LockIcon aria-hidden /> : <UsersIcon aria-hidden />}
+            Share
+          </Button>
+        </PopoverPrimitive.Anchor>
+        <PopoverPrimitive.Portal>
+          <PopoverPrimitive.Content
             role="status"
-            className="absolute top-full right-0 z-30 mt-2 w-64 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
+            side="bottom"
+            align="end"
+            sideOffset={8}
+            collisionPadding={8}
+            // A suggestion: it doesn't take focus, and only its own buttons put it away.
+            onOpenAutoFocus={(event) => event.preventDefault()}
+            onInteractOutside={(event) => event.preventDefault()}
+            className="relative z-50 w-64 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
           >
             {/* Points at the Share button above. */}
             <span aria-hidden className="absolute -top-1.5 right-6 size-3 rotate-45 border-t border-l bg-popover" />
@@ -116,9 +127,9 @@ export function ShareApp({
             <Button size="sm" className="mt-2" onClick={() => openDialog(true)}>
               Share
             </Button>
-          </div>
-        )}
-      </div>
+          </PopoverPrimitive.Content>
+        </PopoverPrimitive.Portal>
+      </PopoverPrimitive.Root>
       <Dialog open={open} onOpenChange={openDialog}>
         {/* One column no wider than the dialog: on a phone a long email is cut short, and what's beside it stays on screen. */}
         <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-md">
