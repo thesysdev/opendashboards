@@ -4,7 +4,7 @@ import posthog from "posthog-js";
 // The key is set only on our production deployment, so copies of OpenDashboards send nothing.
 const key = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 
-if (key && !["localhost", "127.0.0.1", "[::1]"].includes(window.location.hostname)) {
+if (key) {
   posthog.init(key, {
     api_host: "https://dgoeivjus9jfp.cloudfront.net",
     capture_pageview: "history_change",
