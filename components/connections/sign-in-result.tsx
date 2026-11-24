@@ -8,6 +8,8 @@ import { toast } from "sonner";
 const MESSAGES: Record<string, string> = {
   oauth_expired: "That sign-in expired or was already used. Start it again.",
   oauth_failed: "The sign-in didn't complete. Try again.",
+  // Someone else took the last connection while this person was signing in.
+  plan_limit: "Your workspace has no connections left on its plan.",
   oauth_invalid: "The server's sign-in failed a safety check, so OpenDashboards didn't connect to it.",
   oauth_unsupported: "This server's OAuth sign-in isn't supported.",
   reauth_required: "The server refused the sign-in. Try signing in again.",

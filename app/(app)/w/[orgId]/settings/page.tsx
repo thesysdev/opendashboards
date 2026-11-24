@@ -70,11 +70,12 @@ async function WorkspaceSettings({ params }: { params: Params }) {
         <div className="rounded-xl border">
           {can("member", "create", workspace) && (
             <div className="rounded-t-xl border-b bg-neutral-50/70 p-3.5">
-              <InviteForm orgId={org.id} />
-              <p className="mt-2 text-xs text-muted-foreground">
-                There&apos;s nothing to accept: they&apos;re in the workspace as soon as they sign in with that email. We don&apos;t send
-                an email, so let them know.
-              </p>
+              <InviteForm orgId={org.id}>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  There&apos;s nothing to accept: they&apos;re in the workspace as soon as they sign in with that email. We don&apos;t
+                  send an email, so let them know.
+                </p>
+              </InviteForm>
             </div>
           )}
           <ul className="divide-y">

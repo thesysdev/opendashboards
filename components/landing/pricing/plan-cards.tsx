@@ -8,7 +8,7 @@ import { cn } from "@/lib/utils";
 import { BevelButton } from "../bevel-button";
 import { PLANS, type Plan } from "./plans";
 
-type Billing = "annual" | "monthly";
+export type Billing = "annual" | "monthly";
 
 /**
  * The four plans side by side (two by two on tablets, stacked on phones),
@@ -33,7 +33,7 @@ export function PlanCards() {
 }
 
 /** Two options in a pill, the chosen one raised. A radio group, so arrow keys move between them. */
-function BillingSwitch({ value, onChange }: { value: Billing; onChange: (value: Billing) => void }) {
+export function BillingSwitch({ value, onChange }: { value: Billing; onChange: (value: Billing) => void }) {
   const options: { value: Billing; label: string; note?: string }[] = [
     { value: "annual", label: "Annual", note: "Save 20%" },
     { value: "monthly", label: "Monthly" },

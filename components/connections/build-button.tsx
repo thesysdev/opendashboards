@@ -5,6 +5,7 @@ import { useTransition } from "react";
 import { toast } from "sonner";
 
 import { createAppAction } from "@/app/(app)/apps/actions";
+import { useAtLimit, useViewOnly } from "@/components/billing/workspace-plan";
 import { DISCOVERY_PROMPT } from "@/components/onboarding/discovery-prompt";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
@@ -16,6 +17,9 @@ import { useWorkspaceId } from "@/lib/apps/use-workspace";
 export function BuildButton({ connectionId, name }: { connectionId: string; name: string }) {
   const orgId = useWorkspaceId();
   const [pending, startTransition] = useTransition();
+  // A new app: paused while the workspace is over its plan or at its app limit (the home page says why).
+  const viewOnly = useViewOnly();
+  const atLimit = useAtLimit("apps");
 
   function build() {
     startTransition(async () => {
@@ -27,7 +31,7 @@ export function BuildButton({ connectionId, name }: { connectionId: string; name
   }
 
   return (
-    <Button variant="outline" size="sm" onClick={build} disabled={pending} aria-label={`Build a dashboard from ${name}`}>
+    <Button variant="outline" size="sm" onClick={build} disabled={pending || viewOnly || atLimit} aria-label={`Build a dashboard from ${name}`}>
       Build
       {pending ? <Loader2Icon className="animate-spin" aria-hidden /> : <ArrowRightIcon aria-hidden />}
     </Button>

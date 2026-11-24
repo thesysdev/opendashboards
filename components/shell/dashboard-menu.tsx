@@ -25,6 +25,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { appPath, parseAppPath } from "@/lib/apps/paths";
 import { cn } from "@/lib/utils";
+import { useViewOnly } from "@/components/billing/workspace-plan";
 
 /** A dashboard's actions in the sidebar: renaming it in place, and deleting it. */
 export function DashboardMenu({
@@ -39,6 +40,7 @@ export function DashboardMenu({
   className?: string;
 }) {
   const [confirming, setConfirming] = useState(false);
+  const viewOnly = useViewOnly();
   // Rename starts once the menu has closed: while open, it holds focus and
   // would pull it straight back out of the name being edited.
   const renameOnClose = useRef(false);
@@ -67,7 +69,7 @@ export function DashboardMenu({
             onRename();
           }}
         >
-          <DropdownMenuItem onSelect={() => (renameOnClose.current = true)}>
+          <DropdownMenuItem disabled={viewOnly} onSelect={() => (renameOnClose.current = true)}>
             <PencilIcon aria-hidden />
             Rename
           </DropdownMenuItem>

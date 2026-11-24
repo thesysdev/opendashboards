@@ -64,19 +64,20 @@ for (const [id, plan] of Object.entries(PLANS)) {
 const existing = (await stripe.billingPortal.configurations.list({ limit: 100, active: true })).data;
 
 /** A portal configuration for a plan and period: which prices it may move to. */
-async function portal(name, offers) {
+async function portal(name, offers, { allowed = ["price"], minimal = false } = {}) {
   const found = existing.find((configuration) => configuration.metadata?.od_portal === name);
   const params = {
     business_profile: { privacy_policy_url: `${origin}/`, terms_of_service_url: `${origin}/` },
     default_return_url: `${origin}/apps`,
     features: {
-      invoice_history: { enabled: true },
+      invoice_history: { enabled: !minimal },
+      // Stripe requires it wherever plan updates are on.
       payment_method_update: { enabled: true },
-      customer_update: { enabled: true, allowed_updates: ["email", "address", "name", "tax_id"] },
-      subscription_cancel: { enabled: true, mode: "at_period_end", proration_behavior: "none" },
+      customer_update: minimal ? { enabled: false } : { enabled: true, allowed_updates: ["email", "address", "name", "tax_id"] },
+      subscription_cancel: minimal ? { enabled: false } : { enabled: true, mode: "at_period_end", proration_behavior: "none" },
       subscription_update: {
         enabled: offers.length > 0,
-        default_allowed_updates: ["price"],
+        default_allowed_updates: allowed,
         proration_behavior: "always_invoice",
         products: offers,
       },
@@ -99,6 +100,8 @@ const portals = {
     // Monthly: Team annual. Annual: nothing to switch to.
     month: (await portal("team_month", [offer("team", "monthly", "annual")])).id,
     year: (await portal("team_year", [])).id,
+    // Only for Billing's seat-change confirm page: the seat count changes, nothing else does.
+    seats: (await portal("team_seats", [offer("team", "monthly", "annual")], { allowed: ["quantity"], minimal: true })).id,
   },
 };
 

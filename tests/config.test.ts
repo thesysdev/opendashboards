@@ -109,7 +109,7 @@ describe("demo datasets", () => {
 });
 
 describe("plans", () => {
-  const ids = { monthly: "price_m", annual: "price_y", portal: { month: "bpc_m", year: "bpc_y" } };
+  const ids = { monthly: "price_m", annual: "price_y", portal: { month: "bpc_m", year: "bpc_y", seats: "bpc_s" } };
 
   it("accept the hosted catalog with its Stripe ids, and then need Stripe's secrets", () => {
     const withPlans = editedProd((s) => (s.plans = hostedPlans({ standard: ids, team: ids })));

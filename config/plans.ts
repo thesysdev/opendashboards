@@ -12,7 +12,12 @@ export type StripePlan = {
   monthly: string;
   annual: string;
   /** Billing portal configuration ids, by the subscription's interval: annual ones offer no switch back to monthly. */
-  portal: { month: string; year: string };
+  portal: {
+    month: string;
+    year: string;
+    /** Per-seat plans only: the seat-change confirm page, the one place the seat count can change. */
+    seats?: string;
+  };
 };
 
 export type CatalogPlan =

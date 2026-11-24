@@ -17,7 +17,7 @@ import { getPlans, type Plans } from "@/lib/plans";
 /** Where to send the browser, or what to tell the admin. */
 export type BillingResult = { ok: true; url: string } | { ok: false; message: string };
 
-const SOMETHING_WRONG: BillingResult = { ok: false, message: "Stripe couldn't be reached. Try again." };
+const SOMETHING_WRONG: BillingResult = { ok: false, message: "Stripe couldn't start this. Try again, or email support@thesys.dev." };
 
 const orgSchema = z.object({ orgId: z.uuid() });
 const upgradeSchema = orgSchema.extend({ planId: z.string().min(1).max(40), interval: z.enum(["month", "year"]) });

@@ -11,6 +11,7 @@ import {
   shareAppWithMemberAction,
   unshareAppWithMemberAction,
 } from "@/app/(app)/apps/actions";
+import { UpgradePrompt, useWorkspacePlan } from "@/components/billing/workspace-plan";
 import { AvatarCircle } from "@/components/shell/avatar-circle";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -60,6 +61,8 @@ export function ShareApp({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const nudge = useShareNudge(app.id, dashboardCount);
+  const plan = useWorkspacePlan();
+  const soloPlan = plan !== null && !plan.perSeat && !plan.viewerRole;
   const added = teammates.filter((teammate) => teammate.access);
   const unshared = app.teamAccess === "private" && !guests.length && !added.length;
   // Nothing to suggest once it's shared.
@@ -216,6 +219,10 @@ export function ShareApp({
                 <option value="edit">Editor</option>
               </select>
             </div>
+            {/* Free and Standard have one editor and no viewers: nobody else in the workspace to share with yet. */}
+            {soloPlan && (
+              <UpgradePrompt icon={UsersIcon} title="Build together on Team" detail="Add editors and free viewers." action="team" className="mt-2" />
+            )}
           </section>
 
           {error && (

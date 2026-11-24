@@ -6,6 +6,8 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { ANY_MCP_SERVER, CATALOG_CATEGORIES, POPULAR, searchCatalog, type CatalogEntry } from "@/lib/sources/directory";
 
+import { LimitPrompt, useAtLimit, useViewOnly } from "@/components/billing/workspace-plan";
+
 import { ConnectDialog } from "./add-connection-button";
 import type { SecretMode } from "./connection-form-dialog";
 import { SourceTile } from "./source-tile";
@@ -22,13 +24,20 @@ export function ConnectorCatalog({ secretMode, sampleData }: { secretMode: Secre
   const searching = query.trim().length > 0;
   const results = searching ? searchCatalog(query) : [];
 
+  // A new connection: paused while the workspace is over its plan or at its connection limit.
+  const viewOnly = useViewOnly();
+  const atLimit = useAtLimit("connections");
+  const paused = viewOnly || atLimit;
+
   function pick(entry: CatalogEntry) {
+    if (paused) return;
     setSelected(entry);
     setOpen(true);
   }
 
   return (
     <>
+      <LimitPrompt name="connections" className="mb-4" />
       <div className="relative mb-6">
         <SearchIcon className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" aria-hidden />
         <Input
@@ -43,7 +52,7 @@ export function ConnectorCatalog({ secretMode, sampleData }: { secretMode: Secre
 
       {searching ? (
         results.length > 0 ? (
-          <Group label={`${results.length} ${results.length === 1 ? "result" : "results"}`} entries={results} onPick={pick} />
+          <Group label={`${results.length} ${results.length === 1 ? "result" : "results"}`} entries={results} onPick={pick} disabled={paused} />
         ) : (
           <p className="mb-6 text-sm text-muted-foreground">
             Nothing called &ldquo;{query.trim()}&rdquo; yet. If it has a remote MCP server, connect it below.
@@ -59,9 +68,9 @@ export function ConnectorCatalog({ secretMode, sampleData }: { secretMode: Secre
               </ul>
             </section>
           )}
-          <Group label="Popular" entries={POPULAR} onPick={pick} />
+          <Group label="Popular" entries={POPULAR} onPick={pick} disabled={paused} />
           {CATALOG_CATEGORIES.map((category) => (
-            <Group key={category.key} label={category.label} entries={category.entries} onPick={pick} />
+            <Group key={category.key} label={category.label} entries={category.entries} onPick={pick} disabled={paused} />
           ))}
         </>
       )}
@@ -69,7 +78,8 @@ export function ConnectorCatalog({ secretMode, sampleData }: { secretMode: Secre
       <button
         type="button"
         onClick={() => pick(ANY_MCP_SERVER)}
-        className="flex w-full items-center gap-3 rounded-xl border border-dashed p-3.5 text-left transition-colors hover:bg-neutral-50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+        disabled={paused}
+        className="flex w-full items-center gap-3 rounded-xl border border-dashed p-3.5 text-left transition-colors hover:bg-neutral-50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
       >
         <SourceTile label={ANY_MCP_SERVER.tile} className="size-9" />
         <span className="min-w-0">
@@ -92,7 +102,17 @@ export function ConnectorCatalog({ secretMode, sampleData }: { secretMode: Secre
   );
 }
 
-function Group({ label, entries, onPick }: { label: string; entries: CatalogEntry[]; onPick: (entry: CatalogEntry) => void }) {
+function Group({
+  label,
+  entries,
+  onPick,
+  disabled,
+}: {
+  label: string;
+  entries: CatalogEntry[];
+  onPick: (entry: CatalogEntry) => void;
+  disabled: boolean;
+}) {
   return (
     <section className="mb-7">
       <h3 className="mb-2.5 text-xs font-medium tracking-wide text-muted-foreground uppercase">{label}</h3>
@@ -103,7 +123,8 @@ function Group({ label, entries, onPick }: { label: string; entries: CatalogEntr
             <button
               type="button"
               onClick={() => onPick(entry)}
-              className="flex h-full w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-neutral-50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none"
+              disabled={disabled}
+              className="flex h-full w-full items-start gap-3 rounded-xl border p-3 text-left transition-colors hover:bg-neutral-50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
             >
               <SourceTile label={entry.tile} className="size-9" />
               <span className="min-w-0">

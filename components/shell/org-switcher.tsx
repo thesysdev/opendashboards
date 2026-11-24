@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
 import { useRef, useState, useTransition } from "react";
 
+import { PlanPickerDialog } from "@/components/billing/plan-picker";
 import { checkoutWorkspaceAction, createOrgAction, paidPlansAction, switchDevUserAction } from "@/app/(app)/settings/actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
@@ -155,27 +156,38 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; o
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  /** Set once the server says this workspace must be paid for: the plan and period to buy. */
-  const [paid, setPaid] = useState<{ planId: string; interval: "month" | "year" } | null>(null);
-  const [plans, setPlans] = useState<{ id: string; name: string }[]>([]);
+  /** Set once the server says this workspace must be paid for: why, and the plans on offer. */
+  const [needsPlan, setNeedsPlan] = useState<string | null>(null);
+  const [planIds, setPlanIds] = useState<string[]>([]);
+  const [choosing, setChoosing] = useState<string | null>(null);
+
+  function checkout(planId: string, interval: "month" | "year") {
+    setChoosing(planId);
+    startTransition(async () => {
+      const started = await checkoutWorkspaceAction({ name, planId, interval });
+      if (started.ok) {
+        window.location.assign(started.data.url);
+        return;
+      }
+      setChoosing(null);
+      setNeedsPlan(null);
+      onOpenChange(true);
+      setError(started.error.message);
+    });
+  }
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
     startTransition(async () => {
-      if (paid) {
-        const checkout = await checkoutWorkspaceAction({ name, ...paid });
-        if (checkout.ok) window.location.assign(checkout.data.url);
-        else setError(checkout.error.message);
-        return;
-      }
       const result = await createOrgAction({ name });
       if (!result.ok) {
-        setError(result.error.message);
-        // Their one Free workspace is taken: this one is paid for first.
+        // Their one Free workspace is taken: this one is paid for first, on a plan they pick.
         if (result.error.code === "plan_limit") {
-          const plans = await paidPlansAction();
-          setPlans(plans);
-          if (plans[0]) setPaid({ planId: plans[0].id, interval: "year" });
+          setPlanIds((await paidPlansAction()).map((plan) => plan.id));
+          onOpenChange(false);
+          setNeedsPlan(result.error.message);
+        } else {
+          setError(result.error.message);
         }
         return;
       }
@@ -186,72 +198,58 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; o
   }
 
   return (
-    <Dialog
-      open={open}
-      onOpenChange={(next) => {
-        if (!next) setError(null);
-        onOpenChange(next);
-      }}
-    >
-      <DialogContent className="sm:max-w-md">
-        <form onSubmit={submit} className="contents">
-          <DialogHeader>
-            <DialogTitle>Create a workspace</DialogTitle>
-            <DialogDescription>
-              A workspace has its own apps, data connections and members. Your other workspaces stay as they are.
-            </DialogDescription>
-          </DialogHeader>
-          <Field data-invalid={error ? true : undefined}>
-            <FieldLabel htmlFor="workspace-name">Workspace name</FieldLabel>
-            <Input
-              id="workspace-name"
-              value={name}
-              onChange={(event) => {
-                setName(event.target.value);
-                setError(null);
-              }}
-              maxLength={60}
-              placeholder="Acme"
-              autoFocus
-              aria-invalid={error ? true : undefined}
-            />
-            {error && <FieldError>{error}</FieldError>}
-          </Field>
-          {paid && (
-            <div className="flex flex-wrap gap-2">
-              <select
-                aria-label="Plan"
-                value={paid.planId}
-                onChange={(event) => setPaid({ ...paid, planId: event.target.value })}
-                className="h-8 rounded-md border bg-background px-2 text-sm"
-              >
-                {plans.map((plan) => (
-                  <option key={plan.id} value={plan.id}>
-                    {plan.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                aria-label="Billing period"
-                value={paid.interval}
-                onChange={(event) => setPaid({ ...paid, interval: event.target.value as "month" | "year" })}
-                className="h-8 rounded-md border bg-background px-2 text-sm"
-              >
-                <option value="year">Billed annually</option>
-                <option value="month">Billed monthly</option>
-              </select>
-            </div>
-          )}
-          <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
-              Cancel
-            </Button>
-            <Button type="submit" disabled={pending || !name.trim()}>
-              {pending ? "Creating…" : paid ? "Continue to payment" : "Create workspace"}
-            </Button>
-          </DialogFooter>
-        </form>
-      </DialogContent>
-    </Dialog>
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          if (!next) setError(null);
+          onOpenChange(next);
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <form onSubmit={submit} className="contents">
+            <DialogHeader>
+              <DialogTitle>Create a workspace</DialogTitle>
+              <DialogDescription>
+                A workspace has its own apps, data connections and members. Your other workspaces stay as they are.
+              </DialogDescription>
+            </DialogHeader>
+            <Field data-invalid={error ? true : undefined}>
+              <FieldLabel htmlFor="workspace-name">Workspace name</FieldLabel>
+              <Input
+                id="workspace-name"
+                value={name}
+                onChange={(event) => {
+                  setName(event.target.value);
+                  setError(null);
+                }}
+                maxLength={60}
+                placeholder="Acme"
+                autoFocus
+                aria-invalid={error ? true : undefined}
+              />
+              {error && <FieldError>{error}</FieldError>}
+            </Field>
+            <DialogFooter>
+              <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+                Cancel
+              </Button>
+              <Button type="submit" disabled={pending || !name.trim()}>
+                {pending ? "Creating…" : "Create workspace"}
+              </Button>
+            </DialogFooter>
+          </form>
+        </DialogContent>
+      </Dialog>
+      <PlanPickerDialog
+        open={needsPlan !== null}
+        onOpenChange={(next) => !next && setNeedsPlan(null)}
+        title={`Choose a plan for ${name.trim()}`}
+        description={needsPlan ?? undefined}
+        planIds={planIds}
+        pending={choosing}
+        onChoose={checkout}
+      />
+    </>
   );
 }

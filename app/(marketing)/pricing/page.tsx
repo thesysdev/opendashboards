@@ -72,7 +72,7 @@ const PRICING_FAQS: FaqItem[] = [
   },
   {
     question: "What happens to an editor I remove?",
-    answer: ["Their seat is free for someone else. To pay less, lower your seats in Billing."],
+    answer: ["Their seat is free for someone else. To pay for fewer seats, email support@thesys.dev."],
   },
   {
     question: "What if I move to a smaller plan or cancel?",

@@ -1,12 +1,13 @@
 "use client";
 
-import { Loader2Icon } from "lucide-react";
-import { useState, useTransition } from "react";
+import { Loader2Icon, MinusIcon, PlusIcon } from "lucide-react";
+import { useEffect, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { changeSeatsAction, manageBillingAction, upgradeAction, type BillingResult } from "@/app/(app)/settings/billing-actions";
+import { changeSeatsAction, manageBillingAction, type BillingResult } from "@/app/(app)/settings/billing-actions";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { UpgradeButton } from "@/components/billing/upgrade";
 import type { LimitName, Limits } from "@/lib/entitlements/types";
 import { cn } from "@/lib/utils";
 
@@ -53,18 +54,17 @@ export function BillingSection({ view }: { view: BillingView }) {
       <div className="flex flex-wrap items-start gap-x-4 gap-y-2 p-3.5">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-medium">{plan.name} plan</p>
-          <p className="text-sm text-muted-foreground">{describeSubscription(view)}</p>
+          {subscription && <p className="text-sm text-muted-foreground">{describeSubscription(subscription, plan.perSeat)}</p>}
         </div>
-        {view.canManage && view.hasAccount && <ManageBillingButton orgId={view.orgId} />}
+        <div className="flex gap-2">
+          {view.canManage && view.hasAccount && <ManageBillingButton orgId={view.orgId} />}
+          {view.canManage && subscription && plan.perSeat && <BuySeatsButton orgId={view.orgId} seats={subscription.seats} />}
+          {view.canManage && !subscription && view.paidPlans.length > 0 && <UpgradeButton orgId={view.orgId} />}
+        </div>
       </div>
 
       {view.canManage && subscription?.paymentFailed && (
         <p className="border-t bg-destructive/5 px-3.5 py-2.5 text-sm text-destructive">Payment failed. Update your card in Manage billing.</p>
-      )}
-      {view.viewOnly && (
-        <p className="border-t bg-amber-50 px-3.5 py-2.5 text-sm text-amber-900">
-          This workspace is over the {plan.name} plan&apos;s limits, so it&apos;s view-only. Delete apps or connections, or upgrade.
-        </p>
       )}
 
       <dl className="grid grid-cols-3 border-t text-sm">
@@ -81,10 +81,6 @@ export function BillingSection({ view }: { view: BillingView }) {
         })}
       </dl>
 
-      {view.canManage && !subscription && view.paidPlans.length > 0 && <UpgradeForm view={view} />}
-      {view.canManage && subscription && plan.perSeat && (
-        <SeatsForm orgId={view.orgId} seats={subscription.seats} inUse={view.limits.editors.used} />
-      )}
       {view.canManage && subscription && plan.perSeat && (
         <p className="border-t px-3.5 py-2.5 text-xs text-muted-foreground">
           To move to Standard, cancel your plan and subscribe to Standard once it ends, or email {view.supportEmail}.
@@ -94,9 +90,8 @@ export function BillingSection({ view }: { view: BillingView }) {
   );
 }
 
-function describeSubscription({ subscription, plan }: BillingView): string {
-  if (!subscription) return "No card needed. Upgrade for more editors, connections and apps.";
-  const seats = plan.perSeat ? `${subscription.seats} ${subscription.seats === 1 ? "seat" : "seats"}, ` : "";
+function describeSubscription(subscription: NonNullable<BillingView["subscription"]>, perSeat: boolean): string {
+  const seats = perSeat ? `${subscription.seats} ${subscription.seats === 1 ? "seat" : "seats"}, ` : "";
   const cycle = subscription.interval === "year" ? "billed annually" : "billed monthly";
   const end = subscription.currentPeriodEnd ? date(subscription.currentPeriodEnd) : null;
   const when = !end ? "" : subscription.cancelAtPeriodEnd ? `. Cancelled: moves to Free on ${end}` : `. Renews ${end}`;
@@ -113,65 +108,66 @@ function ManageBillingButton({ orgId }: { orgId: string }) {
   );
 }
 
-/** A free workspace picks a plan and how often to pay, then pays on Stripe Checkout. */
-function UpgradeForm({ view }: { view: BillingView }) {
-  const [planId, setPlanId] = useState(view.paidPlans[0]!.id);
-  const [interval, setInterval] = useState<"year" | "month">("year");
-  const { pending, go } = useStripeRedirect();
-  const select = "h-8 rounded-md border bg-background px-2 text-sm focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none";
-  return (
-    <div className="flex flex-wrap items-center gap-2 border-t p-3.5">
-      <select aria-label="Plan" className={select} value={planId} onChange={(event) => setPlanId(event.target.value)}>
-        {view.paidPlans.map((entry) => (
-          <option key={entry.id} value={entry.id}>
-            {entry.name}
-          </option>
-        ))}
-      </select>
-      <select aria-label="Billing period" className={select} value={interval} onChange={(event) => setInterval(event.target.value as "year" | "month")}>
-        <option value="year">Billed annually</option>
-        <option value="month">Billed monthly</option>
-      </select>
-      <Button size="sm" disabled={pending} onClick={() => go(() => upgradeAction({ orgId: view.orgId, planId, interval }))}>
-        {pending && <Loader2Icon className="animate-spin" />}
-        Upgrade
-      </Button>
-    </div>
-  );
-}
+/** Where "Add a seat" elsewhere sends an admin: this dialog, open. */
+export const BUY_SEATS_HASH = "#buy-seats";
 
-/** Seats bought on a per-seat plan. Stripe shows the prorated price before the admin confirms. */
-function SeatsForm({ orgId, seats, inUse }: { orgId: string; seats: number; inUse: number }) {
-  const [value, setValue] = useState(String(seats));
+/**
+ * Buying more seats on a per-seat plan: how many to add, then Stripe's page,
+ * which shows the prorated price before the admin pays.
+ */
+function BuySeatsButton({ orgId, seats }: { orgId: string; seats: number }) {
+  const [open, setOpen] = useState(false);
+  const [adding, setAdding] = useState(1);
   const { pending, go } = useStripeRedirect();
-  const next = Number(value);
-  const unchanged = next === seats;
+
+  // Opened from an "Add a seat" prompt.
+  useEffect(() => {
+    const check = () => {
+      if (window.location.hash === BUY_SEATS_HASH) setOpen(true);
+    };
+    check();
+    window.addEventListener("hashchange", check);
+    return () => window.removeEventListener("hashchange", check);
+  }, []);
+
+  const label = `Buy ${adding} ${adding === 1 ? "seat" : "seats"}`;
   return (
-    <form
-      className="flex flex-wrap items-center gap-x-3 gap-y-2 border-t p-3.5"
-      onSubmit={(event) => {
-        event.preventDefault();
-        go(() => changeSeatsAction({ orgId, seats: next }));
-      }}
-    >
-      <label htmlFor="seats" className="text-sm font-medium">
-        Seats
-      </label>
-      <Input
-        id="seats"
-        type="number"
-        inputMode="numeric"
-        min={Math.max(inUse, 1)}
-        max={999}
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        className="h-8 w-20"
-      />
-      <span className="text-sm text-muted-foreground">{inUse} in use</span>
-      <Button type="submit" size="sm" variant="outline" disabled={pending || unchanged || !Number.isInteger(next)}>
-        {pending && <Loader2Icon className="animate-spin" />}
-        Change seats
+    <>
+      <Button size="sm" onClick={() => setOpen(true)}>
+        Buy seats
       </Button>
-    </form>
+      <Dialog
+        open={open}
+        onOpenChange={(next) => {
+          setOpen(next);
+          if (!next && window.location.hash === BUY_SEATS_HASH) history.replaceState(null, "", window.location.pathname + "#billing");
+        }}
+      >
+        <DialogContent className="sm:max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Buy additional seats</DialogTitle>
+            <DialogDescription>Each seat lets one more person be an admin or editor.</DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center justify-center gap-4 py-2">
+            <Button variant="outline" size="icon" aria-label="One fewer" disabled={adding <= 1} onClick={() => setAdding(adding - 1)}>
+              <MinusIcon />
+            </Button>
+            <span className="min-w-16 text-center text-3xl font-semibold tabular-nums">{adding}</span>
+            <Button variant="outline" size="icon" aria-label="One more" disabled={seats + adding >= 999} onClick={() => setAdding(adding + 1)}>
+              <PlusIcon />
+            </Button>
+          </div>
+          <p className="text-center text-sm text-muted-foreground">
+            {seats} seats now, {seats + adding} after. You&apos;ll see the price before you pay.
+          </p>
+          <DialogFooter>
+            <Button disabled={pending} onClick={() => go(() => changeSeatsAction({ orgId, seats: seats + adding }))}>
+              {pending && <Loader2Icon className="animate-spin" />}
+              {label}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
   );
 }

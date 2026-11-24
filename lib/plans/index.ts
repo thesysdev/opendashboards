@@ -10,7 +10,7 @@ import { createOrgService } from "@/lib/orgs/service";
 
 import { createPlans, type Plans } from "./plans";
 
-export { createPlans, entitlementsOf, type Plans } from "./plans";
+export { createPlans, entitlementsOf, type Plans, type PlanState } from "./plans";
 
 /*
  * Wiring. With plans in config, billing and enforcement are built and joined

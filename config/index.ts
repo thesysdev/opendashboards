@@ -130,6 +130,7 @@ function planProblems(settings: Settings): string[] {
     if (id !== plans.free) {
       const ids = plan.stripe ? [plan.stripe.monthly, plan.stripe.annual, plan.stripe.portal.month, plan.stripe.portal.year] : [];
       if (ids.length === 0 || ids.some((value) => !value.trim())) problems.push(`${label}: a paid plan needs its Stripe prices and portal configurations`);
+      if (plan.perSeat && !plan.stripe?.portal.seats?.trim()) problems.push(`${label}: a per-seat plan needs its seats portal configuration`);
     }
     for (const [entitlement, value] of Object.entries(plan.entitlements)) {
       if ("max" in value && value.max !== null && (!Number.isInteger(value.max) || value.max < 1)) {

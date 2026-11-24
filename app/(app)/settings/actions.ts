@@ -108,7 +108,7 @@ export async function checkoutWorkspaceAction(input: unknown): Promise<OrgResult
     return started.ok ? { ok: true, data: { url: started.url } } : fail({ code: "validation", message: started.message });
   } catch (error) {
     logError("billing.newWorkspace", error);
-    return fail({ code: "internal", message: "Stripe couldn't be reached. Try again." });
+    return fail({ code: "internal", message: "Stripe couldn't start this. Try again, or email support@thesys.dev." });
   }
 }
 

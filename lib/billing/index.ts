@@ -148,16 +148,20 @@ export function createBilling(deps: {
     return orgId;
   }
 
-  async function portalSession(orgId: string, returnPath: string, flow?: Stripe.BillingPortal.SessionCreateParams.FlowData) {
+  async function portalSession(
+    orgId: string,
+    returnPath: string,
+    flow?: { data: Stripe.BillingPortal.SessionCreateParams.FlowData; configuration: string },
+  ) {
     const row = await rowOf(orgId);
     if (!row) throw new Error("This workspace has no billing account yet.");
     const plan = row.plan && row.status && LIVE.has(row.status) ? planById(row.plan) : undefined;
     const session = await stripe.billingPortal.sessions.create({
       customer: row.stripeCustomerId,
       // The workspace's plan decides what the portal offers: Standard can move to Team, nothing moves down.
-      configuration: plan?.stripe && row.interval ? plan.stripe.portal[row.interval] : undefined,
+      configuration: flow?.configuration ?? (plan?.stripe && row.interval ? plan.stripe.portal[row.interval] : undefined),
       return_url: `${deps.origin}${returnPath}`,
-      ...(flow ? { flow_data: flow } : {}),
+      ...(flow ? { flow_data: flow.data } : {}),
     });
     return { url: session.url };
   }
@@ -249,14 +253,20 @@ export function createBilling(deps: {
     /** Stripe's page to confirm a new seat count, showing the prorated price. The caller checked it's not below what's in use. */
     async changeSeats(orgId: string, seats: number, returnPath: string): Promise<{ url: string }> {
       const row = await live(orgId);
-      if (!row?.stripeSubscriptionId || !planById(row.plan)?.perSeat) throw new Error("This workspace isn't on a per-seat plan");
+      const plan = planById(row?.plan ?? null);
+      const configuration = plan?.stripe?.portal.seats;
+      if (!row?.stripeSubscriptionId || !plan?.perSeat || !configuration) throw new Error("This workspace isn't on a per-seat plan");
       const subscription = await stripe.subscriptions.retrieve(row.stripeSubscriptionId);
       const item = subscription.items.data[0];
       if (!item) throw new Error("The subscription has no items");
+      // Its own portal configuration, the only one that lets the seat count change: Manage billing's never do.
       return portalSession(orgId, returnPath, {
-        type: "subscription_update_confirm",
-        subscription_update_confirm: { subscription: subscription.id, items: [{ id: item.id, quantity: seats }] },
-        after_completion: { type: "redirect", redirect: { return_url: `${deps.origin}${returnPath}` } },
+        configuration,
+        data: {
+          type: "subscription_update_confirm",
+          subscription_update_confirm: { subscription: subscription.id, items: [{ id: item.id, quantity: seats }] },
+          after_completion: { type: "redirect", redirect: { return_url: `${deps.origin}${returnPath}` } },
+        },
       });
     },
 

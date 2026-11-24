@@ -32,6 +32,17 @@ const SWITCHES: Record<SwitchName, string> = { viewerRole: "Viewers" };
 
 const noun = (name: LimitName, count: number) => NOUNS[name][count === 1 ? 0 : 1];
 
+/** A workspace's plan as pages see it. */
+export type PlanState = {
+  planName: string;
+  perSeat: boolean;
+  viewerRole: boolean;
+  limits: Limits;
+  viewOnly: boolean;
+  /** For each limit, the cheapest plan above this one that allows more, and how much (null: as many as needed). */
+  next: Record<LimitName, { name: string; max: number | null } | null>;
+};
+
 /** What a plan allows a workspace with `seats` bought. */
 export function entitlementsOf(plan: CatalogPlan, seats: number): Entitlements {
   return plan.perSeat ? { ...plan.entitlements, editors: { max: seats } } : plan.entitlements;
@@ -106,6 +117,31 @@ export function createPlans(deps: { db: Database; settings: PlansSettings; billi
     /** Each limit and its usage. */
     getLimits(orgId: string): Promise<Limits> {
       return enforcement.getLimits(db, orgId);
+    },
+
+    /** What pages need to show the plan's prompts and disable what it doesn't allow. */
+    async state(orgId: string): Promise<PlanState> {
+      const planId = await billing.planOf(orgId);
+      const plan = planNamed(planId);
+      const limits = await enforcement.getLimits(db, orgId);
+      return {
+        planName: plan.name,
+        perSeat: plan.perSeat,
+        viewerRole: (await entitlementsFor(orgId)).viewerRole.on,
+        limits,
+        viewOnly: isViewOnly(limits),
+        next: Object.fromEntries(
+          (Object.keys(limits) as LimitName[]).map((name) => {
+            const current = limits[name].max;
+            const candidate = current === null ? undefined : upgradeFor(planId, (entry) => {
+              const max = maxOf(entry, name);
+              return max === null || max > current;
+            });
+            const max = candidate ? maxOf(candidate, name) : null;
+            return [name, candidate ? { name: candidate.name, max: max === Infinity ? null : max } : null];
+          }),
+        ) as PlanState["next"],
+      };
     },
 
     /** Everything the Billing section shows. */

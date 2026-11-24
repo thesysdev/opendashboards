@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { workspacePath } from "@/lib/apps/paths";
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
+import { useViewOnly } from "@/components/billing/workspace-plan";
 
 export type AddableConnection = { id: string; name: string; source: string; tile: string };
 
@@ -27,6 +28,7 @@ export type AddableConnection = { id: string; name: string; source: string; tile
 export function AddAppConnection({ appId, connections }: { appId: string; connections: AddableConnection[] }) {
   const orgId = useWorkspaceId();
   const [pending, startTransition] = useTransition();
+  const viewOnly = useViewOnly();
 
   function add(connection: AddableConnection) {
     startTransition(async () => {
@@ -39,7 +41,7 @@ export function AddAppConnection({ appId, connections }: { appId: string; connec
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
-        disabled={pending}
+        disabled={pending || viewOnly}
         aria-label="Add a data source to this app"
         className="inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[0.6875rem] text-neutral-500 transition-colors outline-none hover:bg-neutral-100 hover:text-neutral-700 focus-visible:ring-2 focus-visible:ring-ring/50"
       >
