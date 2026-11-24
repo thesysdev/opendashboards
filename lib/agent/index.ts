@@ -253,7 +253,7 @@ async function remember(
       logError("agent.shareCreated", new Error("A new dashboard wasn't shared with its app's groups"));
     }
   }
-  track(turn.userId, created ? "dashboard_created" : "dashboard_updated", { app_id: turn.appId, dashboard_id: artifact.id });
+  track(turn.userId, created ? "dashboard_created" : "dashboard_updated", { app_id: turn.appId, dashboard_id: artifact.id }, turn.orgId);
   turn.dashboards.push(artifact.id);
   return response;
 }

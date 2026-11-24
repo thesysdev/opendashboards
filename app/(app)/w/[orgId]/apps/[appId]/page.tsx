@@ -3,7 +3,7 @@ import { Suspense } from "react";
 
 import { NoDashboards } from "@/components/apps/dashboard-views";
 import { LiveDashboard } from "@/components/apps/live-dashboard";
-import { getCurrentUserApp } from "@/lib/apps";
+import { getCurrentUserApp, trackDashboardView } from "@/lib/apps";
 import { can } from "@/lib/orgs/policy";
 
 /** An app's home: its first dashboard, or the empty state when it has none. */
@@ -21,6 +21,7 @@ async function AppHome({ params }: { params: Promise<{ orgId: string; appId: str
   if (!app || app.orgId !== orgId) notFound();
 
   const first = app.dashboards[0];
+  if (first) await trackDashboardView(app, first);
   return first ? (
     <LiveDashboard key={first.id} appId={app.id} dashboard={first} readOnly={!can("dashboard", "update", app.facts)} />
   ) : (

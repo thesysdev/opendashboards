@@ -88,7 +88,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
       tool_calls: results.length,
       tool_errors: results.filter((message) => typeof message.content === "string" && message.content.startsWith('{"error":')).length,
       dashboards_changed: turn.dashboards.length,
-    });
+    }, app.orgId);
   };
 
   const body = new ReadableStream({

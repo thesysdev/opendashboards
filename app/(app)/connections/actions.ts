@@ -53,7 +53,7 @@ export async function createConnectionAction(input: unknown) {
   return runIn(input, async (member, fields) => {
     const result = await getConnectionService().create(member, fields);
     const type = (fields as { type?: unknown } | null)?.type;
-    trackConnection(member.userId, typeof type === "string" ? type : "unknown", false, result);
+    trackConnection(member.orgId, member.userId, typeof type === "string" ? type : "unknown", false, result);
     return result;
   });
 }
@@ -92,7 +92,7 @@ export async function setConnectionSharingAction(input: unknown) {
 export async function installDemoAction(input: unknown) {
   return runIn(input, async (member, fields) => {
     const result = await getConnectionService().installDemo(member, fields);
-    trackConnection(member.userId, "postgres", true, result);
+    trackConnection(member.orgId, member.userId, "postgres", true, result);
     return result;
   });
 }
@@ -102,8 +102,8 @@ export async function uninstallDemoAction(input: unknown) {
   return runIn(input, (member, fields) => getConnectionService().uninstallDemo(member, fields));
 }
 
-function trackConnection(userId: string, sourceType: string, isDemo: boolean, result: Result<unknown>) {
-  if (result.ok) track(userId, "connection_created", { source_type: sourceType, is_demo: isDemo });
+function trackConnection(orgId: string, userId: string, sourceType: string, isDemo: boolean, result: Result<unknown>) {
+  if (result.ok) track(userId, "connection_created", { source_type: sourceType, is_demo: isDemo }, orgId);
   // `field` is a form field's name ("host", "password"), never what was typed in it.
-  else track(userId, "connection_failed", { source_type: sourceType, is_demo: isDemo, error_code: result.error.code, field: result.error.field ?? null });
+  else track(userId, "connection_failed", { source_type: sourceType, is_demo: isDemo, error_code: result.error.code, field: result.error.field ?? null }, orgId);
 }

@@ -3,6 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import { config as appConfig } from "@/config";
+import { track } from "@/lib/analytics";
 import { logError } from "@/lib/log";
 import type { Scope } from "@/lib/orgs/access";
 import { mcpConfigSchema } from "@/lib/sources/mcp/catalog";
@@ -143,13 +144,25 @@ export async function finishMcpSignIn(
   if (!taken) {
     return fail({ code: "oauth_expired", message: "This sign-in expired or was already used. Start it again from Data Connections." });
   }
+  // How it ended, once it's known which sign-in this was. `renewal`: signing in again to a connection that exists.
+  const finished = (outcome: "done" | "denied" | "failed", errorCode: string | null = null) =>
+    track(
+      userId,
+      "connection_sign_in_finished",
+      { source_type: taken.config.type, outcome, error_code: errorCode, renewal: taken.connectionId !== null },
+      taken.orgId,
+    );
   const serverError = params.get("error");
   if (serverError) {
+    finished(serverError === "access_denied" ? "denied" : "failed", "server_error");
     const reason = serverError === "access_denied" ? "access was denied" : serverError;
     return fail({ code: "oauth_failed", message: `The server didn't sign you in (${reason.slice(0, 100)}).` });
   }
   const code = params.get("code");
-  if (!code) return fail({ code: "oauth_failed", message: "The sign-in came back without a code. Start again." });
+  if (!code) {
+    finished("failed", "no_code");
+    return fail({ code: "oauth_failed", message: "The sign-in came back without a code. Start again." });
+  }
 
   if (taken.config.type !== "mcp" || !taken.config.oauth) return internalError();
   const settings = taken.config.oauth;
@@ -158,6 +171,7 @@ export async function finishMcpSignIn(
   // RFC 9207: the response must come from the authorization server this sign-in went to.
   const iss = params.get("iss");
   if ((iss !== null && iss.replace(/\/+$/, "") !== settings.issuer.replace(/\/+$/, "")) || (iss === null && pending.requireIss)) {
+    finished("failed", "oauth_invalid");
     return fail({ code: "oauth_invalid", message: "The sign-in came back from a different authorization server, so it was refused." });
   }
 
@@ -167,9 +181,12 @@ export async function finishMcpSignIn(
     const saved = await service.saveSignedIn(userId, { orgId: taken.orgId, connectionId: taken.connectionId, name: taken.name, config: taken.config, credential });
     // Checked again on the way out: only our own app paths, ever.
     const back = pending.returnTo && RETURN_PATH.test(pending.returnTo) ? pending.returnTo : null;
+    finished(saved.ok ? "done" : "failed", saved.ok ? null : saved.error.code);
     return saved.ok ? ok({ id: saved.data.id, orgId: taken.orgId, returnTo: back }) : saved;
   } catch (error) {
-    return failure("finish", error);
+    const result = failure("finish", error);
+    finished("failed", result.ok ? null : result.error.code);
+    return result;
   }
 }
 

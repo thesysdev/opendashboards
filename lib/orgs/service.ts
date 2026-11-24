@@ -2,7 +2,7 @@ import { and, asc, count, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import type { Database } from "@/lib/db";
-import { appConnections, appMembers, apps, dashboards, dataConnections, mcpOAuthSignIns, orgInvites, orgMembers, orgs, users, type OrgRole } from "@/lib/db/schema";
+import { appConnections, appGuests, appMembers, apps, dashboards, dataConnections, mcpOAuthSignIns, orgInvites, orgMembers, orgs, users, type OrgRole } from "@/lib/db/schema";
 import { logError } from "@/lib/log";
 
 import { roleIn, workspaceFacts } from "./access";
@@ -63,6 +63,17 @@ const memberRefSchema = z.object({ orgId: z.uuid(), userId: z.string().min(1).ma
 const orgRefSchema = z.object({ orgId: z.uuid() }).strict();
 /** Deleting takes the workspace's name, retyped: there's no undo. */
 const deleteSchema = z.object({ orgId: z.uuid(), name: z.string().max(200) }).strict();
+
+/** What a sign-in by someone new to us did. */
+export type Arrival = {
+  /**
+   * null: they'd signed in before. `orgId`: the workspace they start in, theirs
+   * or the one that invited them. `createdOrg`: whether it was made for them just now.
+   */
+  signedUp: { via: "invite" | "guest" | "direct"; orgId: string | null; createdOrg: boolean } | null;
+  /** Invites to their email that just became memberships. */
+  joined: { orgId: string; role: OrgRole; invitedAt: Date }[];
+};
 
 /**
  * Workspaces (orgs) and who is in them. Signing up either joins the
@@ -203,10 +214,13 @@ export function createOrgService({ db }: { db: Database }) {
      * memberships. The first time someone signs in: if nothing invited them
      * (and they had nothing from before workspaces), they get a workspace of
      * their own. Safe to repeat.
+     *
+     * Says what happened, for analytics: whether this was their first sign-in
+     * and how they came, and the invites it turned into memberships.
      */
-    async ensureUser(user: { id: string; email: string }): Promise<void> {
+    async ensureUser(user: { id: string; email: string }): Promise<Arrival> {
       const email = user.email.toLowerCase();
-      await db.transaction(async (tx) => {
+      return db.transaction(async (tx): Promise<Arrival> => {
         const [created] = await tx.insert(users).values({ id: user.id, email }).onConflictDoNothing().returning({ id: users.id });
         if (!created) await tx.update(users).set({ email }).where(eq(users.id, user.id));
 
@@ -218,7 +232,11 @@ export function createOrgService({ db }: { db: Database }) {
             .values(invited.map((invite) => ({ orgId: invite.orgId, userId: user.id, role: invite.role, addedBy: invite.invitedBy })))
             .onConflictDoNothing();
         }
-        if (!created) return;
+        const joined = invited.map((invite) => ({ orgId: invite.orgId, role: invite.role, invitedAt: invite.createdAt }));
+        if (!created) return { signedUp: null, joined };
+
+        const [guest] = await tx.select({ appId: appGuests.appId }).from(appGuests).where(eq(appGuests.email, email)).limit(1);
+        const via = invited.length ? "invite" : guest ? "guest" : "direct";
 
         const memberships = await tx
           .select({ orgId: orgMembers.orgId, name: orgs.name, createdBy: orgs.createdBy })
@@ -232,7 +250,7 @@ export function createOrgService({ db }: { db: Database }) {
             .values({ name: defaultWorkspaceName(email), createdBy: user.id })
             .returning({ id: orgs.id });
           await tx.insert(orgMembers).values({ orgId: org.id, userId: user.id, role: "admin", addedBy: user.id });
-          return;
+          return { signedUp: { via, orgId: org.id, createdOrg: true }, joined };
         }
         // Here before workspaces: theirs was made by the migration, which couldn't know their email.
         for (const membership of memberships) {
@@ -240,6 +258,7 @@ export function createOrgService({ db }: { db: Database }) {
             await tx.update(orgs).set({ name: defaultWorkspaceName(email) }).where(eq(orgs.id, membership.orgId));
           }
         }
+        return { signedUp: { via, orgId: invited[0]?.orgId ?? null, createdOrg: false }, joined };
       });
     },
 

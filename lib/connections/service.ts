@@ -15,6 +15,7 @@ import {
   type DataConnectionRow,
   type OrgRole,
 } from "@/lib/db/schema";
+import { track } from "@/lib/analytics";
 import { logError, logRejection, logWarning } from "@/lib/log";
 import { appAccess, appOpenTo, appsOpenTo, isUuid, roleIn, workspaceFacts, type Scope } from "@/lib/orgs/access";
 import { can, decide, refusal, type ConnectionFacts } from "@/lib/orgs/policy";
@@ -334,6 +335,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         const current = await openCredential(row.secret, ctx);
         const next = await change(current);
         if (next.credential === current && !next.status) return current;
+        // Once, when it goes from working to expired: for whoever signed in, in the connection's workspace.
+        if (next.status === "invalid" && row.status !== "invalid") {
+          track(ownerId, "connection_sign_in_expired", { source_type: type, shared: row.sharing === "org" }, row.orgId);
+        }
         const tooLarge = refuseIfTooLarge(type, next.credential, "replace");
         if (tooLarge) throw new SecretTooLargeError(secretBytes(next.credential));
         await tx
@@ -707,7 +712,23 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!parsed.success) return notFound();
         const managed = await findManaged(userId, parsed.data.id, "delete");
         if (!managed.ok) return managed;
-        return removeRow(userId, managed.data);
+        const row = managed.data;
+        const removed = await removeRow(userId, row);
+        if (removed.ok) {
+          const config = row.demoDataset === null ? configOf(row) : null;
+          track(
+            userId,
+            "connection_deleted",
+            {
+              source_type: row.type,
+              is_demo: row.demoDataset !== null,
+              sign_in: Boolean(config && "oauth" in config && config.oauth),
+              own: row.userId === userId,
+            },
+            row.orgId,
+          );
+        }
+        return removed;
       });
     },
 

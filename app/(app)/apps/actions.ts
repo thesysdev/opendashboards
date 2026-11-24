@@ -48,7 +48,7 @@ export async function createAppAction(input: unknown): Promise<AppResult<never>>
         : config().demoData.datasets.some((dataset) => dataset.prompts.includes(prompt.trim()))
           ? "suggested"
           : "custom",
-  });
+  }, member.orgId);
   revalidateShell();
   redirect(appPath(member.orgId, result.data.id));
 }
@@ -84,7 +84,7 @@ export async function setAppTeamAccessAction(input: unknown): Promise<AppResult>
   }
   const result = await getAppService().setTeamAccess(user.id, parsed.data);
   if (result.ok) {
-    track(user.id, "app_sharing_changed", { app_id: id, team_access: teamAccess });
+    track(user.id, "app_sharing_changed", { app_id: id, team_access: teamAccess }, app.orgId);
     revalidateShell();
   }
   return result;
@@ -110,7 +110,7 @@ export async function addAppGuestAction(input: unknown): Promise<AppResult> {
   const result = await getAppService().addGuest(user.id, parsed.data);
   if (result.ok) {
     // That a guest was added, never who.
-    track(user.id, "app_guest_added", { app_id: app.id });
+    track(user.id, "app_guest_added", { app_id: app.id }, app.orgId);
     revalidateShell();
   }
   return result;
@@ -144,7 +144,7 @@ export async function shareAppWithMemberAction(input: unknown): Promise<AppResul
   const result = await getAppService().shareWithMember(user.id, parsed.data);
   if (result.ok) {
     // That it was shared with a teammate, never with whom.
-    track(user.id, "app_shared_with_member", { app_id: app.id, access: parsed.data.access });
+    track(user.id, "app_shared_with_member", { app_id: app.id, access: parsed.data.access }, app.orgId);
     revalidateShell();
   }
   return result;

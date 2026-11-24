@@ -17,6 +17,7 @@ import {
   type ConnectionStatus,
 } from "@/lib/db/schema";
 import type { ConnectionType } from "@/lib/sources/catalog";
+import { track } from "@/lib/analytics";
 import { logError } from "@/lib/log";
 import { accessFor, appAccess, appFacts, appsOpenTo, asApp, roleIn, workspaceFacts, type AppAccess, type Scope } from "@/lib/orgs/access";
 import { can, decide, refusal, type AppFacts } from "@/lib/orgs/policy";
@@ -644,8 +645,16 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         if (!parsed.success) return notFound();
         const deleting = decide("app", "delete", (await appFacts(db, userId, parsed.data.id))?.facts ?? null);
         if (!deleting.allowed) return refusal(deleting);
-        const deleted = await db.delete(apps).where(eq(apps.id, parsed.data.id)).returning({ id: apps.id });
-        return deleted.length ? ok(undefined) : notFound();
+        const [{ dashboardCount }] = await db.select({ dashboardCount: count() }).from(dashboards).where(eq(dashboards.appId, parsed.data.id));
+        const [deleted] = await db.delete(apps).where(eq(apps.id, parsed.data.id)).returning({ orgId: apps.orgId, createdAt: apps.createdAt });
+        if (!deleted) return notFound();
+        track(
+          userId,
+          "app_deleted",
+          { app_id: parsed.data.id, dashboards: dashboardCount, age_days: Math.floor((Date.now() - deleted.createdAt.getTime()) / 86_400_000) },
+          deleted.orgId,
+        );
+        return ok(undefined);
       });
     },
 

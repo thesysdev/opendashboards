@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { LiveDashboard } from "@/components/apps/live-dashboard";
-import { getCurrentUserApp } from "@/lib/apps";
+import { getCurrentUserApp, trackDashboardView } from "@/lib/apps";
 import { can } from "@/lib/orgs/policy";
 import { appPath } from "@/lib/apps/paths";
 
@@ -36,6 +36,7 @@ async function Dashboard({ params }: { params: Params }) {
   if (!app || app.orgId !== orgId) notFound();
   const dashboard = app.dashboards.find((candidate) => candidate.id === dashboardId);
   if (!dashboard) redirect(appPath(app.orgId, app.id));
+  await trackDashboardView(app, dashboard);
 
   return <LiveDashboard key={dashboard.id} appId={app.id} dashboard={dashboard} readOnly={!can("dashboard", "update", app.facts)} />;
 }

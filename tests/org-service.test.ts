@@ -2,7 +2,7 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createDatabase } from "@/lib/db";
-import { appConnections, apps, dashboards, dataConnections, orgInvites, orgMembers, orgs, users } from "@/lib/db/schema";
+import { appConnections, appGuests, apps, dashboards, dataConnections, orgInvites, orgMembers, orgs, users } from "@/lib/db/schema";
 import { roleIn } from "@/lib/orgs/access";
 import { createOrgService } from "@/lib/orgs/service";
 
@@ -46,6 +46,22 @@ describe("signing up", () => {
 
     expect(await service.list(carol.id)).toEqual([{ id: orgId, name: "Acme", role: "viewer" }]);
     expect(await db.select().from(orgInvites)).toEqual([]);
+  });
+
+  it("says how someone came, the first time only, and which invites they joined", async () => {
+    const [own] = await service.list(alice.id);
+    const direct = await service.ensureUser(bob);
+    expect(direct).toEqual({ signedUp: { via: "direct", orgId: (await service.list(bob.id))[0].id, createdOrg: true }, joined: [] });
+    expect(await service.ensureUser(bob)).toEqual({ signedUp: null, joined: [] });
+
+    const orgId = await team();
+    await service.invite(alice.id, { orgId, email: carol.email, role: "editor" });
+    const invited = await service.ensureUser(carol);
+    expect(invited).toEqual({ signedUp: { via: "invite", orgId, createdOrg: false }, joined: [{ orgId, role: "editor", invitedAt: expect.any(Date) }] });
+
+    const [app] = await db.insert(apps).values({ userId: alice.id, orgId: own.id, name: "Report" }).returning();
+    await db.insert(appGuests).values({ appId: app.id, email: "dan@example.com", invitedBy: alice.id });
+    expect((await service.ensureUser({ id: "dan", email: "Dan@Example.com" })).signedUp?.via).toBe("guest");
   });
 
   it("stores the email lowercased, and notices when it changes", async () => {

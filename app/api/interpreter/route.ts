@@ -52,7 +52,7 @@ export const POST = route(async (request, user) => {
         dashboard_id: parsed.data.id,
         tool: parsed.data.name,
         error_code: error.code,
-      });
+      }, dashboard.grant.orgId);
       return Response.json({ error: { code: error.code, message: error.message } }, { status: error.status ?? 400, headers: headers() });
     }
     if (error instanceof OpenUIApiError) {

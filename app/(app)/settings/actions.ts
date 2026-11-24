@@ -5,7 +5,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { config } from "@/config";
-import { track } from "@/lib/analytics";
+import { identifyWorkspace, track } from "@/lib/analytics";
 import { DEV_USER_COOKIE, DEV_USER_NAMES } from "@/lib/auth/providers/dev";
 import { deleteDashboardsInCloud } from "@/lib/dashboards";
 import { getDb } from "@/lib/db";
@@ -50,7 +50,8 @@ export async function createOrgAction(input: unknown): Promise<OrgResult<{ id: s
   const result = await getOrgService().create(user, input);
   if (!result.ok) return result;
   await rememberOrg(result.data.id);
-  track(user.id, "workspace_created", { org_id: result.data.id, first: false });
+  identifyWorkspace(result.data.id);
+  track(user.id, "workspace_created", { org_id: result.data.id, first: false }, result.data.id);
   revalidateShell();
   return result;
 }
@@ -64,7 +65,8 @@ export async function createFirstWorkspaceAction(): Promise<OrgResult<never>> {
   const result = await getOrgService().create(user);
   if (!result.ok) return result;
   await rememberOrg(result.data.id);
-  track(user.id, "workspace_created", { org_id: result.data.id, first: true });
+  identifyWorkspace(result.data.id);
+  track(user.id, "workspace_created", { org_id: result.data.id, first: true }, result.data.id);
   revalidateShell();
   redirect(workspacePath(result.data.id));
 }
@@ -76,12 +78,18 @@ export async function renameOrgAction(input: unknown): Promise<OrgResult> {
   return result;
 }
 
+/** The workspace an action was for. Read only after the service accepted it, so it's one the user is in. */
+const orgOf = (input: unknown): string | null => {
+  const orgId = (input as { orgId?: unknown } | null)?.orgId;
+  return typeof orgId === "string" ? orgId : null;
+};
+
 export async function inviteMemberAction(input: unknown): Promise<OrgResult<{ status: "added" | "invited" }>> {
   const user = await requireKnownUser();
   const result = await getOrgService().invite(user.id, input);
   if (result.ok) {
     // The role and whether they already had an account: never the email.
-    track(user.id, "workspace_member_invited", { status: result.data.status, role: (input as { role?: unknown } | null)?.role ?? null });
+    track(user.id, "workspace_member_invited", { status: result.data.status, role: (input as { role?: unknown } | null)?.role ?? null }, orgOf(input));
     revalidateShell();
   }
   return result;
@@ -129,7 +137,7 @@ export async function removeMemberAction(input: unknown): Promise<OrgResult> {
     getOrgService().removeMember(user.id, input),
   );
   if (!result.ok) return result;
-  track(user.id, "workspace_member_removed", { dashboards_deleted: result.data.dashboards });
+  track(user.id, "workspace_member_removed", { dashboards_deleted: result.data.dashboards }, orgOf(input));
   revalidateShell();
   return { ok: true, data: undefined };
 }
@@ -143,7 +151,7 @@ export async function leaveOrgAction(input: unknown): Promise<OrgResult> {
   const orgId = (input as { orgId?: unknown } | null)?.orgId;
   const result = await departWithCloud(user.id, { orgId, userId: user.id }, () => getOrgService().leave(user.id, input));
   if (!result.ok) return result;
-  track(user.id, "workspace_left", { dashboards_deleted: result.data.dashboards });
+  track(user.id, "workspace_left", { dashboards_deleted: result.data.dashboards }, orgOf(input));
   (await cookies()).delete(LAST_ORG_COOKIE);
   revalidateShell();
   return { ok: true, data: undefined };
@@ -164,7 +172,7 @@ export async function deleteOrgAction(input: unknown): Promise<OrgResult<never>>
   }
   const result = await orgs.remove(user.id, input);
   if (!result.ok) return result;
-  track(user.id, "workspace_deleted", { dashboards: plan.data.artifactIds.length });
+  track(user.id, "workspace_deleted", { dashboards: plan.data.artifactIds.length }, orgOf(input));
   (await cookies()).delete(LAST_ORG_COOKIE);
   revalidateShell();
   // Another of their workspaces opens; with none left, they're asked to create one.

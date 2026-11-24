@@ -4,6 +4,7 @@ import { cookies } from "next/headers";
 import { notFound } from "next/navigation";
 import { cache } from "react";
 
+import { identifyWorkspace, track } from "@/lib/analytics";
 import { requireUser, type CurrentUser } from "@/lib/auth/user";
 import { getDb } from "@/lib/db";
 import type { OrgRole } from "@/lib/db/schema";
@@ -59,7 +60,17 @@ const adopted = new Set<string>();
 export const requireKnownUser = cache(async (): Promise<CurrentUser> => {
   const user = await requireUser();
   const service = getOrgService();
-  if (!(await service.isKnown(user))) await service.ensureUser(user);
+  if (await service.isKnown(user)) return user;
+  const { signedUp, joined } = await service.ensureUser(user);
+  // Only the request that first writes them gets these: the database says which.
+  if (signedUp) {
+    if (signedUp.createdOrg && signedUp.orgId) identifyWorkspace(signedUp.orgId);
+    track(user.id, "user_signed_up", { via: signedUp.via }, signedUp.orgId);
+  }
+  for (const invite of joined) {
+    const daysWaiting = Math.floor((Date.now() - invite.invitedAt.getTime()) / 86_400_000);
+    track(user.id, "invite_accepted", { role: invite.role, days_waiting: daysWaiting }, invite.orgId);
+  }
   return user;
 });
 
