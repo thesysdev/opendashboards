@@ -36,6 +36,13 @@ const FAQS: FaqItem[] = [
     ],
   },
   {
+    question: "Who can open a shared dashboard?",
+    answer: [
+      "Dashboards follow the access set on their app. You can give your workspace view or edit access and invite guests to view the app.",
+      "Guest access is available when the app uses shared connections.",
+    ],
+  },
+  {
     question: "Can I use it without hosting anything?",
     answer: ["Yes. Use the hosted version at opendashboards.com, or self-host the app in your own environment."],
   },
