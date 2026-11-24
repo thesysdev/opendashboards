@@ -19,6 +19,8 @@ import { logError } from "@/lib/log";
 import spec from "@/lib/dashboards/generated/dashboard.spec.json";
 import { ToolError, toolsFor, type ToolContext } from "@/lib/tools";
 
+import type { DashboardStarted } from "./events";
+
 /**
  * The Build agent: a plain tool loop over OpenUI Gateway. It explores the
  * app's data with every source's agent tools, then creates and edits live
@@ -56,10 +58,11 @@ export type TurnContext = ToolContext & {
   /** Every dashboard this turn created or changed. */
   dashboards: string[];
   /**
-   * Sends a tool call's result to the chat before the loop has it, such as a
-   * dashboard that has started building. The loop's own result replaces it.
+   * Tells the chat a create or edit has its dashboard id and is building, with
+   * Cloud's first response for the renderer. The call keeps running until its
+   * result: the last response.
    */
-  sendToolResult?: (toolCallId: string, content: string) => void;
+  onDashboardStarted?: (started: DashboardStarted) => void;
 };
 
 type AgentTool = RunnableToolFunctionWithContext<TurnContext>;
@@ -269,9 +272,9 @@ const claimedCalls = new WeakMap<TurnContext, Set<string>>();
 /**
  * Follows a streamed create or edit. OpenUI Cloud sends two messages: the
  * first as soon as the dashboard has an id, the last once it's saved or
- * failed. The first is recorded and goes to the chat at once, so the
- * dashboard opens and shows its build steps; the last is the tool result the
- * model reads, and replaces the first in the chat.
+ * failed. The first is recorded and goes to the chat at once (not as the
+ * tool's result, so the call still shows as running), so the dashboard opens
+ * and shows its build steps; the last is the tool result the model reads.
  */
 async function follow(
   build: AsyncIterable<string>,
@@ -289,7 +292,9 @@ async function follow(
         let claimed = claimedCalls.get(turn);
         if (!claimed) claimedCalls.set(turn, (claimed = new Set()));
         const toolCallId = toolCallIdOf(call, claimed);
-        if (toolCallId) turn.sendToolResult?.(toolCallId, message);
+        if (toolCallId) {
+          turn.onDashboardStarted?.({ toolCallId, tool: call.name as DashboardStarted["tool"], response: message });
+        }
       }
     }
     last = message;
