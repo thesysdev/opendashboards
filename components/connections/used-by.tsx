@@ -1,5 +1,10 @@
+"use client";
+
 import { ChevronRightIcon, LayoutDashboardIcon } from "lucide-react";
 import Link from "next/link";
+
+import { appPath } from "@/lib/apps/paths";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 /**
  * Which apps use a connection or demo dataset: a "Used by" line under its
@@ -8,6 +13,8 @@ import Link from "next/link";
  * stays one line; long lists scroll inside the table.
  */
 export function UsedBy({ apps }: { apps: { id: string; name: string }[] }) {
+  // A connection's apps are all in its workspace, the one on screen.
+  const orgId = useWorkspaceId();
   if (!apps.length) return null;
   return (
     // Indented to line up with the row's text (the 2.5rem tile plus its gap), then out to the row's end.
@@ -20,7 +27,7 @@ export function UsedBy({ apps }: { apps: { id: string; name: string }[] }) {
         {apps.map((app) => (
           <li key={app.id}>
             <Link
-              href={`/apps/${app.id}`}
+              href={appPath(orgId, app.id)}
               className="flex items-center gap-2 px-2.5 py-1.5 transition-colors outline-none hover:bg-neutral-50 focus-visible:bg-neutral-50 focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:ring-inset"
             >
               <LayoutDashboardIcon className="size-3 shrink-0 text-muted-foreground" aria-hidden />

@@ -9,6 +9,7 @@ import { renameAppAction, updateDashboardAction } from "@/app/(app)/apps/actions
 import { InlineRename } from "@/components/inline-rename";
 import type { AppTreeNode } from "@/lib/apps";
 import { appPath, dashboardPath, parseAppPath } from "@/lib/apps/paths";
+import { can } from "@/lib/orgs/policy";
 import { cn } from "@/lib/utils";
 
 import { DashboardMenu } from "./dashboard-menu";
@@ -86,8 +87,10 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                 </div>
               ) : (
               <Link
-                href={appPath(app.id)}
+                href={appPath(app.orgId, app.id)}
                 onDoubleClick={(event) => {
+                  // Renaming is for whoever can change the app.
+                  if (!can("app", "update", app.facts)) return;
                   event.preventDefault();
                   setEditing(app.id);
                 }}
@@ -145,10 +148,11 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                       <>
                       <Link
                         onDoubleClick={(event) => {
+                          if (!can("dashboard", "rename", app.facts)) return;
                           event.preventDefault();
                           setEditing(dashboard.id);
                         }}
-                        href={dashboardPath(app.id, dashboard.id)}
+                        href={dashboardPath(app.orgId, app.id, dashboard.id)}
                         aria-current={active ? "page" : undefined}
                         title={dashboard.title}
                         className={cn(
@@ -160,12 +164,15 @@ function Tree({ apps, pathname }: { apps: AppTreeNode[]; pathname: string | null
                       >
                         <span className="truncate">{shown(dashboard.id, dashboard.title)}</span>
                       </Link>
-                      <DashboardMenu
-                        appId={app.id}
-                        dashboard={{ id: dashboard.id, title: shown(dashboard.id, dashboard.title) }}
-                        onRename={() => setEditing(dashboard.id)}
-                        className="absolute top-1.5 right-1.5 opacity-0 group-hover/dashboard:opacity-100 focus-visible:opacity-100"
-                      />
+                      {/* Its menu renames and deletes it. */}
+                      {can("dashboard", "rename", app.facts) && can("dashboard", "delete", app.facts) && (
+                        <DashboardMenu
+                          appId={app.id}
+                          dashboard={{ id: dashboard.id, title: shown(dashboard.id, dashboard.title) }}
+                          onRename={() => setEditing(dashboard.id)}
+                          className="absolute top-1.5 right-1.5 opacity-0 group-hover/dashboard:opacity-100 focus-visible:opacity-100"
+                        />
+                      )}
                       </>
                       )}
                     </li>

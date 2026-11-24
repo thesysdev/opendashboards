@@ -7,8 +7,16 @@ import { Button } from "@/components/ui/button";
 import { useBuildPanel } from "./app-workspace";
 
 /** An app with no dashboards yet. */
-export function NoDashboards({ hasPendingPrompt }: { hasPendingPrompt: boolean }) {
+export function NoDashboards({ hasPendingPrompt, readOnly = false }: { hasPendingPrompt: boolean; readOnly?: boolean }) {
   const buildPanel = useBuildPanel();
+  if (readOnly) {
+    return (
+      <div className="flex flex-1 flex-col items-center justify-center gap-2 bg-neutral-50/60 p-8 text-center">
+        <p className="text-sm font-semibold">No dashboards yet</p>
+        <p className="max-w-sm text-sm text-muted-foreground">Dashboards built in this app show up here.</p>
+      </div>
+    );
+  }
   return (
     <div className="flex flex-1 flex-col items-center justify-center gap-2 bg-neutral-50/60 p-8 text-center">
       <div className="mb-2 flex size-11 items-center justify-center rounded-xl border bg-background">

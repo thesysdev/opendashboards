@@ -10,7 +10,9 @@ import { agentTools, getGateway, maxRounds, model, SYSTEM_PROMPT, type TurnConte
 import { createAgUiTranslator, sse } from "@/lib/agent/ag-ui";
 import { answerStoppedCalls, chatBodySchema, VIEWING_DASHBOARD, type ChatBody } from "@/lib/agent/messages";
 import { getAppService, getThreadService } from "@/lib/apps";
+import { decide } from "@/lib/orgs/policy";
 import { getDashboardService } from "@/lib/dashboards";
+import { appGroups } from "@/lib/dashboards/cloud";
 import { HttpError, readJson, route } from "@/lib/http";
 import { addLogContext, logError } from "@/lib/log";
 import { count } from "@/lib/metrics";
@@ -34,6 +36,12 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
   const runId = typeof parsed.data.runId === "string" ? parsed.data.runId : crypto.randomUUID();
   addLogContext({ thread: threadId, run: runId });
 
+  // Building is for members who can change the app: never a viewer, whatever the app grants the team.
+  const app = await getAppService().get(user.id, appId);
+  if (!app) throw new HttpError(404, "App not found");
+  const building = decide("app", "build", app.facts);
+  if (!building.allowed) throw new HttpError(403, building.reason);
+
   const threads = getThreadService();
   if (!(await threads.belongsTo(user.id, appId, threadId))) throw new HttpError(404, "Thread not found");
 
@@ -44,8 +52,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
     : undefined;
   const system: ChatCompletionMessageParam[] = [{ role: "system", content: SYSTEM_PROMPT }];
   // The data sources the user put in this app: the agent works from these unless asked otherwise.
-  const app = await getAppService().get(user.id, appId);
-  if (app?.connections.length) {
+  if (app.connections.length) {
     const list = app.connections.map((connection) => `${connection.name} (${connection.type}, id ${connection.id})`).join("; ");
     system.push({
       role: "system",
@@ -60,7 +67,15 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
   }
 
   const encoder = new TextEncoder();
-  const turn: TurnContext = { userId: user.id, appId, signal: request.signal, dashboards: [] };
+  // Whoever builds here can change the app, so Cloud is told they hold its edit group.
+  const turn: TurnContext = {
+    userId: user.id,
+    groupIds: [appGroups(appId).edit],
+    appId,
+    orgId: app.orgId,
+    signal: request.signal,
+    dashboards: [],
+  };
 
   const startedAt = Date.now();
   const trackTurn = (outcome: string, cause: string, turnMessages: ChatCompletionMessageParam[]) => {
@@ -73,7 +88,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
       tool_calls: results.length,
       tool_errors: results.filter((message) => typeof message.content === "string" && message.content.startsWith('{"error":')).length,
       dashboards_changed: turn.dashboards.length,
-    });
+    }, app.orgId);
   };
 
   const body = new ReadableStream({

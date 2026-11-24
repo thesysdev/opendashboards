@@ -7,6 +7,8 @@ import { ANY_MCP_SERVER, CATALOG_CATEGORIES, POPULAR, searchCatalog } from "@/li
 import { mcpCatalog, mcpConfigSchema, normalizeMcpUrl } from "@/lib/sources/mcp/catalog";
 import { MCP_SERVICES, MCP_SERVICE_KEYS } from "@/lib/sources/mcp/services";
 
+import { workspaceOf } from "./orgs";
+
 describe("known MCP servers", () => {
   it.each(MCP_SERVICE_KEYS)("%s has an https endpoint and at least one way to connect", (key) => {
     const service = MCP_SERVICES[key];
@@ -51,12 +53,12 @@ describe("signing in to a known server", () => {
   const service = {} as ConnectionService;
 
   it("refuses a server that only takes a key", async () => {
-    const result = await startMcpSignIn("user-1", { name: "GitHub", service: "github" }, { service });
+    const result = await startMcpSignIn(workspaceOf("user-1"), { name: "GitHub", service: "github" }, { service });
     expect(result).toMatchObject({ ok: false, error: { code: "validation" } });
   });
 
   it("refuses a URL sent along with a preset", async () => {
-    const result = await startMcpSignIn("user-1", { name: "Linear", service: "linear", url: "https://evil.example.com/mcp" }, { service });
+    const result = await startMcpSignIn(workspaceOf("user-1"), { name: "Linear", service: "linear", url: "https://evil.example.com/mcp" }, { service });
     expect(result).toMatchObject({ ok: false, error: { code: "validation" } });
   });
 });

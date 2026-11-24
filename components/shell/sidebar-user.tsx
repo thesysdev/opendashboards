@@ -1,21 +1,21 @@
-import { requireUser } from "@/lib/auth/user";
+import { config } from "@/config";
+import { DEV_USER_NAMES } from "@/lib/auth/providers/dev";
+import type { Member } from "@/lib/orgs";
 
-import { AvatarCircle } from "./user-avatar";
-import { UserMenu } from "./user-menu";
+import { OrgSwitcher } from "./org-switcher";
 
-/** The signed-in user at the bottom of the sidebar. Reads the request, so it renders behind Suspense. */
-export async function SidebarUser() {
-  const user = await requireUser();
+/** The signed-in user and the workspace on screen, with the menu to switch. */
+export function SidebarUser({ member, compact = false }: { member: Member; compact?: boolean }) {
+  const { env, auth } = config();
   return (
-    <UserMenu
-      email={user.email}
-      side="top"
-      align="start"
-      className="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-black/[0.04] focus-visible:ring-2 focus-visible:ring-ring/50 focus-visible:outline-none data-[state=open]:bg-black/[0.06]"
-    >
-      <AvatarCircle name={user.email} className="size-7" />
-      <span className="min-w-0 truncate text-sm text-foreground/80">{user.email}</span>
-    </UserMenu>
+    <OrgSwitcher
+      email={member.user.email}
+      orgs={member.orgs.map(({ id, name }) => ({ id, name }))}
+      activeId={member.orgId}
+      compact={compact}
+      // Only where the dev sign-in is what decides who a request is for.
+      devUsers={env === "local" && auth.devUser ? DEV_USER_NAMES : undefined}
+    />
   );
 }
 

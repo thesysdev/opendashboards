@@ -1,6 +1,7 @@
 import "server-only";
 
-import { requireUser, UnauthorizedError, type CurrentUser } from "@/lib/auth/user";
+import { UnauthorizedError, type CurrentUser } from "@/lib/auth/user";
+import { requireKnownUser } from "@/lib/orgs";
 import { config } from "@/config";
 import type { AppErrorCode, AppResult } from "@/lib/apps/errors";
 import { withLogContext } from "@/lib/log";
@@ -10,7 +11,9 @@ const MAX_JSON_BYTES = 16 * 1024;
 const STATUS: Record<AppErrorCode, number> = {
   validation: 400,
   not_found: 404,
+  forbidden: 403,
   thread_conflict: 409,
+  guests_cant_sign_in: 409,
   internal: 500,
 };
 
@@ -35,7 +38,7 @@ export function route<Ctx>(
   return async (request: Request, ctx: Ctx): Promise<Response> => {
     try {
       if (request.method !== "GET" && request.method !== "HEAD") assertSameOrigin(request);
-      const user = await requireUser();
+      const user = await requireKnownUser();
       return await withLogContext({ user: user.id }, () => handler(request, user, ctx));
     } catch (error) {
       if (error instanceof UnauthorizedError) return Response.json({ error: "Unauthorized" }, { status: 401 });

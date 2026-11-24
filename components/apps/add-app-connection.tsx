@@ -15,6 +15,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { workspacePath } from "@/lib/apps/paths";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 export type AddableConnection = { id: string; name: string; source: string; tile: string };
 
@@ -23,6 +25,7 @@ export type AddableConnection = { id: string; name: string; source: string; tile
  * connections to the app, or goes to Data Connections to connect a new one.
  */
 export function AddAppConnection({ appId, connections }: { appId: string; connections: AddableConnection[] }) {
+  const orgId = useWorkspaceId();
   const [pending, startTransition] = useTransition();
 
   function add(connection: AddableConnection) {
@@ -58,7 +61,7 @@ export function AddAppConnection({ appId, connections }: { appId: string; connec
           </>
         )}
         <DropdownMenuItem asChild>
-          <Link href="/connections">
+          <Link href={workspacePath(orgId, "connections")}>
             <PlusIcon aria-hidden />
             Connect a new source
           </Link>

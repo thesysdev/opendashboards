@@ -35,6 +35,7 @@ import {
 import { CertificateCheckField } from "./certificate-check-field";
 import { showConnectionWarnings } from "./connection-feedback";
 import type { SecretMode } from "./connection-form-dialog";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 type Props = {
   open: boolean;
@@ -80,6 +81,7 @@ ALTER DEFAULT PRIVILEGES IN SCHEMA public
 
 /** Adds a Postgres connection, or changes an existing one's password. */
 export function PostgresFormDialog(props: Props) {
+  const orgId = useWorkspaceId();
   const { open, onOpenChange, secretMode } = props;
   const replacing = props.mode === "replace";
   const flavor = props.mode === "create" && props.flavor ? POSTGRES_FLAVORS[props.flavor] : null;
@@ -186,7 +188,7 @@ export function PostgresFormDialog(props: Props) {
       const { name, host, port, database, user, password, sslMode } = values;
       const result = replacing
         ? await replaceCredentialAction({ id: props.connection.id, credential: password })
-        : await createConnectionAction({ type: "postgres", name, host, port, database, user, password, sslMode });
+        : await createConnectionAction({ orgId, type: "postgres", name, host, port, database, user, password, sslMode });
 
       if (result.ok) {
         toast.success(replacing ? "Password changed" : `Connected to ${name.trim()}`);

@@ -1,15 +1,17 @@
 "use client";
 
 import { OpenUICloudProvider } from "@openuidev/react-ui/cloud";
-import { ChevronLeftIcon, PanelRightCloseIcon, SparklesIcon, XIcon } from "lucide-react";
+import { PanelRightCloseIcon, SparklesIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import { renameAppAction } from "@/app/(app)/apps/actions";
 import { InlineRename } from "@/components/inline-rename";
+import { OpenSidebarButton } from "@/components/shell/sidebar";
 import { Button } from "@/components/ui/button";
-import { appPath, dashboardPath, parseAppPath } from "@/lib/apps/paths";
+import { appPath, dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/apps/paths";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 import { cn } from "@/lib/utils";
 
 import { NewDashboard } from "./live-dashboard";
@@ -141,6 +143,7 @@ export function AppWorkspace({
   builder,
   dashboards,
   notice,
+  readOnly = false,
   children,
 }: {
   appId: string;
@@ -149,11 +152,13 @@ export function AppWorkspace({
   menu: React.ReactNode;
   builder: React.ReactNode;
   dashboards: Dashboard[];
+  /** For someone who can only view the app: no Build panel and no renaming. */
+  readOnly?: boolean;
   /** Shown above the dashboard: a source that needs signing in again, say. */
   notice?: React.ReactNode;
   children: React.ReactNode;
 }) {
-  const [open, setOpenState] = useState(dashboards.length === 0);
+  const [open, setOpenState] = useState(!readOnly && dashboards.length === 0);
   // Opening unmounts the header's Build button and closing hides the panel, so
   // whichever had focus is gone: hand focus to the other side. Only when someone
   // toggles it, not when the workspace first shows.
@@ -191,27 +196,26 @@ export function AppWorkspace({
 
   return (
     // One Cloud connection for the workspace: the chat and the dashboard
-    // share its token and artifact cache.
-    <OpenUICloudProvider token="/api/frontend-token">
+    // share its token and artifact cache. The token is this app's own.
+    <OpenUICloudProvider token={frontendTokenPath(appId)}>
     <DashboardResponsesContext value={dashboardResponses}>
     <BuildPanelContext value={buildPanel}>
     <RenameAppContext value={startRename}>
       {/* The Build panel runs the full height beside the dashboard column, header included. */}
       <div className="relative flex h-full min-h-0">
         <div className="flex min-w-0 flex-1 flex-col">
-          <header className="flex h-12 shrink-0 items-center gap-2 border-b px-2">
-            <Link
-              href="/apps"
-              aria-label="All apps"
-              className="flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-neutral-100 hover:text-foreground"
-            >
-              <ChevronLeftIcon className="size-4" aria-hidden />
-            </Link>
-            <AppTitle appId={appId} name={name} renaming={renaming} onRenamingChange={setRenaming} />
+          <header data-app-header className="flex h-12 shrink-0 items-center gap-2 border-b px-2">
+            {/* Only while the sidebar is collapsed: it lives here, so nothing is left beside the content. */}
+            <OpenSidebarButton />
+            {readOnly ? (
+              <h1 className="min-w-0 truncate px-1.5 py-1 text-sm font-semibold">{name}</h1>
+            ) : (
+              <AppTitle appId={appId} name={name} renaming={renaming} onRenamingChange={setRenaming} />
+            )}
             <div className="ml-1 hidden min-w-0 flex-1 items-center gap-1.5 overflow-hidden sm:flex">{badges}</div>
             <div className="ml-auto flex shrink-0 items-center gap-1">
               {/* One Build control at a time: this opens the panel, and the panel's own header closes it. */}
-              {!open && (
+              {!open && !readOnly && (
                 <Button
                   ref={openButtonRef}
                   variant="outline"
@@ -243,7 +247,7 @@ export function AppWorkspace({
             // (a phone) it covers the app header too; as a 380px sheet it starts under
             // the header, so the app's menu and connections stay in reach.
             "absolute inset-y-0 right-0 z-10 w-full shadow-xl sm:top-12 sm:w-[380px] lg:relative lg:top-0 lg:shadow-none",
-            open ? "flex" : "hidden",
+            open && !readOnly ? "flex" : "hidden",
           )}
         >
           {/* The chat's thread bar is the panel's header: chat picker, new chat, and
@@ -276,6 +280,7 @@ export function AppWorkspace({
 /** Below md there's no sidebar, so the app's dashboards show as a strip of tabs. */
 function MobileDashboardTabs({ appId, dashboards }: { appId: string; dashboards: Dashboard[] }) {
   const { dashboardId } = parseAppPath(usePathname());
+  const orgId = useWorkspaceId();
   if (!dashboards.length) return null;
   const activeId = dashboardId ?? dashboards[0].id;
 
@@ -287,7 +292,7 @@ function MobileDashboardTabs({ appId, dashboards }: { appId: string; dashboards:
       {dashboards.map((dashboard, index) => (
         <Link
           key={dashboard.id}
-          href={index === 0 ? appPath(appId) : dashboardPath(appId, dashboard.id)}
+          href={index === 0 ? appPath(orgId, appId) : dashboardPath(orgId, appId, dashboard.id)}
           aria-current={dashboard.id === activeId ? "page" : undefined}
           className="shrink-0 rounded-md px-3 py-1 text-sm text-muted-foreground aria-[current=page]:bg-neutral-100 aria-[current=page]:font-medium aria-[current=page]:text-foreground"
         >

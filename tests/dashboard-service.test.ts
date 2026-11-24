@@ -6,12 +6,13 @@ import { createDatabase } from "@/lib/db";
 import { apps, dataConnections } from "@/lib/db/schema";
 
 import { TEST_DATABASE_URL } from "./global-setup";
+import { workspaceOf, seedWorkspaces } from "./orgs";
 
 const { db, pool } = createDatabase(TEST_DATABASE_URL);
 const dashboards = createDashboardService({ db });
 
 async function createApp(userId: string) {
-  const [app] = await db.insert(apps).values({ userId, name: "Test app" }).returning({ id: apps.id });
+  const [app] = await db.insert(apps).values({ userId, orgId: workspaceOf(userId).orgId, name: "Test app" }).returning({ id: apps.id });
   return app.id;
 }
 
@@ -21,6 +22,7 @@ async function titles(userId: string, appId: string) {
 
 beforeEach(async () => {
   await db.execute(sql`TRUNCATE ${apps}, ${dataConnections} CASCADE`);
+  await seedWorkspaces(db, ["alice", "bob"]);
 });
 
 afterAll(async () => {

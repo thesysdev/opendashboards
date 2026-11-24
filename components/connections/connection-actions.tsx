@@ -1,6 +1,6 @@
 "use client";
 
-import { EllipsisIcon, KeyRoundIcon, Loader2Icon, PencilIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
+import { EllipsisIcon, KeyRoundIcon, Loader2Icon, LogInIcon, LogOutIcon, PencilIcon, RefreshCwIcon, Trash2Icon } from "lucide-react";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
 
@@ -8,10 +8,12 @@ import {
   deleteConnectionAction,
   renameConnectionAction,
   retestConnectionAction,
+  signOutOfConnectionAction,
   startMcpSignInAction,
 } from "@/app/(app)/connections/actions";
 import {
   AlertDialog,
+  AlertDialogAction,
   AlertDialogCancel,
   AlertDialogContent,
   AlertDialogDescription,
@@ -37,37 +39,57 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Field, FieldError, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
+import type { ConnectionKind } from "@/lib/orgs/policy";
 import type { ConnectionType } from "@/lib/sources/catalog";
 
 import { PostHogFormDialog, type SecretMode } from "./connection-form-dialog";
 import { PostgresFormDialog } from "./postgres-form-dialog";
 import { SourceFormDialog } from "./source-form-dialog";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 type Connection = {
   id: string;
   name: string;
   type: ConnectionType;
   apps: { id: string; name: string }[];
-  /** "oauth": signed in with OAuth, so it can be signed in to again instead of given a key. */
-  signIn?: "oauth" | null;
+  kind: ConnectionKind;
+  /** The reader holds the sign-in it runs with: a shared one's, or their own. */
+  signedIn: boolean;
 };
 
-type OpenDialog = "replace" | "rename" | "delete" | null;
+type OpenDialog = "replace" | "rename" | "delete" | "signOut" | null;
 
+/**
+ * A connection's menu. Each item is there only if the policy lets the reader
+ * do it (`actions`, from lib/orgs/policy): managing it (test, key, rename,
+ * delete), signing in to it, signing out of it.
+ */
 export function ConnectionActions({
   connection,
+  actions,
   secretMode,
 }: {
   connection: Connection;
+  actions: { manage: boolean; signIn: boolean; signOut: boolean };
   secretMode: SecretMode;
 }) {
+  const orgId = useWorkspaceId();
   const [dialog, setDialog] = useState<OpenDialog>(null);
   const [testing, startTest] = useTransition();
+  const signsIn = connection.kind !== "key";
 
-  function signInAgain() {
+  function signIn() {
     startTest(async () => {
-      const result = await startMcpSignInAction({ connectionId: connection.id });
+      const result = await startMcpSignInAction({ orgId, connectionId: connection.id });
       if (result.ok) window.location.assign(result.data.authorizationUrl);
+      else toast.error(result.error.message);
+    });
+  }
+
+  function signOut() {
+    startTest(async () => {
+      const result = await signOutOfConnectionAction({ id: connection.id });
+      if (result.ok) toast.success(`Signed out of ${connection.name}`);
       else toast.error(result.error.message);
     });
   }
@@ -81,6 +103,8 @@ export function ConnectionActions({
   }
 
   const close = (open: boolean) => !open && setDialog(null);
+  // Testing a sign-in needs one to test.
+  const canTest = actions.manage && (!signsIn || connection.signedIn || connection.kind === "signInShared");
 
   return (
     <>
@@ -91,59 +115,77 @@ export function ConnectionActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-44">
-          <DropdownMenuItem onSelect={retest} disabled={testing}>
-            <RefreshCwIcon aria-hidden />
-            Test again
-          </DropdownMenuItem>
-          {connection.signIn === "oauth" ? (
-            <DropdownMenuItem onSelect={signInAgain} disabled={testing}>
-              <KeyRoundIcon aria-hidden />
-              Sign in again
+          {canTest && (
+            <DropdownMenuItem onSelect={retest} disabled={testing}>
+              <RefreshCwIcon aria-hidden />
+              Test again
             </DropdownMenuItem>
-          ) : (
+          )}
+          {actions.signIn && (
+            <DropdownMenuItem onSelect={signIn} disabled={testing}>
+              <LogInIcon aria-hidden />
+              {connection.signedIn ? "Sign in again" : "Sign in"}
+            </DropdownMenuItem>
+          )}
+          {!signsIn && actions.manage && (
             <DropdownMenuItem onSelect={() => setDialog("replace")}>
               <KeyRoundIcon aria-hidden />
               {["posthog", "bigquery", "ga4", "searchconsole", "mcp"].includes(connection.type) ? "Replace key" : "Change password"}
             </DropdownMenuItem>
           )}
-          <DropdownMenuItem onSelect={() => setDialog("rename")}>
-            <PencilIcon aria-hidden />
-            Rename
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={() => setDialog("delete")}>
-            <Trash2Icon aria-hidden />
-            Delete
-          </DropdownMenuItem>
+          {actions.signOut && (
+            <DropdownMenuItem onSelect={() => setDialog("signOut")} disabled={testing}>
+              <LogOutIcon aria-hidden />
+              Sign out
+            </DropdownMenuItem>
+          )}
+          {actions.manage && (
+            <>
+              <DropdownMenuItem onSelect={() => setDialog("rename")}>
+                <PencilIcon aria-hidden />
+                Rename
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={() => setDialog("delete")}>
+                <Trash2Icon aria-hidden />
+                Delete
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {connection.type === "postgres" ? (
-        <PostgresFormDialog
-          mode="replace"
-          connection={connection}
-          open={dialog === "replace"}
-          onOpenChange={close}
-          secretMode={secretMode}
-        />
-      ) : connection.type === "posthog" ? (
-        <PostHogFormDialog
-          mode="replace"
-          connection={connection}
-          open={dialog === "replace"}
-          onOpenChange={close}
-          secretMode={secretMode}
-        />
-      ) : (
-        <SourceFormDialog
-          type={connection.type}
-          mode="replace"
-          connection={connection}
-          open={dialog === "replace"}
-          onOpenChange={close}
-          secretMode={secretMode}
-        />
-      )}
+      {!signsIn &&
+        (connection.type === "postgres" ? (
+          <PostgresFormDialog mode="replace" connection={connection} open={dialog === "replace"} onOpenChange={close} secretMode={secretMode} />
+        ) : connection.type === "posthog" ? (
+          <PostHogFormDialog mode="replace" connection={connection} open={dialog === "replace"} onOpenChange={close} secretMode={secretMode} />
+        ) : (
+          <SourceFormDialog
+            type={connection.type}
+            mode="replace"
+            connection={connection}
+            open={dialog === "replace"}
+            onOpenChange={close}
+            secretMode={secretMode}
+          />
+        ))}
+      <AlertDialog open={dialog === "signOut"} onOpenChange={close}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Sign out of {connection.name}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {connection.kind === "signInShared"
+                ? `Everyone in the workspace queries ${connection.name} as you. Once you sign out, nobody is signed in to it, and its dashboards stop loading until someone signs in again.`
+                : `Your sign-in is deleted. Dashboards that use ${connection.name} stop loading for you until you sign in again.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={signOut}>Sign out</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       <RenameDialog connection={connection} open={dialog === "rename"} onOpenChange={close} />
       <DeleteDialog connection={connection} open={dialog === "delete"} onOpenChange={close} />
     </>
@@ -241,8 +283,10 @@ function DeleteDialog({
   const [refusedBy, setRefusedBy] = useState<Connection["apps"] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // Refused over apps the reader can't open: there are none to name, only the server's reason.
+  const [refusal, setRefusal] = useState<string | null>(null);
   const blockingApps = refusedBy ?? connection.apps;
-  const blocked = blockingApps.length > 0;
+  const blocked = blockingApps.length > 0 || refusal !== null;
 
   // Opened by the row menu through `open`, which doesn't call onOpenChange.
   // Reset while rendering when it opens, so the first frame is already fresh.
@@ -251,6 +295,7 @@ function DeleteDialog({
     setWasOpen(open);
     if (open) {
       setRefusedBy(null);
+      setRefusal(null);
       setError(null);
     }
   }
@@ -261,8 +306,9 @@ function DeleteDialog({
       if (result.ok) {
         toast.success(`${connection.name} deleted`);
         onOpenChange(false);
-      } else if (result.error.code === "in_use" && result.error.apps) {
-        setRefusedBy(result.error.apps);
+      } else if (result.error.code === "in_use") {
+        if (result.error.apps?.length) setRefusedBy(result.error.apps);
+        setRefusal(result.error.message);
       } else {
         setError(result.error.message);
       }
@@ -284,9 +330,15 @@ function DeleteDialog({
           </AlertDialogTitle>
           <AlertDialogDescription asChild>
             <div>
-              {blocked ? (
+              {blocked && !blockingApps.length ? (
+                <p>{refusal}</p>
+              ) : blocked ? (
                 <>
-                  <p>Dashboards in these apps use this connection. Delete those apps first.</p>
+                  {/* The server's count includes apps the reader can't open. */}
+                  <p>
+                    {refusal ??
+                      `${blockingApps.length === 1 ? "1 app uses" : `${blockingApps.length} apps use`} this connection. Delete ${blockingApps.length === 1 ? "it" : "them"} first.`}
+                  </p>
                   <ul className="mt-3 list-disc pl-5 text-foreground">
                     {blockingApps.map((app) => (
                       <li key={app.id}>{app.name}</li>

@@ -17,6 +17,7 @@ import { CertificateCheckField } from "./certificate-check-field";
 import { showConnectionWarnings } from "./connection-feedback";
 import type { SecretMode } from "./connection-form-dialog";
 import { mcpPresetForm, SOURCE_FORMS, type FieldSpec } from "./source-forms";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 export type FormSourceType = keyof typeof SOURCE_FORMS;
 
@@ -34,6 +35,7 @@ type Props = {
 
 /** Adds a MySQL, ClickHouse or BigQuery connection, or replaces its password or key. */
 export function SourceFormDialog(props: Props) {
+  const orgId = useWorkspaceId();
   const { type, open, onOpenChange, secretMode, service } = props;
   const replacing = props.mode === "replace";
   const spec = service && type === "mcp" && !replacing ? mcpPresetForm(MCP_SERVICES[service]) : SOURCE_FORMS[type];
@@ -42,6 +44,8 @@ export function SourceFormDialog(props: Props) {
   const authOptions: readonly McpAuth[] = spec.oauth && !replacing ? spec.oauth.options : ["key"];
   const [auth, setAuth] = useState<McpAuth>(authOptions[0]);
   const signingIn = auth === "oauth";
+  // A sign-in's kind, fixed once added: everyone signs in themselves, or everyone runs as whoever signs in now.
+  const [sharing, setSharing] = useState<"personal" | "org">("personal");
   const fields = signingIn ? allFields.filter((field) => !field.keyOnly && field !== spec.credential) : allFields;
 
   const initial = (): Record<string, string> => Object.fromEntries(allFields.map((field) => [field.name, field.initial ?? ""]));
@@ -58,6 +62,7 @@ export function SourceFormDialog(props: Props) {
   function reset() {
     setValues(initial());
     setAuth(authOptions[0]);
+    setSharing("personal");
     setPasted("");
     setPasteNote(null);
     setFieldErrors({});
@@ -89,7 +94,9 @@ export function SourceFormDialog(props: Props) {
   function signIn() {
     startTransition(async () => {
       const name = values.name ?? "";
-      const result = await startMcpSignInAction(service ? { name, service } : { name, url: values.url ?? "" });
+      const result = await startMcpSignInAction(
+        service ? { orgId, name, service, sharing } : { orgId, name, url: values.url ?? "", sharing },
+      );
       if (!result.ok) {
         // Each result replaces the last one's message: a stale error under a field would contradict it.
         if (result.error.field && fields.some((field) => field.name === result.error.field)) {
@@ -100,6 +107,11 @@ export function SourceFormDialog(props: Props) {
           setFormError(result.error.message);
         }
         return;
+      }
+      // The workspace already has this server, with everyone signing in: this signs in to that one.
+      if (result.data.existing) {
+        toast.info(`This server is already here as ${result.data.existing}. Signing you in to it.`);
+        await new Promise((resolve) => setTimeout(resolve, 1500));
       }
       window.location.assign(result.data.authorizationUrl);
     });
@@ -149,7 +161,7 @@ export function SourceFormDialog(props: Props) {
       const result =
         props.mode === "replace"
           ? await replaceCredentialAction({ id: props.connection.id, credential: values[spec.credential.name] ?? "" })
-          : await createConnectionAction(service ? { type, name: values.name ?? "", apiKey: values.apiKey ?? "", service } : { type, ...values });
+          : await createConnectionAction(service ? { orgId, type, name: values.name ?? "", apiKey: values.apiKey ?? "", service } : { orgId, type, ...values });
 
       if (result.ok) {
         toast.success(replacing ? "Saved" : `Connected to ${(values.name ?? "").trim()}`);
@@ -289,6 +301,9 @@ export function SourceFormDialog(props: Props) {
                     }}
                   />
                 )}
+                {spec.oauth && !replacing && signingIn && row.some((field) => field.name === spec.oauth?.after) && (
+                  <SharingChoice labelId={id("sharing")} value={sharing} server={spec.oauth.server} onChange={setSharing} />
+                )}
               </Fragment>
             ))}
 
@@ -395,14 +410,59 @@ function TextareaWithFile({
 }
 
 const AUTH_CHOICES: Record<McpAuth, { title: string; who: string }> = {
-  oauth: { title: "Sign in", who: "Just for you" },
-  key: { title: "API key", who: "Can be shared with your team" },
+  oauth: { title: "Sign in", who: "With an account on the server" },
+  key: { title: "API key", who: "Shared with your workspace" },
 };
 
 /**
- * How to connect: signing in is personal (dashboards always run with the
- * viewer's own sign-in); a key is one credential a team can share.
+ * For a sign-in, how the workspace uses it, fixed once added: each person
+ * signs in with their own account, or it's shared and everyone queries as
+ * whoever signs in now.
  */
+function SharingChoice({
+  labelId,
+  value,
+  server,
+  onChange,
+}: {
+  labelId: string;
+  value: "personal" | "org";
+  server: string;
+  onChange: (value: "personal" | "org") => void;
+}) {
+  return (
+    <Field>
+      <FieldLabel id={labelId}>Who signs in</FieldLabel>
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        aria-labelledby={labelId}
+        value={value}
+        onValueChange={(next) => {
+          if (next === "personal" || next === "org") onChange(next);
+        }}
+        className="w-full"
+      >
+        <ToggleGroupItem value="personal" className="h-auto flex-1 flex-col gap-0 py-2">
+          <span className="text-sm font-medium">Requires sign-in</span>
+          <span className="text-xs font-normal text-muted-foreground">Everyone signs in themselves</span>
+        </ToggleGroupItem>
+        <ToggleGroupItem value="org" className="h-auto flex-1 flex-col gap-0 py-2">
+          <span className="text-sm font-medium">Shared with workspace</span>
+          <span className="text-xs font-normal text-muted-foreground">Everyone queries as you</span>
+        </ToggleGroupItem>
+      </ToggleGroup>
+      <FieldDescription>
+        {value === "personal"
+          ? `Each person sees what their own ${server} account can see. Guests can't see its data.`
+          : `Everyone in the workspace, and guests of its apps, query ${server} as you, with whatever your account allows.`}{" "}
+        This can&apos;t be changed later.
+      </FieldDescription>
+    </Field>
+  );
+}
+
+/** How to connect: signing in with an account on the server, or a key shared with the workspace. */
 function AuthChoice({
   labelId,
   options,
@@ -418,7 +478,7 @@ function AuthChoice({
 }) {
   const note =
     value === "oauth"
-      ? `You sign in on ${server}'s own page. Dashboards always run with each person's own sign-in, never yours.`
+      ? `You sign in on ${server}'s own page.`
       : "Sent with every request. Anyone you share a dashboard with sees what this key can see.";
   return (
     <Field>

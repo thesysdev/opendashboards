@@ -16,8 +16,9 @@ import type { ConnectionSource, SourceTool, ToolCaller } from "@/lib/sources/typ
  * Sources write tools as "given an open connection, do X". This runner does
  * the rest, the same way for every source and every caller:
  *   1. validates the arguments against the tool's schema;
- *   2. takes the user and app from the server-side context, never from arguments;
- *   3. opens the `connection` id only if it's this user's, of the tool's type;
+ *   2. takes the user, app and org from the server-side context, never from arguments;
+ *   3. opens the `connection` id only if this user can query it, it's in the
+ *      app's org, and it's of the tool's type;
  *   4. runs the tool, and on success records that the app uses the connection
  *      (`app_connections`: connections are inferred from use).
  */
@@ -26,6 +27,10 @@ import type { ConnectionSource, SourceTool, ToolCaller } from "@/lib/sources/typ
 export type ToolContext = {
   userId: string;
   appId: string;
+  /** The app's org: its tools reach only that org's connections. */
+  orgId: string;
+  /** The app group the user's access earns them, for OpenUI Cloud (lib/dashboards/cloud). */
+  groupIds?: string[];
   /** Called when a call finds a sign-in expired or revoked (its connection is now marked so). */
   onSignInLost?: () => void;
 };
@@ -74,8 +79,16 @@ function fromSource(source: ConnectionSource, tool: SourceTool<Record<string, un
       }
       const { connection: connectionId, ...toolArgs } = parsed.data;
 
-      const connection = await getConnectionService().open(context.userId, connectionId, source.type as ConnectionType);
-      if (!connection) throw new ToolError("connection_not_found", `No ${source.label} connection with id ${connectionId}.`);
+      const connection = await getConnectionService().open(context.userId, connectionId, source.type as ConnectionType, {
+        orgId: context.orgId,
+        appId: context.appId,
+      });
+      if (!connection) {
+        // Not signed in, nobody signed in, or a guest on a sign-in they don't have: said so they can act on it.
+        const closed = await getConnectionService().whyClosed(context.userId, connectionId, { appId: context.appId });
+        if (closed) throw new ToolError(closed.code, closed.message);
+        throw new ToolError("connection_not_found", `No ${source.label} connection with id ${connectionId}.`);
+      }
 
       // Tool calls in one turn run concurrently, so each gets its own copy of the context.
       const result = await withLogContext({ connection: connection.id }, async () => {
@@ -87,6 +100,18 @@ function fromSource(source: ConnectionSource, tool: SourceTool<Record<string, un
             // The caller gets a short message; keep the cause (network error, PostHog's
             // detail) in the server log, where it can be diagnosed.
             if (known.status === "unavailable") logError(`tools.${tool.name}`, error);
+            if (known.error.code === "reauth_required") {
+              // Someone else's sign-in, shared with the workspace: they or an admin sign in again.
+              const owner = await getConnectionService().signInOwner(context.userId, connection.id);
+              if (owner) {
+                throw new ToolError(
+                  "reauth_required",
+                  owner.email
+                    ? `${owner.email}'s sign-in to ${owner.name} expired. Ask them, or an admin, to sign in again.`
+                    : `The sign-in to ${owner.name} expired. Ask whoever shared this app with you.`,
+                );
+              }
+            }
             throw new ToolError(known.error.code, known.error.message);
           }
           logError(`tools.${tool.name}`, error);
@@ -94,8 +119,10 @@ function fromSource(source: ConnectionSource, tool: SourceTool<Record<string, un
         }
       });
 
-      // Inferred from use. A failure to record shouldn't fail the query.
+      // Inferred from use. A failure to record shouldn't fail the query, except a refusal the agent
+      // must act on: a connection that requires sign-in on an app with guests.
       const recorded = await getAppService().recordConnectionUse(context.userId, context.appId, connection.id);
+      if (!recorded.ok && recorded.error.code === "guests_cant_sign_in") throw new ToolError(recorded.error.code, recorded.error.message);
       if (!recorded.ok && recorded.error.code !== "not_found") logError("tools.recordConnectionUse", recorded.error);
       return result;
     },
@@ -111,8 +138,8 @@ const listConnections: Tool = {
   parameters: z.toJSONSchema(z.object({})),
   callers: ["agent"],
   async run(_args, context) {
-    const connections = await getConnectionService().list(context.userId);
-    return connections.map(({ id, name, type, source, detail, status, demo }) => ({
+    const connections = await getConnectionService().list({ userId: context.userId, orgId: context.orgId });
+    return connections.map(({ id, name, type, source, detail, status, demo, kind, signInStatus }) => ({
       id,
       name,
       type,
@@ -120,6 +147,8 @@ const listConnections: Tool = {
       detail,
       status,
       ...(demo ? { demo: true, about: demo.description } : {}),
+      // Each person signs in to it themselves: a guest can never see its data.
+      ...(kind === "signInEach" ? { requires_sign_in: true, signed_in: signInStatus === "signedIn" } : {}),
     }));
   },
 };

@@ -14,6 +14,7 @@ import { posthogSource } from "@/lib/sources/posthog/source";
 import type { ConnectionSource } from "@/lib/sources/types";
 
 import { TEST_DATABASE_URL } from "./global-setup";
+import { workspaceOf, seedWorkspaces } from "./orgs";
 
 const { db, pool } = createDatabase(TEST_DATABASE_URL);
 const appsService = createAppService({ db });
@@ -26,7 +27,7 @@ const connections = createConnectionService({
 });
 
 async function addConnection(userId: string, name = "Production") {
-  const result = await connections.create(userId, {
+  const result = await connections.create(workspaceOf(userId), {
     type: "posthog",
     name,
     hostKind: "posthog_us",
@@ -38,14 +39,15 @@ async function addConnection(userId: string, name = "Production") {
 }
 
 async function createApp(userId: string, prompt = "Weekly signups by plan", connectionIds?: string[]) {
-  const ids = connectionIds ?? (await connections.list(userId)).map((connection) => connection.id);
-  const result = await appsService.create(userId, { prompt, connectionIds: ids });
+  const ids = connectionIds ?? (await connections.list(workspaceOf(userId))).map((connection) => connection.id);
+  const result = await appsService.create(workspaceOf(userId), { prompt, connectionIds: ids });
   if (!result.ok) throw new Error(result.error.code);
   return result.data.id;
 }
 
 beforeEach(async () => {
   await db.execute(sql`TRUNCATE ${apps}, ${dataConnections} CASCADE`);
+  await seedWorkspaces(db, ["alice", "bob"]);
 });
 
 afterAll(async () => {
@@ -54,7 +56,7 @@ afterAll(async () => {
 
 describe("create", () => {
   it("needs at least one data source", async () => {
-    expect(await appsService.create("alice", { prompt: "Signups", connectionIds: [] })).toMatchObject({
+    expect(await appsService.create(workspaceOf("alice"), { prompt: "Signups", connectionIds: [] })).toMatchObject({
       ok: false,
       error: { code: "validation", field: "connectionIds" },
     });
@@ -81,19 +83,19 @@ describe("create", () => {
     const mine = await addConnection("alice");
     const theirs = await addConnection("bob");
     expect(
-      await appsService.create("alice", { prompt: "Signups", connectionIds: [mine, theirs] }),
+      await appsService.create(workspaceOf("alice"), { prompt: "Signups", connectionIds: [mine, theirs] }),
     ).toMatchObject({ ok: false, error: { code: "validation", field: "connectionIds" } });
-    expect(await appsService.list("alice")).toEqual([]);
+    expect(await appsService.list(workspaceOf("alice"))).toEqual([]);
   });
 
   it("rejects empty prompts and unexpected fields", async () => {
     const id = await addConnection("alice");
-    expect(await appsService.create("alice", { prompt: "   ", connectionIds: [id] })).toMatchObject({
+    expect(await appsService.create(workspaceOf("alice"), { prompt: "   ", connectionIds: [id] })).toMatchObject({
       ok: false,
       error: { code: "validation", field: "prompt" },
     });
     expect(
-      await appsService.create("alice", { prompt: "x", connectionIds: [id], name: "Mine" }),
+      await appsService.create(workspaceOf("alice"), { prompt: "x", connectionIds: [id], name: "Mine" }),
     ).toMatchObject({ ok: false, error: { code: "validation" } });
   });
 });
@@ -107,6 +109,7 @@ describe("sign-in state", () => {
       .values({
         id: randomUUID(),
         userId: "alice",
+        orgId: workspaceOf("alice").orgId,
         name: "Linear",
         type: "mcp",
         config: {
@@ -136,7 +139,7 @@ describe("ownership", () => {
     await addConnection("alice");
     const id = await createApp("alice");
 
-    expect(await appsService.list("bob")).toEqual([]);
+    expect(await appsService.list(workspaceOf("bob"))).toEqual([]);
     expect(await appsService.get("bob", id)).toBeNull();
     expect(await appsService.rename("bob", { id, name: "Mine" })).toMatchObject({
       ok: false,
@@ -163,14 +166,14 @@ describe("list, rename, remove", () => {
     await appsService.recordConnectionUse("alice", older, connectionId);
     await appsService.rename("alice", { id: older, name: "Renamed" });
 
-    const listed = await appsService.list("alice");
+    const listed = await appsService.list(workspaceOf("alice"));
     expect(listed.map((app) => app.name)).toEqual(["Renamed", "Production: App 2"]);
     expect(listed[0]).toMatchObject({
       dashboardCount: 2,
       connections: [{ id: connectionId, name: "Production" }],
     });
     expect(listed[1]).toMatchObject({ id: newer, dashboardCount: 0, connections: [{ id: connectionId, name: "Production" }] });
-    expect(await appsService.list("alice", { limit: 1 })).toHaveLength(1);
+    expect(await appsService.list(workspaceOf("alice"), { limit: 1 })).toHaveLength(1);
   });
 
   it("deletes the app with its dashboards, threads and usage, but not the connection", async () => {
@@ -185,7 +188,7 @@ describe("list, rename, remove", () => {
     expect(await db.select().from(dashboards)).toEqual([]);
     expect(await db.select().from(appConnections)).toEqual([]);
     expect(await threads.belongsTo("alice", id, "conv_1")).toBe(false);
-    expect(await connections.list("alice")).toHaveLength(1);
+    expect(await connections.list(workspaceOf("alice"))).toHaveLength(1);
   });
 });
 
@@ -199,18 +202,25 @@ describe("tree", () => {
       { appId: first, userId: "alice", artifactId: "art_a", title: "First tab", position: 0 },
     ]);
 
-    expect(await appsService.tree("alice")).toEqual([
-      { id: second, name: "Production: App 2", dashboards: [] },
+    const scope = workspaceOf("alice");
+    // Her own apps, in her own workspace: what the sidebar asks the policy about.
+    const facts = { kind: "app", access: "owner", role: "admin", guest: false };
+    expect(await appsService.tree(scope)).toEqual([
+      { id: second, orgId: scope.orgId, name: "Production: App 2", mine: true, canChange: true, facts, dashboards: [] },
       {
         id: first,
         name: "Production: App 1",
+        orgId: scope.orgId,
+        mine: true,
+        canChange: true,
+        facts,
         dashboards: [
           { id: expect.any(String), title: "First tab" },
           { id: expect.any(String), title: "Second tab" },
         ],
       },
     ]);
-    expect(await appsService.tree("bob")).toEqual([]);
+    expect(await appsService.tree(workspaceOf("bob"))).toEqual([]);
   });
 });
 

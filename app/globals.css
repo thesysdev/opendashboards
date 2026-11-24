@@ -131,3 +131,57 @@
     @apply font-sans;
   }
 }
+
+/*
+ * The sidebar (components/shell/sidebar.tsx). Beside the content on a wide
+ * screen, open unless the reader collapsed it. For a guest looking at an app
+ * shared with them, which the page marks with [data-guest-app], it starts
+ * collapsed until they open it. Decided here, from what the server rendered,
+ * so it never flashes open first. Outside any layer on purpose: these have to
+ * win over the utilities on the elements.
+ *
+ * Collapsed, it leaves nothing beside the content: the content's left margin
+ * matches its right, and the button that brings it back sits in the page (an
+ * app's header, or the top left of the content where there's no such header).
+ * On a phone it's always collapsed, and that button floats it over the page.
+ */
+[data-sidebar][data-pref="collapsed"],
+.app-shell:has([data-guest-app]) [data-sidebar][data-pref="none"] {
+  display: none;
+}
+/* The button that brings it back: always there on a phone, on a wide screen only while it's collapsed. */
+[data-sidebar-open] {
+  display: inline-flex;
+}
+/* A page with its own header carries the button there: the shell's stands down. */
+.app-shell:has([data-app-header]) [data-sidebar-open][data-floating] {
+  display: none;
+}
+@media (min-width: 48rem) {
+  [data-sidebar-open] {
+    display: none;
+  }
+  [data-sidebar-open][data-pref="collapsed"],
+  .app-shell:has([data-guest-app]) [data-sidebar-open][data-pref="none"] {
+    display: inline-flex;
+  }
+  .app-shell:has([data-app-header]) [data-sidebar-open][data-floating] {
+    display: none;
+  }
+  .app-shell:has([data-sidebar][data-pref="collapsed"]) [data-main],
+  .app-shell:has([data-guest-app]):has([data-sidebar][data-pref="none"]) [data-main] {
+    margin-left: 0.5rem;
+  }
+}
+/* Floating over the page, on a phone. Written to outweigh every rule above that hides it. */
+.app-shell:has([data-sidebar]) [data-sidebar][data-floating="true"] {
+  display: flex;
+  position: fixed;
+  inset-block: 0;
+  left: 0;
+  z-index: 40;
+  width: min(18rem, 85vw);
+  background: var(--color-neutral-50);
+  border-right: 1px solid var(--color-border);
+  box-shadow: 0 10px 30px rgb(0 0 0 / 0.12);
+}

@@ -16,6 +16,7 @@ import { createKmsSecretBox } from "@/lib/secrets/kms";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 
 import { TEST_DATABASE_URL } from "./global-setup";
+import { workspaceOf, seedWorkspaces } from "./orgs";
 
 const { db, pool } = createDatabase(TEST_DATABASE_URL);
 
@@ -76,13 +77,14 @@ function makeService(
 
 async function createOk(userId: string, input: object = VALID) {
   const { service } = makeService();
-  const result = await service.create(userId, input);
+  const result = await service.create(workspaceOf(userId), input);
   if (!result.ok) throw new Error(`create failed: ${result.error.code}`);
   return result.data.id;
 }
 
 beforeEach(async () => {
   await db.execute(sql`TRUNCATE ${apps}, ${dataConnections} CASCADE`);
+  await seedWorkspaces(db, ["alice", "bob"]);
 });
 
 afterAll(async () => {
@@ -92,7 +94,7 @@ afterAll(async () => {
 describe("create", () => {
   it("tests the key, then saves a connection without exposing the key", async () => {
     const { service, testConnection } = makeService();
-    const result = await service.create("alice", VALID);
+    const result = await service.create(workspaceOf("alice"), VALID);
     expect(result).toMatchObject({ ok: true, data: { warnings: [] } });
     expect(testConnection).toHaveBeenCalledWith({
       hostKind: "posthog_us",
@@ -100,7 +102,7 @@ describe("create", () => {
       apiKey: VALID.apiKey,
     });
 
-    const [listed] = await service.list("alice");
+    const [listed] = await service.list(workspaceOf("alice"));
     expect(listed).toMatchObject({
       name: "Production",
       type: "posthog",
@@ -118,14 +120,14 @@ describe("create", () => {
         throw new PostHogError("invalid_key", 403);
       },
     });
-    const result = await service.create("alice", VALID);
+    const result = await service.create(workspaceOf("alice"), VALID);
     expect(result).toMatchObject({ ok: false, error: { code: "invalid_key", field: "apiKey" } });
-    expect(await service.list("alice")).toEqual([]);
+    expect(await service.list(workspaceOf("alice"))).toEqual([]);
   });
 
   it("rejects unexpected fields such as a host or URL", async () => {
     const { service, testConnection } = makeService();
-    const result = await service.create("alice", { ...VALID, url: "http://169.254.169.254" });
+    const result = await service.create(workspaceOf("alice"), { ...VALID, url: "http://169.254.169.254" });
     expect(result).toMatchObject({ ok: false, error: { code: "validation" } });
     expect(testConnection).not.toHaveBeenCalled();
   });
@@ -138,14 +140,14 @@ describe("create", () => {
       ["projectId", "12a"],
       ["apiKey", "sk_live_123"],
     ] as const) {
-      const result = await service.create("alice", { ...VALID, [field]: value });
+      const result = await service.create(workspaceOf("alice"), { ...VALID, [field]: value });
       expect(result).toMatchObject({ ok: false, error: { code: "validation", field } });
     }
   });
 
   it("reports missing secret storage without calling PostHog", async () => {
     const { service, testConnection } = makeService({ secrets: createKmsSecretBox("arn:test", { roleArn: "role" }) });
-    const result = await service.create("alice", VALID);
+    const result = await service.create(workspaceOf("alice"), VALID);
     expect(result).toMatchObject({ ok: false, error: { code: "secret_storage_unavailable" } });
     expect(testConnection).not.toHaveBeenCalled();
   });
@@ -156,7 +158,7 @@ describe("ownership", () => {
     const id = await createOk("alice");
     const { service, testConnection } = makeService();
 
-    expect(await service.list("bob")).toEqual([]);
+    expect(await service.list(workspaceOf("bob"))).toEqual([]);
     for (const result of [
       await service.retest("bob", { id }),
       await service.rename("bob", { id, name: "Hijacked" }),
@@ -167,7 +169,7 @@ describe("ownership", () => {
     }
     expect(testConnection).not.toHaveBeenCalled();
 
-    const [still] = await service.list("alice");
+    const [still] = await service.list(workspaceOf("alice"));
     expect(still).toMatchObject({ id, name: "Production" });
   });
 
@@ -193,7 +195,7 @@ describe("retest", () => {
       ok: false,
       error: { code: "missing_scope" },
     });
-    expect((await failing.service.list("alice"))[0].status).toBe("invalid");
+    expect((await failing.service.list(workspaceOf("alice")))[0].status).toBe("invalid");
 
     const down = makeService({
       test: async () => {
@@ -201,11 +203,11 @@ describe("retest", () => {
       },
     });
     await down.service.retest("alice", { id });
-    expect((await down.service.list("alice"))[0].status).toBe("unavailable");
+    expect((await down.service.list(workspaceOf("alice")))[0].status).toBe("unavailable");
 
     const fine = makeService();
     expect(await fine.service.retest("alice", { id })).toEqual({ ok: true, data: { status: "ok" } });
-    expect((await fine.service.list("alice"))[0].status).toBe("ok");
+    expect((await fine.service.list(workspaceOf("alice")))[0].status).toBe("ok");
   });
 
   it("marks a plaintext row invalid under KMS instead of using it", async () => {
@@ -217,7 +219,7 @@ describe("retest", () => {
       error: { code: "key_reentry_required" },
     });
     expect(testConnection).not.toHaveBeenCalled();
-    expect((await service.list("alice"))[0].status).toBe("invalid");
+    expect((await service.list(workspaceOf("alice")))[0].status).toBe("invalid");
   });
 
   it("caches the decrypted key and drops it when the key is replaced", async () => {
@@ -260,7 +262,7 @@ describe("replaceCredential", () => {
 
     const failed = await service.replaceCredential("alice", { id, credential: "phx_badbadbadbadbadbadbad1" });
     expect(failed).toMatchObject({ ok: false, error: { code: "invalid_key", field: "apiKey" } });
-    const [row] = await service.list("alice");
+    const [row] = await service.list(workspaceOf("alice"));
     expect(row).toMatchObject({ credentialHint: "phx_…1234", source: "PostHog · US Cloud" });
   });
 
@@ -283,12 +285,12 @@ describe("rename and remove", () => {
       ok: true,
       data: undefined,
     });
-    expect((await service.list("alice"))[0].name).toBe("Staging");
+    expect((await service.list(workspaceOf("alice")))[0].name).toBe("Staging");
   });
 
   it("refuses to delete a connection an app uses, and lists the apps", async () => {
     const id = await createOk("alice");
-    const [app] = await db.insert(apps).values({ userId: "alice", name: "Growth" }).returning();
+    const [app] = await db.insert(apps).values({ userId: "alice", orgId: workspaceOf("alice").orgId, name: "Growth" }).returning();
     await db.insert(appConnections).values({ appId: app.id, connectionId: id });
     const { service } = makeService();
 
@@ -296,14 +298,14 @@ describe("rename and remove", () => {
       ok: false,
       error: { code: "in_use", apps: [{ name: "Growth" }] },
     });
-    expect(await service.list("alice")).toHaveLength(1);
+    expect(await service.list(workspaceOf("alice"))).toHaveLength(1);
   });
 
   it("deletes an unused connection", async () => {
     const id = await createOk("alice");
     const { service } = makeService();
     expect(await service.remove("alice", { id })).toEqual({ ok: true, data: undefined });
-    expect(await service.list("alice")).toEqual([]);
+    expect(await service.list(workspaceOf("alice"))).toEqual([]);
   });
 });
 
@@ -323,7 +325,7 @@ describe("postgres", () => {
     const seal = vi.fn(plaintextSecretBox.seal);
     const { service, testPostgres } = makeService({ secrets: { ...plaintextSecretBox, seal } });
 
-    expect(await service.create("alice", PG)).toMatchObject({ ok: true, data: { warnings: [] } });
+    expect(await service.create(workspaceOf("alice"), PG)).toMatchObject({ ok: true, data: { warnings: [] } });
     expect(testPostgres).toHaveBeenCalledWith({
       host: "db.example.com",
       port: 5432,
@@ -334,7 +336,7 @@ describe("postgres", () => {
     });
     expect(seal).toHaveBeenCalledWith(PG.password, expect.objectContaining({ purpose: "postgres-password" }));
 
-    const [listed] = await service.list("alice");
+    const [listed] = await service.list(workspaceOf("alice"));
     expect(listed).toMatchObject({
       type: "postgres",
       source: "Postgres",
@@ -347,13 +349,13 @@ describe("postgres", () => {
 
   it("accepts the port as text, as a form sends it", async () => {
     const { service, testPostgres } = makeService();
-    expect(await service.create("alice", { ...PG, port: "6543" })).toMatchObject({ ok: true });
+    expect(await service.create(workspaceOf("alice"), { ...PG, port: "6543" })).toMatchObject({ ok: true });
     expect(testPostgres).toHaveBeenCalledWith(expect.objectContaining({ port: 6543 }));
   });
 
   it("warns when the user can write", async () => {
     const { service } = makeService({ testPostgres: async () => ({ serverVersion: "16.4", canWrite: true }) });
-    expect(await service.create("alice", PG)).toMatchObject({ ok: true, data: { warnings: ["can_write"] } });
+    expect(await service.create(workspaceOf("alice"), PG)).toMatchObject({ ok: true, data: { warnings: ["can_write"] } });
   });
 
   it("logs what the server said about a failed check, and shows the user only our own wording", async () => {
@@ -363,7 +365,7 @@ describe("postgres", () => {
         throw new PostgresError("unexpected", "FATAL: something only\nthe remote server would say");
       },
     });
-    const result = await service.create("alice", PG);
+    const result = await service.create(workspaceOf("alice"), PG);
     expect(result).toMatchObject({ ok: false, error: { code: "postgres_unexpected" } });
     expect(JSON.stringify(result)).not.toContain("remote server would say");
     expect(warn).toHaveBeenCalledTimes(1);
@@ -393,9 +395,9 @@ describe("postgres", () => {
           throw new PostgresError(code);
         },
       });
-      expect(await service.create("alice", PG)).toMatchObject({ ok: false, error: { code, field } });
+      expect(await service.create(workspaceOf("alice"), PG)).toMatchObject({ ok: false, error: { code, field } });
     }
-    expect(await makeService().service.list("alice")).toEqual([]);
+    expect(await makeService().service.list(workspaceOf("alice"))).toEqual([]);
   });
 
   it("rejects a connection string, a socket path or an unknown SSL mode before connecting", async () => {
@@ -409,7 +411,7 @@ describe("postgres", () => {
       [{ ...PG, sslMode: "prefer" }, "sslMode"],
       [{ ...PG, password: "x".repeat(1025) }, "password"],
     ] as const) {
-      const result = await service.create("alice", input);
+      const result = await service.create(workspaceOf("alice"), input);
       expect(result).toMatchObject({ ok: false, error: { code: "validation" } });
       if (field && !result.ok) expect(result.error.field).toBe(field);
     }
@@ -451,14 +453,14 @@ describe("postgres", () => {
       }),
     };
     const { service, testPostgres } = makeService({ secrets: unavailable });
-    const created = await service.create("alice", { ...PG, password: "" });
+    const created = await service.create(workspaceOf("alice"), { ...PG, password: "" });
     expect(created).toMatchObject({ ok: true });
     expect(testPostgres).toHaveBeenCalledWith(expect.objectContaining({ password: "" }));
     expect(unavailable.seal).not.toHaveBeenCalled();
 
     const [row] = await db.select().from(dataConnections);
     expect(row.secret).toEqual({ v: 1, provider: "none" });
-    expect((await service.list("alice"))[0].credentialHint).toBe("no password");
+    expect((await service.list(workspaceOf("alice")))[0].credentialHint).toBe("no password");
 
     // Opening it for a tool, and retesting it, give the empty password back without KMS.
     expect(await service.open("alice", row.id, "postgres")).toMatchObject({ credential: "" });
@@ -472,7 +474,7 @@ describe("postgres", () => {
     expect(await service.replaceCredential("alice", { id, credential: "s3cret-pw" })).toMatchObject({ ok: true });
     expect((await db.select().from(dataConnections))[0].secret).toEqual({ v: 1, provider: "plaintext", value: "s3cret-pw" });
     expect(await service.open("alice", id, "postgres")).toMatchObject({ credential: "s3cret-pw" });
-    expect((await service.list("alice"))[0].credentialHint).toBe("password ••••");
+    expect((await service.list(workspaceOf("alice")))[0].credentialHint).toBe("password ••••");
 
     expect(await service.replaceCredential("alice", { id, credential: "" })).toMatchObject({ ok: true });
     expect((await db.select().from(dataConnections))[0].secret).toEqual({ v: 1, provider: "none" });
@@ -487,15 +489,15 @@ describe("postgres", () => {
       },
     });
     await service.retest("alice", { id });
-    expect((await service.list("alice"))[0].status).toBe("unavailable");
+    expect((await service.list(workspaceOf("alice")))[0].status).toBe("unavailable");
   });
 });
 
 describe("demo datasets", () => {
   it("installs once per user, with no secret of its own, and opens with config's settings", async () => {
     const { service } = makeService();
-    const first = await service.installDemo("alice", { dataset: "retail" });
-    const again = await service.installDemo("alice", { dataset: "retail" });
+    const first = await service.installDemo(workspaceOf("alice"), { dataset: "retail" });
+    const again = await service.installDemo(workspaceOf("alice"), { dataset: "retail" });
     expect(first.ok && again.ok && first.data.id === again.data.id).toBe(true);
     if (!first.ok) return;
 
@@ -510,16 +512,18 @@ describe("demo datasets", () => {
     });
     expect(await service.open("bob", first.data.id, "postgres")).toBeNull();
 
-    const [summary] = await service.list("alice");
+    const [summary] = await service.list(workspaceOf("alice"));
     expect(summary).toMatchObject({ source: "Demo dataset", shortSource: "Demo", demo: { key: "retail", summary: DEMO.summary } });
-    expect(await service.listDemoDatasets("alice")).toMatchObject([{ key: "retail", summary: DEMO.summary, connectionId: first.data.id, apps: [] }]);
-    expect(await service.listDemoDatasets("bob")).toMatchObject([{ key: "retail", connectionId: null }]);
+    expect(await service.listDemoDatasets(workspaceOf("alice"))).toMatchObject([
+      { key: "retail", summary: DEMO.summary, connectionId: first.data.id, apps: [] },
+    ]);
+    expect(await service.listDemoDatasets(workspaceOf("bob"))).toMatchObject([{ key: "retail", connectionId: null }]);
   });
 
   it("follows config: a changed host applies to installed copies, a removed dataset reads as gone", async () => {
     let datasets = [DEMO];
     const { service } = makeService({ demo: { datasets: () => datasets, password: () => "demo-password" } });
-    const installed = await service.installDemo("alice", { dataset: "retail" });
+    const installed = await service.installDemo(workspaceOf("alice"), { dataset: "retail" });
     if (!installed.ok) throw new Error("install failed");
 
     datasets = [{ ...DEMO, postgres: { ...DEMO.postgres, host: "moved.example.com" } }];
@@ -527,19 +531,19 @@ describe("demo datasets", () => {
 
     datasets = [];
     expect(await service.open("alice", installed.data.id, "postgres")).toBeNull();
-    expect(await service.list("alice")).toEqual([]);
+    expect(await service.list(workspaceOf("alice"))).toEqual([]);
   });
 
   it("offers nothing without the shared password", async () => {
     const { service } = makeService({ demo: { datasets: () => [DEMO], password: () => undefined } });
-    expect(await service.listDemoDatasets("alice")).toEqual([]);
-    expect(await service.installDemo("alice", { dataset: "retail" })).toMatchObject({ ok: false, error: { code: "not_found" } });
-    expect(await service.installDemo("alice", { dataset: "nope" })).toMatchObject({ ok: false });
+    expect(await service.listDemoDatasets(workspaceOf("alice"))).toEqual([]);
+    expect(await service.installDemo(workspaceOf("alice"), { dataset: "retail" })).toMatchObject({ ok: false, error: { code: "not_found" } });
+    expect(await service.installDemo(workspaceOf("alice"), { dataset: "nope" })).toMatchObject({ ok: false });
   });
 
   it("can't be edited, and can't be uninstalled while an app uses it", async () => {
     const { service } = makeService();
-    const installed = await service.installDemo("alice", { dataset: "retail" });
+    const installed = await service.installDemo(workspaceOf("alice"), { dataset: "retail" });
     if (!installed.ok) throw new Error("install failed");
     const id = installed.data.id;
 
@@ -547,17 +551,17 @@ describe("demo datasets", () => {
     expect(await service.replaceCredential("alice", { id, credential: "x" })).toMatchObject({ ok: false, error: { code: "demo_dataset" } });
     expect(await service.rename("alice", { id, name: "Mine" })).toMatchObject({ ok: false });
 
-    const [app] = await db.insert(apps).values({ userId: "alice", name: "Sales" }).returning();
+    const [app] = await db.insert(apps).values({ userId: "alice", orgId: workspaceOf("alice").orgId, name: "Sales" }).returning();
     await db.insert(appConnections).values({ appId: app.id, connectionId: id });
-    expect(await service.uninstallDemo("alice", { dataset: "retail" })).toMatchObject({
+    expect(await service.uninstallDemo(workspaceOf("alice"), { dataset: "retail" })).toMatchObject({
       ok: false,
       error: { code: "in_use", apps: [{ id: app.id, name: "Sales" }] },
     });
 
     await db.delete(apps);
-    expect(await service.uninstallDemo("alice", { dataset: "retail" })).toEqual({ ok: true, data: undefined });
-    expect(await service.uninstallDemo("alice", { dataset: "retail" })).toEqual({ ok: true, data: undefined });
-    expect(await service.listDemoDatasets("alice")).toMatchObject([{ connectionId: null }]);
+    expect(await service.uninstallDemo(workspaceOf("alice"), { dataset: "retail" })).toEqual({ ok: true, data: undefined });
+    expect(await service.uninstallDemo(workspaceOf("alice"), { dataset: "retail" })).toEqual({ ok: true, data: undefined });
+    expect(await service.listDemoDatasets(workspaceOf("alice"))).toMatchObject([{ connectionId: null }]);
   });
 
   it("a connection with a secret can't also be a demo dataset", async () => {
@@ -565,6 +569,7 @@ describe("demo datasets", () => {
       db.insert(dataConnections).values({
         id: crypto.randomUUID(),
         userId: "alice",
+        orgId: workspaceOf("alice").orgId,
         name: "Odd",
         type: "postgres",
         config: { type: "postgres", ...DEMO.postgres },

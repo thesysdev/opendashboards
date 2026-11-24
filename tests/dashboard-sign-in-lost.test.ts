@@ -19,7 +19,7 @@ const options = { signal: new AbortController().signal };
 describe("a dashboard data call", () => {
   it("reports a lost sign-in, even though the script may catch the error", async () => {
     const onSignInLost = vi.fn();
-    await expect(asDataTool(failing("reauth_required")).execute({}, { userId: "u", appId: "a", onSignInLost }, options)).rejects.toMatchObject({
+    await expect(asDataTool(failing("reauth_required")).execute({}, { userId: "u", appId: "a", orgId: "o", onSignInLost }, options)).rejects.toMatchObject({
       code: "reauth_required",
     });
     expect(onSignInLost).toHaveBeenCalledOnce();
@@ -27,7 +27,7 @@ describe("a dashboard data call", () => {
 
   it("doesn't for other failures", async () => {
     const onSignInLost = vi.fn();
-    await expect(asDataTool(failing("key_rejected")).execute({}, { userId: "u", appId: "a", onSignInLost }, options)).rejects.toBeTruthy();
+    await expect(asDataTool(failing("key_rejected")).execute({}, { userId: "u", appId: "a", orgId: "o", onSignInLost }, options)).rejects.toBeTruthy();
     expect(onSignInLost).not.toHaveBeenCalled();
   });
 });

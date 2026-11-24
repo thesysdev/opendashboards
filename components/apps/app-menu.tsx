@@ -26,7 +26,8 @@ import {
 
 type App = { id: string; name: string; dashboardCount: number };
 
-export function AppMenu({ app }: { app: App }) {
+/** The app's own actions, for whoever can change it. Only its owner can delete it. */
+export function AppMenu({ app, canDelete = true }: { app: App; canDelete?: boolean }) {
   const [deleting, setDeleting] = useState(false);
   const rename = useRenameApp();
   // Rename starts once the menu has closed: while open, it holds focus and
@@ -55,11 +56,15 @@ export function AppMenu({ app }: { app: App }) {
             <PencilIcon aria-hidden />
             Rename
           </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
-            <Trash2Icon aria-hidden />
-            Delete app
-          </DropdownMenuItem>
+          {canDelete && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem variant="destructive" onSelect={() => setDeleting(true)}>
+                <Trash2Icon aria-hidden />
+                Delete app
+              </DropdownMenuItem>
+            </>
+          )}
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -105,8 +110,8 @@ function DeleteDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>Delete {app.name}?</AlertDialogTitle>
           <AlertDialogDescription>
-            This deletes the app{dashboards ? `, ${dashboards}` : ""} and its build history. It can&apos;t be
-            undone. Your data connections aren&apos;t affected.
+            This deletes the app{dashboards ? `, ${dashboards}` : ""} and its build history, for everyone it&apos;s shared
+            with. It can&apos;t be undone. Data connections aren&apos;t affected.
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error && (

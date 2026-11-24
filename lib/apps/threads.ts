@@ -1,8 +1,10 @@
 import { and, desc, eq, lt, or } from "drizzle-orm";
 
 import type { Database } from "@/lib/db";
-import { appThreads, apps } from "@/lib/db/schema";
+import { appThreads } from "@/lib/db/schema";
 import { logError } from "@/lib/log";
+import { appFacts } from "@/lib/orgs/access";
+import { decide, refusal, type Decision } from "@/lib/orgs/policy";
 
 import { fail, fromValidation, internalError, notFound, ok, type AppResult } from "./errors";
 import { appIdSchema, registerThreadSchema, renameThreadSchema, threadIdSchema } from "./schemas";
@@ -15,17 +17,19 @@ const PAGE_SIZE = 30;
 /**
  * Which app each chat thread belongs to. Threads live in OpenUI Cloud, which
  * has no notion of apps; this mapping is what scopes a thread list to one
- * app. Every call checks the app belongs to the user, and a thread belongs to
- * exactly one app.
+ * app. Threads are each member's own: sharing an app never shares its chats.
+ * Listing and registering check the caller can build in the app, and a thread
+ * belongs to exactly one app and one user.
  */
 export function createThreadService({ db, now = () => new Date() }: { db: Database; now?: () => Date }) {
-  async function ownsApp(userId: string, appId: string) {
-    if (!appIdSchema.safeParse(appId).success) return false;
-    const [row] = await db
-      .select({ id: apps.id })
-      .from(apps)
-      .where(and(eq(apps.id, appId), eq(apps.userId, userId)))
-      .limit(1);
+  /** Chat belongs to building: the policy's thread.view and thread.create. */
+  async function chat(userId: string, appId: string, action: "view" | "create"): Promise<Decision> {
+    return decide("thread", action, (await appFacts(db, userId, appId))?.facts ?? null);
+  }
+
+  /** Whether one of the caller's threads in this app exists: a thread is only ever its owner's. */
+  async function owns(userId: string, appId: string, threadId: string): Promise<boolean> {
+    const [row] = await db.select({ id: appThreads.threadId }).from(appThreads).where(scope(userId, appId, threadId)).limit(1);
     return Boolean(row);
   }
 
@@ -53,7 +57,8 @@ export function createThreadService({ db, now = () => new Date() }: { db: Databa
       cursor?: string | null,
     ): Promise<AppResult<{ threads: AppThread[]; nextCursor?: string }>> {
       return guard("list", async () => {
-        if (!(await ownsApp(userId, appId))) return notFound();
+        const listing = await chat(userId, appId, "view");
+        if (!listing.allowed) return refusal(listing);
         const after = cursor ? decodeCursor(cursor) : null;
         if (cursor && !after) return fail({ code: "validation", message: "Invalid cursor." });
 
@@ -102,7 +107,8 @@ export function createThreadService({ db, now = () => new Date() }: { db: Databa
       return guard("register", async () => {
         const parsed = registerThreadSchema.safeParse(input);
         if (!parsed.success) return fromValidation(parsed.error);
-        if (!(await ownsApp(userId, appId))) return notFound();
+        const creating = await chat(userId, appId, "create");
+        if (!creating.allowed) return refusal(creating);
         const { threadId, title } = parsed.data;
 
         const [inserted] = await db
@@ -129,6 +135,8 @@ export function createThreadService({ db, now = () => new Date() }: { db: Databa
         const parsed = renameThreadSchema.safeParse(input);
         if (!parsed.success) return fromValidation(parsed.error);
         if (!threadIdSchema.safeParse(threadId).success) return notFound();
+        const renaming = decide("thread", "update", { kind: "thread", own: await owns(userId, appId, threadId) });
+        if (!renaming.allowed) return refusal(renaming);
         const updated = await db
           .update(appThreads)
           .set({ title: parsed.data.title, updatedAt: now() })
@@ -142,6 +150,8 @@ export function createThreadService({ db, now = () => new Date() }: { db: Databa
     remove(userId: string, appId: string, threadId: string): Promise<AppResult> {
       return guard("remove", async () => {
         if (!threadIdSchema.safeParse(threadId).success) return notFound();
+        const deleting = decide("thread", "delete", { kind: "thread", own: await owns(userId, appId, threadId) });
+        if (!deleting.allowed) return refusal(deleting);
         const deleted = await db
           .delete(appThreads)
           .where(scope(userId, appId, threadId))

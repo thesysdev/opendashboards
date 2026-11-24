@@ -3,16 +3,17 @@ import { notFound, redirect } from "next/navigation";
 import { Suspense } from "react";
 
 import { LiveDashboard } from "@/components/apps/live-dashboard";
-import { getCurrentUserApp } from "@/lib/apps";
+import { getCurrentUserApp, trackDashboardView } from "@/lib/apps";
+import { can } from "@/lib/orgs/policy";
 import { appPath } from "@/lib/apps/paths";
 
-type Params = Promise<{ appId: string; dashboardId: string }>;
+type Params = Promise<{ orgId: string; appId: string; dashboardId: string }>;
 
 /** The tab shows the dashboard's title. */
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
-  const { appId, dashboardId } = await params;
+  const { orgId, appId, dashboardId } = await params;
   const app = await getCurrentUserApp(appId);
-  const dashboard = app?.dashboards.find((candidate) => candidate.id === dashboardId);
+  const dashboard = app?.orgId === orgId ? app.dashboards.find((candidate) => candidate.id === dashboardId) : undefined;
   return dashboard ? { title: dashboard.title } : {};
 }
 
@@ -30,11 +31,12 @@ export default function DashboardPage({ params }: { params: Params }) {
 }
 
 async function Dashboard({ params }: { params: Params }) {
-  const { appId, dashboardId } = await params;
+  const { orgId, appId, dashboardId } = await params;
   const app = await getCurrentUserApp(appId);
-  if (!app) notFound();
+  if (!app || app.orgId !== orgId) notFound();
   const dashboard = app.dashboards.find((candidate) => candidate.id === dashboardId);
-  if (!dashboard) redirect(appPath(app.id));
+  if (!dashboard) redirect(appPath(app.orgId, app.id));
+  await trackDashboardView(app, dashboard);
 
-  return <LiveDashboard key={dashboard.id} appId={app.id} dashboard={dashboard} />;
+  return <LiveDashboard key={dashboard.id} appId={app.id} dashboard={dashboard} readOnly={!can("dashboard", "update", app.facts)} />;
 }

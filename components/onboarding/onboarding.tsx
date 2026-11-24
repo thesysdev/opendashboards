@@ -15,6 +15,7 @@ import type { SourceOption } from "@/lib/sources/catalog";
 import { cn } from "@/lib/utils";
 
 import { DISCOVERY_PROMPT } from "./discovery-prompt";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
 export type OnboardingConnection = {
   id: string;
@@ -190,6 +191,7 @@ function DataStep({
   onContinue: () => void;
   onPickOnly: (id: string) => void;
 }) {
+  const orgId = useWorkspaceId();
   const [adding, setAdding] = useState<OnboardingSource | null>(null);
   // Kept after closing, so the dialog doesn't remount mid-animation.
   const [postgresFlavor, setPostgresFlavor] = useState<OnboardingSource["flavor"]>(null);
@@ -204,7 +206,7 @@ function DataStep({
     setError(null);
     setInstalling(dataset);
     startTransition(async () => {
-      const result = await installDemoAction({ dataset });
+      const result = await installDemoAction({ orgId, dataset });
       setInstalling(null);
       if (result.ok) onPickOnly(result.data.id);
       else setError(result.error.message);
@@ -371,6 +373,7 @@ function BuildStep({
   demos: OnboardingDemo[];
   onBack: () => void;
 }) {
+  const orgId = useWorkspaceId();
   const [writing, setWriting] = useState(false);
   const [started, setStarted] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -384,7 +387,7 @@ function BuildStep({
     setStarted(prompt);
     startTransition(async () => {
       // Only returns when creating failed; on success it opens the new app.
-      const result = await createAppAction({ prompt, connectionIds: ids });
+      const result = await createAppAction({ orgId, prompt, connectionIds: ids });
       if (result && !result.ok) {
         setError(result.error.message);
         setStarted(null);

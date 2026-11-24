@@ -93,5 +93,9 @@ export function fromCheckError(error: unknown): { error: ConnectionError; status
   return null;
 }
 
+/** They can use it, but their role (or not having added it) doesn't allow changing it. */
+export const forbidden = (message = "Only an editor or admin of this workspace can change its connections."): Result<never> =>
+  fail({ code: "forbidden", message });
+
 export const internalError = (): Result<never> =>
   fail({ code: "internal", message: "Something went wrong. Try again." });

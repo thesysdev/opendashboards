@@ -34,6 +34,8 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
     "packages/*/dist/**",
+    // Other checkouts of this repo (git worktrees) and their build output.
+    ".claude/**",
   ]),
 ]);
 

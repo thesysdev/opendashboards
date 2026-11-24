@@ -33,14 +33,17 @@ function interpreterError(error: unknown, status: number): Error {
 export function LiveDashboard({
   appId,
   dashboard,
+  readOnly = false,
 }: {
   appId: string;
   dashboard: { id: string; artifactId: string; title: string; description: string | null };
+  /** For someone who can only view the app. */
+  readOnly?: boolean;
 }) {
   const response = useDashboardResponse(dashboard.artifactId);
   return (
     <DashboardView id={dashboard.artifactId} response={response}>
-      <DashboardTitle appId={appId} dashboard={dashboard} />
+      <DashboardTitle appId={appId} dashboard={dashboard} readOnly={readOnly} />
     </DashboardView>
   );
 }

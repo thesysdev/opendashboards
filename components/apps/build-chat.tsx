@@ -42,7 +42,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { dashboardPath, parseAppPath } from "@/lib/apps/paths";
+import { dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/apps/paths";
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
 import { usePublishDashboardResponse, useSetCreatingDashboard } from "./app-workspace";
 import { scopeStorageToApp } from "@/lib/apps/thread-storage";
 import { cn } from "@/lib/utils";
@@ -79,8 +80,22 @@ export function BuildChat({
   // Taken once: sending the first prompt refreshes the page, which turns
   // hasPendingPrompt off mid-send, and reopening a thread then would abort it.
   const [startedWithPrompt] = useState(hasPendingPrompt);
-  const cloud = useOpenuiCloudStorage({ token: "/api/frontend-token" });
-  const storage = useMemo(() => scopeStorageToApp(cloud, appId), [cloud, appId]);
+  const cloud = useOpenuiCloudStorage({ token: frontendTokenPath(appId) });
+  // Set when this session starts a conversation of its own: there's then nothing to reopen.
+  const startedThread = useRef(false);
+  const storage = useMemo(() => {
+    const scoped = scopeStorageToApp(cloud, appId);
+    return {
+      ...scoped,
+      thread: {
+        ...scoped.thread,
+        createThread: (firstMessage: Parameters<typeof scoped.thread.createThread>[0]) => {
+          startedThread.current = true;
+          return scoped.thread.createThread(firstMessage);
+        },
+      },
+    };
+  }, [cloud, appId]);
   // The dashboard on screen: the one in the URL, or the app's first on its home.
   const pathname = usePathname();
   const { dashboardId } = parseAppPath(pathname);
@@ -128,7 +143,7 @@ export function BuildChat({
         </div>
         <TurnEffects appId={appId} dashboards={dashboards} hasPendingPrompt={hasPendingPrompt} />
         {/* A new app's first prompt starts its own conversation: nothing to reopen. */}
-        {!startedWithPrompt && <ReopenLastThread appId={appId} />}
+        {!startedWithPrompt && <ReopenLastThread appId={appId} startedThread={startedThread} />}
       </ChatProvider>
     </ThemeProvider>
   );
@@ -421,7 +436,7 @@ const lastThreadKey = (appId: string) => `opendashboards:build:last-thread:${app
  * browser), or else the most recent one. Remembering it is a convenience,
  * so storage that's blocked or empty just falls back.
  */
-function ReopenLastThread({ appId }: { appId: string }) {
+function ReopenLastThread({ appId, startedThread }: { appId: string; startedThread: { current: boolean } }) {
   const threads = useThreadList((s) => s.threads);
   const selectedId = useThreadList((s) => s.selectedThreadId);
   const selectThread = useThreadList((s) => s.selectThread);
@@ -431,13 +446,16 @@ function ReopenLastThread({ appId }: { appId: string }) {
     if (reopened.current || !threads.length) return;
     reopened.current = true;
     if (selectedId) return; // Already chose one (or sent a message) before the list arrived.
+    // The list's first thread is the one a first message just created (someone opening a teammate's
+    // app has none of their own): reopening it now would abort that message as it's being sent.
+    if (startedThread.current) return;
     let last: string | null = null;
     try {
       last = localStorage.getItem(lastThreadKey(appId));
     } catch {}
     const thread = threads.find((candidate) => candidate.id === last) ?? threads[0];
     selectThread(thread.id);
-  }, [appId, threads, selectedId, selectThread]);
+  }, [appId, threads, selectedId, selectThread, startedThread]);
 
   useEffect(() => {
     if (!selectedId) return;
@@ -464,6 +482,7 @@ function TurnEffects({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const orgId = useWorkspaceId();
   const processMessage = useThread((s) => s.processMessage);
   const isRunning = useThread((s) => s.isRunning);
 
@@ -539,8 +558,8 @@ function TurnEffects({
     const created = dashboards.find((dashboard) => dashboard.artifactId === opening.current);
     if (!created) return;
     opening.current = null;
-    if (parseAppPath(pathname).dashboardId !== created.id) router.push(dashboardPath(appId, created.id));
-  }, [appId, dashboards, pathname, router]);
+    if (parseAppPath(pathname).dashboardId !== created.id) router.push(dashboardPath(orgId, appId, created.id));
+  }, [appId, orgId, dashboards, pathname, router]);
 
   // When a turn ends, pick up titles and deletions.
   const wasRunning = useRef(false);

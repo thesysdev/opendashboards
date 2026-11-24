@@ -9,7 +9,7 @@ import type { ChatStorage, Thread, ThreadStorage } from "@openuidev/react-headle
  * from Cloud.
  *
  * Usage, in the chat milestone:
- *   const cloud = useOpenuiCloudStorage({ token: "/api/frontend-token" });
+ *   const cloud = useOpenuiCloudStorage({ token: frontendTokenPath(appId) });
  *   const storage = useMemo(() => scopeStorageToApp(cloud, appId), [cloud, appId]);
  *   <AgentInterface storage={storage} … />
  */

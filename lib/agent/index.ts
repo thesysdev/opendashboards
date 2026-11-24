@@ -11,6 +11,7 @@ import {
   getDashboardService,
   getDashboards,
   readDashboard,
+  shareDashboardsWithApp,
 } from "@/lib/dashboards";
 import { track } from "@/lib/analytics";
 import { logError } from "@/lib/log";
@@ -46,7 +47,11 @@ export function getGateway(): OpenAI {
 }
 
 /** What one turn did, for the route to act on afterwards. */
-export type TurnContext = ToolContext & { signal: AbortSignal; dashboards: string[] };
+export type TurnContext = ToolContext & {
+  signal: AbortSignal;
+  /** Every dashboard this turn created or changed. */
+  dashboards: string[];
+};
 
 type AgentTool = RunnableToolFunctionWithContext<TurnContext>;
 
@@ -222,7 +227,9 @@ const deleteDashboardTool = define(
 
 /**
  * Records a new dashboard against the app with its title and description,
- * then returns OpenUI Cloud's response unchanged as the tool result: it names
+ * and shares it with the app's view and edit groups straight away, so
+ * whoever the app lets in can open it the moment it exists. Then returns
+ * OpenUI Cloud's response unchanged as the tool result: it names
  * the dashboard (its `artifact_id`) for the model, and the Build chat hands
  * it to the open dashboard's renderer, which follows the new version as it's
  * built. An edit records nothing: the dashboard keeps its title.
@@ -240,8 +247,13 @@ async function remember(
   if (created) {
     const recorded = await getDashboardService().record(turn.userId, turn.appId, { artifactId: artifact.id, ...created });
     if (!recorded) throw new ToolError("not_found", "This app no longer exists.");
+    // Whether or not the app is shared yet: the groups only reach people our database lets in.
+    // A failure doesn't fail the dashboard; changing anyone's access in Share shares it again.
+    if (!(await shareDashboardsWithApp(turn.appId, [artifact.id]))) {
+      logError("agent.shareCreated", new Error("A new dashboard wasn't shared with its app's groups"));
+    }
   }
-  track(turn.userId, created ? "dashboard_created" : "dashboard_updated", { app_id: turn.appId, dashboard_id: artifact.id });
+  track(turn.userId, created ? "dashboard_created" : "dashboard_updated", { app_id: turn.appId, dashboard_id: artifact.id }, turn.orgId);
   turn.dashboards.push(artifact.id);
   return response;
 }

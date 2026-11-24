@@ -16,9 +16,12 @@ type Field = "title" | "description";
 export function DashboardTitle({
   appId,
   dashboard,
+  readOnly = false,
 }: {
   appId: string;
   dashboard: { id: string; title: string; description: string | null };
+  /** For someone who can only view the app: the title and description as plain text. */
+  readOnly?: boolean;
 }) {
   const [editing, setEditing] = useState<Field | null>(null);
   // Saved values show until the server's copy catches up.
@@ -45,6 +48,7 @@ export function DashboardTitle({
   }
 
   function display(field: Field, text: string, placeholder?: string) {
+    if (readOnly) return text;
     return (
       <button
         type="button"

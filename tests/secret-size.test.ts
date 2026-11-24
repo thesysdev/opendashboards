@@ -11,6 +11,7 @@ import { mcpSource } from "@/lib/sources/mcp/source";
 import type { ConnectionSource } from "@/lib/sources/types";
 
 import { TEST_DATABASE_URL } from "./global-setup";
+import { workspaceOf, seedWorkspaces } from "./orgs";
 
 /*
  * Secrets are capped at MAX_SECRET_BYTES (64 KB). Credentials over that are
@@ -61,6 +62,7 @@ describe("the connection service", () => {
   let warn: ReturnType<typeof vi.spyOn>;
   beforeEach(async () => {
     await db.execute(sql`TRUNCATE ${apps}, ${dataConnections} CASCADE`);
+    await seedWorkspaces(db, ["alice"]);
     seal.mockClear();
     test.mockClear();
     warn = vi.spyOn(console, "warn").mockImplementation(() => {});
@@ -69,7 +71,7 @@ describe("the connection service", () => {
   afterAll(() => pool.end());
 
   it("saves a credential right at the limit", async () => {
-    expect(await service.create("alice", input("k".repeat(MAX_SECRET_BYTES)))).toMatchObject({ ok: true });
+    expect(await service.create(workspaceOf("alice"), input("k".repeat(MAX_SECRET_BYTES)))).toMatchObject({ ok: true });
     expect(warn).not.toHaveBeenCalled();
   });
 
@@ -78,7 +80,7 @@ describe("the connection service", () => {
     ["two-byte characters", "é".repeat(33_000), 66_000],
     ["four-byte characters", "🔑".repeat(16_500), 66_000],
   ])("refuses an oversized credential (%s) on its field, saves nothing, and logs only its size", async (_label, apiKey, bytes) => {
-    const result = await service.create("alice", input(apiKey));
+    const result = await service.create(workspaceOf("alice"), input(apiKey));
     expect(result).toMatchObject({ ok: false, error: { code: "credential_too_large", field: "apiKey" } });
     if (!result.ok) expect(result.error.message).toContain(`${bytes.toLocaleString("en-US")} bytes`);
     expect(seal).not.toHaveBeenCalled();
@@ -96,7 +98,7 @@ describe("the connection service", () => {
   });
 
   it("refuses an oversized replacement and keeps the old credential", async () => {
-    const created = await service.create("alice", input("small-key"));
+    const created = await service.create(workspaceOf("alice"), input("small-key"));
     if (!created.ok) throw new Error(created.error.code);
     const result = await service.replaceCredential("alice", { id: created.data.id, credential: "é".repeat(33_000) });
     expect(result).toMatchObject({ ok: false, error: { code: "credential_too_large", field: "apiKey" } });

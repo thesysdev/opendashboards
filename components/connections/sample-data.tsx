@@ -13,14 +13,18 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 
+import { useWorkspaceId } from "@/lib/apps/use-workspace";
+
 import { SourceTile } from "./source-tile";
 
 /** Adds a sample dataset as a connection. Only adds it: building is the row's Build button. */
 function useAddSampleData(dataset: string, name: string) {
+  const orgId = useWorkspaceId();
   const [pending, startTransition] = useTransition();
   function add() {
     startTransition(async () => {
-      const result = await installDemoAction({ dataset });
+      // Into the workspace of the page it's added from.
+      const result = await installDemoAction({ orgId, dataset });
       if (result.ok) toast.success(`${name} added`);
       else toast.error(result.error.message);
     });
@@ -74,12 +78,13 @@ export function SampleDataActions({
   name: string;
   apps: { id: string; name: string }[];
 }) {
+  const orgId = useWorkspaceId();
   const [pending, startTransition] = useTransition();
   const inUse = apps.length > 0;
 
   function remove() {
     startTransition(async () => {
-      const result = await uninstallDemoAction({ dataset });
+      const result = await uninstallDemoAction({ orgId, dataset });
       if (result.ok) toast.success(`${name} removed`);
       else toast.error(result.error.message);
     });
