@@ -7,24 +7,24 @@ import { SharingIllustration, SourcesIllustration } from "./LaunchIllustrations"
 const FEATURES: { title: string; description: string; art: ReactNode }[] = [
   {
     title: "Share and edit",
-    description: "Invite your team and edit the same dashboard together.",
+    description: "Invite your team to view or edit.",
     art: <SharingIllustration />,
   },
   {
     title: "See the sources",
-    description: "Watch it build, then see where each chart's data comes from.",
+    description: "Trace any chart back to its data.",
     art: <SourcesIllustration />,
   },
   {
     title: "Conversational",
-    description: "Ask what you need to know. Get a dashboard built for that question.",
+    description: "Ask a question. Get a dashboard.",
     art: <ConversationalArt />,
   },
   { title: "Interactive by default", description: "Pick a filter and every widget updates.", art: <HoverArt /> },
   { title: "Live updates", description: "New data, same dashboard. No regeneration.", art: <LiveArt /> },
   {
     title: "Targeted edits",
-    description: "Change one chart. Only that chart is generated again.",
+    description: "Change one chart. The rest stays put.",
     art: <EditWidgetArt />,
   },
 ];
@@ -47,7 +47,7 @@ export function Features() {
           Dashboards your team can share and check
         </h2>
         <p className="mx-auto mt-4 max-w-144 text-center text-base leading-normal text-pretty text-neutral-950/60 md:text-[17px]">
-          Build a live dashboard from your connected tools and let your team trace the numbers back to the source.
+          Share live dashboards with your team and trace every number to its source.
         </p>
 
         <div className="mt-10 grid grid-cols-1 gap-10 md:mt-16 md:grid-cols-2 md:gap-x-4 md:gap-y-12 min-[56.25rem]:gap-x-6 min-[56.25rem]:gap-y-16">

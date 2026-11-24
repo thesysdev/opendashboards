@@ -1,6 +1,6 @@
 "use client";
 
-import { ArrowUp, Check, CreditCard, MousePointerClick, Users, type LucideIcon } from "lucide-react";
+import { ArrowUp, Check, CreditCard, Link2, MousePointerClick, UserRoundPlus, Users, type LucideIcon } from "lucide-react";
 import Image from "next/image";
 import { useCallback, useState, useSyncExternalStore, type CSSProperties } from "react";
 
@@ -9,22 +9,25 @@ import { BRANDS, type Brand } from "../brands";
 import { blurIn, blurSwap, camAt, lerp, ramp, type CamKey } from "./motion";
 
 /*
- * The story film: a question is asked, the data it needs flies out of the
- * sentence, each piece is fetched from the tool that has it (PostHog, your
- * database, Stripe), and the dashboard streams in and keeps refreshing. Every
- * frame is a pure function of T. World units are px in a 1200×600 viewport.
+ * The story film, in three beats. Connect: PostHog, your database and Stripe
+ * connect one after another. Build a dashboard: a question is asked, the data
+ * it needs flies out of the sentence, each piece is fetched from the tool that
+ * has it, and the dashboard streams in. Share: the dashboard is shared with
+ * the team. Every frame is a pure function of T. World units are px in a
+ * 1200×600 viewport.
  */
 
 export const FILM_STEPS = [
-  { id: "ask", start: 0, length: 3.3 },
-  { id: "fetch", start: 3.3, length: 4.3 },
-  { id: "build", start: 7.6, length: 2.8 },
-  { id: "live", start: 10.4, length: 5.6 },
+  { id: "connect", start: 0, length: 3 },
+  { id: "build", start: 3, length: 10.4 },
+  { id: "share", start: 13.4, length: 6.6 },
 ] as const;
-export const FILM_LENGTH = 16;
+export const FILM_LENGTH = 20;
+/** The build runs on its own clock from here: the question, the fetch, the dashboard. */
+const BUILD_FROM = 3;
 /** The moment reduced motion rests on: every need fetched. */
-export const FILM_STILL = 6.9;
-const RESET = 15.7;
+export const FILM_STILL = BUILD_FROM + 6.9;
+const RESET = 19.7;
 
 const INPUT = { x: 600, y: 300, w: 760, h: 76, pad: 32 };
 const QUERY_SIZE = 22;
@@ -36,13 +39,36 @@ const FLY_SCALE = (QUERY_SIZE * PROMPT_SCALE) / LABEL_SIZE;
 /** One tile per tool on the right, each level with the need it answers. */
 const SRC = { x: 770, w: 260, h: 56 };
 const DASH = { x: 100, y: 750, w: 1000, h: 700 };
+/** On the build's clock: when the dashboard streams in. */
 const BUILD_AT = 8.0;
-const REFRESH_AT = 12.2;
-/** "Always current": the notch drops in and the dashboard refreshes, then the new numbers land at REFRESH_AT and the notch confirms and lifts away. */
-const UPDATING_AT = 10.9;
-const NOTCH_OUT: [number, number] = [13.6, 14.0];
 const VIEW = { cx: 600, cy: DASH.y + DASH.h / 2, s: 0.78 };
-const PUSH = { cx: 600, cy: DASH.y + 230, s: 1.15 };
+
+/** Connect: each tool's button is pressed in turn, connects, and the tiles clear for the question. */
+const CONNECT_AT = [0.95, 1.3, 1.65];
+const CONNECTING = 0.3;
+const CONNECT_OUT = 2.45;
+const CONNECT_W = 340;
+
+/*
+ * Share, on the film's clock: Share sits at the dashboard's top right, level with its title. It's
+ * pressed, the share panel invites three teammates and copies the link, then closes, and the
+ * teammates' avatars land beside the button.
+ */
+const SHARE = { right: 53, top: 34, h: 40, panel: 300 };
+const SHARE_AT = 13.3;
+const PRESS_AT = 14.85;
+const PANEL_AT = 15.0;
+const INVITES = [
+  { initial: "M", name: "Maya", tone: "#ba625c", role: "Can edit", at: 15.35 },
+  { initial: "J", name: "Jon", tone: "#6357e0", role: "Can view", at: 15.7 },
+  { initial: "A", name: "Ana", tone: "#d62ee8", role: "Can edit", at: 16.05 },
+];
+const COPY_AT = 16.6;
+const PANEL_OUT = 17.2;
+const JOINED_AT = 17.35;
+const SHARE_CAM = { cx: 640, cy: DASH.y + 150, s: 1.1 };
+/** Connect is framed close, then eases out to the question's framing as the tiles clear. */
+const CONNECT_CAM = 1.3;
 
 const X0 = LIST.x + LIST.w;
 const X1 = SRC.x;
@@ -333,13 +359,7 @@ function DataGraph({ tc, anchors }: { tc: number; anchors: Anchors | null }) {
               ...blurIn(tc, at, 0.5, 0),
             }}
           >
-            <span className={`grid size-[34px] shrink-0 place-items-center rounded-[10px] ${EDGE}`} style={{ background: n.tool.brand.color }}>
-              <BrandMark brand={n.tool.brand} className="size-5 bg-white" />
-            </span>
-            <span className="flex min-w-0 flex-col">
-              <span className="text-[15px] leading-[19px] font-medium tracking-[-0.015em]">{n.tool.brand.name}</span>
-              <span className="font-mono text-[11.5px] leading-[15px] text-[#6e6e73]">{n.tool.meta}</span>
-            </span>
+            <ToolTile need={n} />
           </div>
         );
       })}
@@ -347,26 +367,162 @@ function DataGraph({ tc, anchors }: { tc: number; anchors: Anchors | null }) {
   );
 }
 
-/** Camera: hold on the question, ease in on the graph, then down to the dashboard as it streams, a push for the refresh, and back for the loop. */
+/** Camera: hold on the tools and the question, ease in on the graph, then down to the dashboard as it streams, a push to Share, and back for the loop. */
 const CAMERA: CamKey[] = [
-  [0, 600, 300, 1],
-  [3.4, 600, 300, 1],
-  [7.2, 600, 300, 1.12],
-  [7.6, 600, 300, 1.12],
-  [8.5, VIEW.cx, VIEW.cy, VIEW.s],
-  [10.4, VIEW.cx, VIEW.cy, VIEW.s],
-  [11.2, PUSH.cx, PUSH.cy, PUSH.s],
-  [14.0, PUSH.cx, PUSH.cy, PUSH.s],
-  [14.7, VIEW.cx, VIEW.cy, VIEW.s],
-  [15.3, VIEW.cx, VIEW.cy, VIEW.s],
-  [16.0, 600, 300, 1],
+  [0, 600, 300, CONNECT_CAM],
+  [CONNECT_OUT - 0.1, 600, 300, CONNECT_CAM],
+  [BUILD_FROM, 600, 300, 1],
+  [BUILD_FROM + 3.4, 600, 300, 1],
+  [BUILD_FROM + 7.2, 600, 300, 1.12],
+  [BUILD_FROM + 7.6, 600, 300, 1.12],
+  [BUILD_FROM + 8.5, VIEW.cx, VIEW.cy, VIEW.s],
+  [13.9, VIEW.cx, VIEW.cy, VIEW.s],
+  [14.7, SHARE_CAM.cx, SHARE_CAM.cy, SHARE_CAM.s],
+  [17.7, SHARE_CAM.cx, SHARE_CAM.cy, SHARE_CAM.s],
+  [18.5, VIEW.cx, VIEW.cy, VIEW.s],
+  [19.3, VIEW.cx, VIEW.cy, VIEW.s],
+  [20.0, 600, 300, CONNECT_CAM],
 ];
 
-const CAMERA_NARROW: CamKey[] = CAMERA.map(([t, x, y, s]) => [t, x, y, s === 1.12 ? 0.95 : s === PUSH.s ? 0.88 : s]);
+const CAMERA_NARROW: CamKey[] = CAMERA.map(([t, x, y, s]) => [t, x, y, s === 1.12 ? 0.95 : s === SHARE_CAM.s ? 0.9 : s === CONNECT_CAM ? 1.15 : s]);
 
-/** The dashboard's three captures: as built, refreshing, and with the new numbers. */
-const shotAt = (tc: number) =>
-  `/landing/dashboards/story${tc >= REFRESH_AT ? "-refreshed" : tc >= UPDATING_AT ? "-updating" : ""}-light.png`;
+/** A tool's tile: its mark on its brand colour, its name and what it holds. */
+function ToolTile({ need, className = "" }: { need: NeedSpec; className?: string }) {
+  return (
+    <>
+      <span className={`grid size-[34px] shrink-0 place-items-center rounded-[10px] ${EDGE}`} style={{ background: need.tool.brand.color }}>
+        <BrandMark brand={need.tool.brand} className="size-5 bg-white" />
+      </span>
+      <span className={`flex min-w-0 flex-col ${className}`}>
+        <span className="text-[15px] leading-[19px] font-medium tracking-[-0.015em]">{need.tool.brand.name}</span>
+        <span className="font-mono text-[11.5px] leading-[15px] text-[#6e6e73]">{need.tool.meta}</span>
+      </span>
+    </>
+  );
+}
+
+/** Connect: the three tools, each connected in turn, then cleared away for the question. */
+function Connect({ tc }: { tc: number }) {
+  if (tc >= CONNECT_OUT + 0.6) return null;
+  return NEEDS.map((n, i) => {
+    const at = CONNECT_AT[i];
+    const state = tc < at ? "idle" : tc < at + CONNECTING ? "loading" : "ok";
+    const press = ramp(tc, at - 0.08, at) * (1 - ramp(tc, at + 0.05, at + 0.2));
+    const leave = ramp(tc, CONNECT_OUT + i * 0.06, CONNECT_OUT + i * 0.06 + 0.35);
+    return (
+      <div
+        key={n.id}
+        className={`flex items-center gap-3 rounded-[14px] bg-white pr-3 pl-3 ${EDGE}`}
+        style={{
+          left: 600 - CONNECT_W / 2,
+          top: n.y - SRC.h / 2,
+          width: CONNECT_W,
+          height: SRC.h,
+          ...(leave > 0 ? { opacity: 1 - leave, filter: `blur(${(leave * 6).toFixed(2)}px)` } : blurIn(tc, 0.15 + i * 0.1, 0.5, 8)),
+        }}
+      >
+        <ToolTile need={n} className="flex-1" />
+        <span
+          data-state={state}
+          className={`inline-flex h-8 items-center gap-[7px] rounded-full px-3.5 text-[13px] font-medium whitespace-nowrap transition-[background-color,color,border-color] duration-150 motion-reduce:transition-none data-[state=idle]:bg-[#0a0a0b] data-[state=idle]:text-white data-[state=loading]:bg-white data-[state=ok]:border-[rgb(31_157_85/0.35)] data-[state=ok]:bg-white data-[state=ok]:text-[#1f9d55] ${EDGE}`}
+          style={{ scale: `${1 - press * 0.08}` }}
+        >
+          {state === "ok" ? (
+            <>
+              <Check className="size-3.5 stroke-[2.4]" /> Connected
+            </>
+          ) : state === "loading" ? (
+            <>
+              <Spinner /> Connecting
+            </>
+          ) : (
+            "Connect"
+          )}
+        </span>
+      </div>
+    );
+  });
+}
+
+function Avatar({ initial, tone, className = "" }: { initial: string; tone: string; className?: string }) {
+  return (
+    <span className={`grid shrink-0 place-items-center rounded-full font-semibold text-white ${className}`} style={{ background: tone }}>
+      {initial}
+    </span>
+  );
+}
+
+/**
+ * Share, at the dashboard's top right: pressed, its panel invites three teammates and copies the
+ * link, then closes, and the teammates' avatars land beside the button. Padding follows the
+ * site's buttons: x above, below and on the icon's side, 1.5x on the text's side.
+ */
+function Share({ tc }: { tc: number }) {
+  if (tc < SHARE_AT) return null;
+  const press = ramp(tc, PRESS_AT - 0.08, PRESS_AT) * (1 - ramp(tc, PRESS_AT + 0.05, PRESS_AT + 0.2));
+  const copyPress = ramp(tc, COPY_AT - 0.08, COPY_AT) * (1 - ramp(tc, COPY_AT + 0.05, COPY_AT + 0.2));
+  const close = ramp(tc, PANEL_OUT, PANEL_OUT + 0.35);
+  return (
+    <>
+      <span className="absolute z-2 flex items-center gap-2.5" style={{ right: SHARE.right, top: SHARE.top, height: SHARE.h }}>
+        {tc >= JOINED_AT ? (
+          <span className="flex">
+            {INVITES.map((p, i) => (
+              <span key={p.initial} className="-ml-2 rounded-full ring-2 ring-white first:ml-0" style={blurIn(tc, JOINED_AT + i * 0.1, 0.4, 4)}>
+                <Avatar initial={p.initial} tone={p.tone} className="size-[30px] text-[12.5px]" />
+              </span>
+            ))}
+          </span>
+        ) : null}
+        <span
+          className="inline-flex h-10 items-center gap-2 rounded-[12px] bg-[#0a0a0b] pr-[15px] pl-2.5 text-[15px] leading-5 font-medium tracking-[-0.01em] text-white shadow-[0_1px_2px_rgb(16_24_40/0.12),0_6px_14px_-8px_rgb(16_24_40/0.4)]"
+          style={{ scale: `${1 - press * 0.08}`, ...blurIn(tc, SHARE_AT, 0.45, 6) }}
+        >
+          <UserRoundPlus className="size-[18px]" strokeWidth={2} /> Share
+        </span>
+      </span>
+      {tc >= PANEL_AT && close < 1 ? (
+        <div
+          className={`absolute z-3 origin-top-right rounded-2xl bg-white p-3.5 shadow-[0_2px_4px_rgb(16_24_40/0.06),0_18px_36px_-14px_rgb(16_24_40/0.3)] ${EDGE}`}
+          style={{
+            right: SHARE.right,
+            top: SHARE.top + SHARE.h + 10,
+            width: SHARE.panel,
+            ...(close > 0 ? { opacity: 1 - close, filter: `blur(${(close * 6).toFixed(2)}px)` } : blurIn(tc, PANEL_AT, 0.45, -6)),
+          }}
+        >
+          <span className="block px-1 text-[15px] leading-5 font-medium tracking-[-0.015em]">Share dashboard</span>
+          <span className="mt-2 flex flex-col">
+            {INVITES.map((p) => (
+              <span key={p.initial} className="flex h-11 items-center gap-2.5 px-1" style={tc >= p.at ? blurIn(tc, p.at, 0.4, 4) : { opacity: 0 }}>
+                <Avatar initial={p.initial} tone={p.tone} className="size-7 text-[12px]" />
+                <span className="text-[14px] leading-5 font-medium">{p.name}</span>
+                <span className="ml-auto text-[13px] leading-5 text-[#6e6e73]">{p.role}</span>
+              </span>
+            ))}
+          </span>
+          <span className="mt-2 block border-t border-[#ededf0] pt-3">
+            <span
+              data-copied={tc >= COPY_AT + 0.15 || undefined}
+              className={`flex h-9 items-center justify-center gap-2 rounded-[10px] text-[14px] font-medium transition-[color,border-color] duration-300 data-copied:border-[rgb(31_157_85/0.35)] data-copied:text-[#1f9d55] motion-reduce:transition-none ${EDGE}`}
+              style={{ scale: `${1 - copyPress * 0.04}` }}
+            >
+              {tc >= COPY_AT + 0.15 ? (
+                <>
+                  <Check className="size-4 stroke-[2.4]" /> Link copied
+                </>
+              ) : (
+                <>
+                  <Link2 className="size-4" /> Copy link
+                </>
+              )}
+            </span>
+          </span>
+        </div>
+      ) : null}
+    </>
+  );
+}
 
 /**
  * The film, drawn in a 1200×600 world that scales with its stage like an
@@ -375,9 +531,11 @@ const shotAt = (tc: number) =>
 export function StoryFilm({ T }: { T: number }) {
   const [anchors, setAnchors] = useState<Anchors | null>(null);
   const tc = T >= RESET ? 0 : T;
+  // The build's scenes keep their own timing, starting once the tools are connected.
+  const tb = tc - BUILD_FROM;
   const cam = camAt(useNarrow() ? CAMERA_NARROW : CAMERA, T);
   // The loop whips back to the start through a short blur.
-  const whip = ramp(T, 15.3, 16);
+  const whip = ramp(T, 19.3, 20);
   const blur = Math.sin(Math.PI * whip) * 8;
 
   return (
@@ -392,84 +550,32 @@ export function StoryFilm({ T }: { T: number }) {
           } as CSSProperties
         }
       >
-        {tc < 9 ? (
+        <Connect tc={tc} />
+        {tb >= 0 && tb < 9 ? (
           <>
-            <Query tc={tc} anchors={anchors} onMeasure={setAnchors} />
-            <DataGraph tc={tc} anchors={anchors} />
+            <Query tc={tb} anchors={anchors} onMeasure={setAnchors} />
+            <DataGraph tc={tb} anchors={anchors} />
           </>
         ) : null}
-        {tc >= BUILD_AT ? (
+        {tb >= BUILD_AT ? (
           <div style={{ left: DASH.x, top: DASH.y, width: DASH.w, height: DASH.h }}>
             <div className={`absolute inset-0 overflow-hidden rounded-[20px] bg-white ${EDGE}`}>
-              {/* Rendered once with the OpenUI Dashboards UI library: it rises in at the build, and the refresh lands newer numbers in place. */}
+              {/* Rendered once with the OpenUI Dashboards UI library: it rises in at the build. */}
               <Image
-                src={shotAt(tc)}
+                src="/landing/dashboards/story-light.png"
                 alt=""
                 width={2000}
                 height={1616}
                 sizes="1000px"
                 className="block h-auto w-full"
-                style={blurIn(tc, BUILD_AT, 0.6, 14)}
+                style={blurIn(tb, BUILD_AT, 0.6, 14)}
               />
-              {/* While the data refetches, a highlight sweeps across the dashboard on the film's clock, about once a second. */}
-              {tc >= UPDATING_AT && tc < REFRESH_AT + 0.3 ? (
-                <span
-                  className="pointer-events-none absolute inset-0 z-1 bg-[linear-gradient(105deg,transparent_35%,rgb(255_255_255/0.7)_50%,transparent_65%)] bg-size-[250%_100%] bg-no-repeat"
-                  style={{
-                    backgroundPosition: `${(130 - (((tc - UPDATING_AT) % 1.1) / 1.1) * 160).toFixed(1)}% 0`,
-                    opacity: ramp(tc, UPDATING_AT, UPDATING_AT + 0.3) * (1 - ramp(tc, REFRESH_AT, REFRESH_AT + 0.3)),
-                  }}
-                />
-              ) : null}
-              {tc >= UPDATING_AT && tc < NOTCH_OUT[1] ? <Notch tc={tc} /> : null}
             </div>
+            {/* Outside the dashboard's clip, so the share panel can hang below its edge if it needs to. */}
+            <Share tc={tc} />
           </div>
         ) : null}
       </div>
-      {/* The later captures, loaded early so each swap is instant. */}
-      {["updating", "refreshed"].map((state) => (
-        <Image key={state} src={`/landing/dashboards/story-${state}-light.png`} alt="" width={2000} height={1616} sizes="1000px" loading="eager" className="hidden" />
-      ))}
     </div>
-  );
-}
-
-/**
- * "Updating data…", then "Up to date": a solid tab hanging from a line along
- * the dashboard's top edge, blue while it works and green once it's done. It
- * drops in, confirms, and lifts away.
- */
-function Notch({ tc }: { tc: number }) {
-  const done = tc >= REFRESH_AT;
-  const fade = ramp(tc, NOTCH_OUT[0], NOTCH_OUT[1]);
-  return (
-    <>
-      <span
-        data-done={done || undefined}
-        className="absolute inset-x-0 top-0 z-2 h-0.5 bg-[#4b4bf7] data-done:bg-[#1f9d55]"
-        style={{ opacity: ramp(tc, UPDATING_AT, UPDATING_AT + 0.35) * (1 - fade) }}
-      />
-      <span
-        data-done={done || undefined}
-        className="absolute top-0 left-1/2 isolate z-2 box-border inline-flex h-[26px] w-[168px] items-center justify-center text-[13px] font-medium whitespace-nowrap text-white [--tone:#4b4bf7] before:absolute before:inset-0 before:-z-1 before:origin-top before:rounded-b-[9px] before:bg-(--tone) before:[transform:perspective(36px)_rotateX(-10deg)] data-done:[--tone:#1f9d55]"
-        style={
-          tc >= NOTCH_OUT[0]
-            ? { opacity: 1 - fade, translate: `-50% ${(-fade * 100).toFixed(1)}%` }
-            : { translate: `-50% ${((ramp(tc, UPDATING_AT, UPDATING_AT + 0.35) - 1) * 100).toFixed(1)}%` }
-        }
-      >
-        <span className="inline-flex -translate-y-px items-center gap-[7px]">
-          {done ? (
-            <>
-              <Check className="size-[13px] stroke-[2.75]" /> Up to date
-            </>
-          ) : (
-            <>
-              <i className="size-[11px] animate-spin rounded-full border-[1.75px] border-white/35 border-t-white [animation-duration:0.8s]" /> Updating data…
-            </>
-          )}
-        </span>
-      </span>
-    </>
   );
 }
