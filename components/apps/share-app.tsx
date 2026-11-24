@@ -21,6 +21,8 @@ import { appPath } from "@/lib/apps/paths";
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
 import type { AppTeamAccess } from "@/lib/db/schema";
 
+import { useBuildRunning } from "./app-workspace";
+
 type App = { id: string; name: string; teamAccess: AppTeamAccess };
 /** A member of the workspace other than the app's owner, and what the app gave them by name, if anything. */
 type Teammate = { id: string; email: string; viewer: boolean; access: "view" | "edit" | null };
@@ -64,8 +66,9 @@ export function ShareApp({
   const shareButton = useRef<HTMLButtonElement>(null);
   const added = teammates.filter((teammate) => teammate.access);
   const unshared = app.teamAccess === "private" && !guests.length && !added.length;
-  // Nothing to suggest once it's shared.
-  const showNudge = nudge.pending && !open && unshared;
+  // Nothing to suggest once it's shared, nor while a Build turn runs: its new dashboard may still be building.
+  const building = useBuildRunning();
+  const showNudge = nudge.pending && !open && unshared && !building;
   const nudgeAt = useBelow(shareButton, showNudge);
 
   function openDialog(next: boolean) {

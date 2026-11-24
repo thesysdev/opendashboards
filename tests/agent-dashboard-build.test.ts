@@ -1,4 +1,3 @@
-import { EventType, type BaseEvent } from "@ag-ui/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 /** Stands in for OpenUI Cloud's streamed build: the messages it yields, in order. */
@@ -28,7 +27,6 @@ vi.mock("@/lib/dashboards", () => ({
 vi.mock("@/lib/analytics", () => ({ track: vi.fn() }));
 
 const { agentTools } = await import("@/lib/agent");
-const { createAgUiTranslator } = await import("@/lib/agent/ag-ui");
 
 const input = JSON.stringify({ title: "Orders", description: "Orders by day.", prompt: "Orders by day from pg." });
 
@@ -43,7 +41,7 @@ async function runCreate(toolCallIds = ["call_1"]) {
     groupIds: [],
     signal: new AbortController().signal,
     dashboards: [] as string[],
-    sendToolResult: (toolCallId: string, content: string) => sent.push([toolCallId, content]),
+    onDashboardStarted: ({ toolCallId, response }: { toolCallId: string; response: string }) => sent.push([toolCallId, response]),
   };
   const runner = {
     messages: [
@@ -69,7 +67,7 @@ beforeEach(() => {
 });
 
 describe("create_dashboard, streamed", () => {
-  it("sends the first message to the chat at once and returns the last", async () => {
+  it("tells the chat as soon as the dashboard has an id, and returns the last message", async () => {
     messages = ["Started Orders. id=art_1", "Created Orders. id=art_1"];
     const { run, sent, turn } = await runCreate();
     await expect(run()).resolves.toBe("Created Orders. id=art_1");
@@ -99,18 +97,5 @@ describe("create_dashboard, streamed", () => {
     await run();
     await run();
     expect(sent.map(([id]) => id)).toEqual(["call_1", "call_2"]);
-  });
-});
-
-describe("the AG-UI translator", () => {
-  it("sends an early result and the loop's own for the same call", () => {
-    const events: BaseEvent[] = [];
-    const translate = createAgUiTranslator((event) => events.push(event));
-    translate.result("call_1", "Started");
-    translate.message({ role: "tool", tool_call_id: "call_1", content: "Created" });
-    expect(events.map((event) => [event.type, (event as unknown as { toolCallId: string }).toolCallId])).toEqual([
-      [EventType.TOOL_CALL_RESULT, "call_1"],
-      [EventType.TOOL_CALL_RESULT, "call_1"],
-    ]);
   });
 });

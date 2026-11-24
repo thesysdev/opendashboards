@@ -27,11 +27,13 @@ import {
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { parseMessage } from "@openuidev/lang-core";
+import { EventType, type StreamProtocolAdapter } from "@openuidev/react-headless";
 import remarkGfm from "remark-gfm";
 
 import "@openuidev/react-ui/styles/index.css";
 
 import { takePendingPromptAction } from "@/app/(app)/apps/actions";
+import { DASHBOARD_STARTED, type DashboardStarted } from "@/lib/agent/events";
 import { VIEWING_DASHBOARD } from "@/lib/agent/messages";
 import { Button } from "@/components/ui/button";
 import {
@@ -44,7 +46,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/apps/paths";
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
-import { usePublishDashboardResponse, useSetCreatingDashboard } from "./app-workspace";
+import { usePublishDashboardResponse, useSetBuildRunning, useSetCreatingDashboard } from "./app-workspace";
 import { scopeStorageToApp } from "@/lib/apps/thread-storage";
 import { cn } from "@/lib/utils";
 
@@ -105,11 +107,15 @@ export function BuildChat({
     viewing.current = viewingId;
   }, [viewingId]);
 
+  // Who hears that a dashboard started building, from the chat route's own event: TurnEffects.
+  const [startedListeners] = useState(() => new Set<(started: DashboardStarted) => void>());
+
   // fetchLLM's request, plus AG-UI `context` naming the dashboard on screen
-  // (fetchLLM always sends an empty context). Same adapter and message format.
+  // (fetchLLM always sends an empty context). Same adapter and message format,
+  // with the route's dashboard events taken out of the stream on the way.
   const llm = useMemo<ChatLLM>(
     () => ({
-      streamProtocol: agUIAdapter(),
+      streamProtocol: withDashboardEvents(agUIAdapter(), startedListeners),
       send: ({ threadId, messages, signal }) =>
         fetch(`/api/apps/${encodeURIComponent(appId)}/chat`, {
           method: "POST",
@@ -124,7 +130,7 @@ export function BuildChat({
           signal,
         }),
     }),
-    [appId],
+    [appId, startedListeners],
   );
 
   return (
@@ -141,7 +147,12 @@ export function BuildChat({
           <ThreadMessages hasDashboards={dashboards.length > 0} />
           <Composer />
         </div>
-        <TurnEffects appId={appId} dashboards={dashboards} hasPendingPrompt={hasPendingPrompt} />
+        <TurnEffects
+          appId={appId}
+          dashboards={dashboards}
+          hasPendingPrompt={hasPendingPrompt}
+          startedListeners={startedListeners}
+        />
         {/* A new app's first prompt starts its own conversation: nothing to reopen. */}
         {!startedWithPrompt && <ReopenLastThread appId={appId} startedThread={startedThread} />}
       </ChatProvider>
@@ -475,10 +486,13 @@ function TurnEffects({
   appId,
   dashboards,
   hasPendingPrompt,
+  startedListeners,
 }: {
   appId: string;
   dashboards: Dashboard[];
   hasPendingPrompt: boolean;
+  /** Where the chat's stream hands a dashboard that started building. */
+  startedListeners: Set<(started: DashboardStarted) => void>;
 }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -503,10 +517,28 @@ function TurnEffects({
   const messages = useThread((s) => s.messages);
   const publish = usePublishDashboardResponse();
   const setCreating = useSetCreatingDashboard();
-  // Each tool message's content as last handled: a dashboard's first response
-  // (it started building) is replaced in place by its last (saved or failed).
-  const handled = useRef(new Map<string, string>());
+  const handled = useRef(new Set<string>());
   const opening = useRef<string | null>(null);
+  // Create and edit calls whose dashboard has started building: it's open (a new one
+  // has its page), though the call runs on until the build is saved or fails.
+  const started = useRef(new Set<string>());
+  useEffect(() => {
+    const onStarted = ({ toolCallId, tool, response }: DashboardStarted) => {
+      started.current.add(toolCallId);
+      const artifactId = artifactIdOf(response);
+      if (!artifactId) return;
+      publish(artifactId, response);
+      if (tool === "create_dashboard") {
+        opening.current = artifactId;
+        setCreating((current) => ({ at: current?.at ?? pathname, response }));
+        router.refresh(); // The server has recorded it; the sidebar picks it up.
+      }
+    };
+    startedListeners.add(onStarted);
+    return () => {
+      startedListeners.delete(onStarted);
+    };
+  }, [startedListeners, pathname, publish, router, setCreating]);
   useEffect(() => {
     if (!isRunning) return;
     // Only this turn's messages, after the message that started it. The thread's
@@ -523,31 +555,34 @@ function TurnEffects({
     for (const message of turn) {
       if (message.role !== "tool") continue;
       answered.add(message.toolCallId);
-      if (handled.current.get(message.id) === message.content) continue;
-      const first = !handled.current.has(message.id);
-      handled.current.set(message.id, message.content);
+      if (handled.current.has(message.id)) continue;
+      handled.current.add(message.id);
       const tool = toolNames.get(message.toolCallId);
       if (tool !== "create_dashboard" && tool !== "edit_dashboard") continue;
       const artifactId = artifactIdOf(message.content);
+      // Started earlier: it's open already, and the last response only updates it.
+      const wasStarted = started.current.has(message.toolCallId);
       if (!artifactId) {
-        // It failed before it had an id: nothing to show. After, the dashboard is already open.
-        if (tool === "create_dashboard" && first) setCreating(null);
+        if (tool === "create_dashboard" && !wasStarted) setCreating(null); // It failed: nothing to show.
         continue;
       }
       publish(artifactId, message.content);
-      if (tool === "create_dashboard" && first) {
+      if (tool === "create_dashboard" && !wasStarted) {
         opening.current = artifactId;
         setCreating((current) => ({ at: current?.at ?? pathname, response: message.content }));
         router.refresh(); // The server has recorded it; the sidebar picks it up.
       }
     }
     // A create call in this turn that the model is still writing, or that's still
-    // running: pending on the page it started from. A second one replaces a first
-    // that's answered. Earlier turns don't count: a stopped one never gets an answer.
+    // running with no dashboard yet: pending on the page it started from. A second
+    // one replaces a first that's started. Earlier turns don't count: a stopped one
+    // never gets an answer.
     const waiting = turn.some(
       (message) =>
         message.role === "assistant" &&
-        (message.toolCalls ?? []).some((call) => call.function.name === "create_dashboard" && !answered.has(call.id)),
+        (message.toolCalls ?? []).some(
+          (call) => call.function.name === "create_dashboard" && !answered.has(call.id) && !started.current.has(call.id),
+        ),
     );
     if (waiting) setCreating((current) => (current && !current.response ? current : { at: pathname }));
   }, [isRunning, messages, pathname, publish, router, setCreating]);
@@ -565,6 +600,13 @@ function TurnEffects({
     if (parseAppPath(pathname).dashboardId !== created.id) router.push(dashboardPath(orgId, appId, created.id));
   }, [appId, orgId, dashboards, pathname, router]);
 
+  // The workspace knows when a turn runs: a dashboard it creates may still be building.
+  const setBuildRunning = useSetBuildRunning();
+  useEffect(() => {
+    setBuildRunning(isRunning);
+    return () => setBuildRunning(false);
+  }, [isRunning, setBuildRunning]);
+
   // When a turn ends, pick up titles and deletions.
   const wasRunning = useRef(false);
   useEffect(() => {
@@ -573,4 +615,26 @@ function TurnEffects({
   }, [isRunning, router]);
 
   return null;
+}
+
+/**
+ * The chat's stream with the route's dashboard events taken out: each goes to
+ * the listeners, and everything else on to the chat as before.
+ */
+function withDashboardEvents(
+  adapter: StreamProtocolAdapter,
+  listeners: Set<(started: DashboardStarted) => void>,
+): StreamProtocolAdapter {
+  return {
+    async *parse(response) {
+      for await (const event of adapter.parse(response)) {
+        const custom = event as { type: string; name?: string; value?: unknown };
+        if (custom.type === EventType.CUSTOM && custom.name === DASHBOARD_STARTED) {
+          for (const listener of listeners) listener(custom.value as DashboardStarted);
+          continue;
+        }
+        yield event;
+      }
+    },
+  };
 }

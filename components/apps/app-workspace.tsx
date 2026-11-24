@@ -20,6 +20,24 @@ type Dashboard = { id: string; title: string };
 
 const BuildPanelContext = createContext<{ open: boolean; setOpen: (open: boolean) => void } | null>(null);
 
+/** Whether a Build turn is running, and the Build chat's way to say so. */
+const BuildRunningContext = createContext<{ running: boolean; setRunning: (running: boolean) => void } | null>(null);
+
+/**
+ * Whether a Build turn is running: a dashboard it creates may still be building.
+ * False outside an app's workspace.
+ */
+export function useBuildRunning(): boolean {
+  return use(BuildRunningContext)?.running ?? false;
+}
+
+/** For the Build chat: says when a turn starts and ends. */
+export function useSetBuildRunning() {
+  const context = use(BuildRunningContext);
+  if (!context) throw new Error("useSetBuildRunning must be used inside AppWorkspace");
+  return context.setRunning;
+}
+
 /**
  * A dashboard the Build chat is creating, shown in place of the page it started
  * on (`at`) until the app opens it: pending while the call runs, then streaming
@@ -177,6 +195,8 @@ export function AppWorkspace({
     else openButtonRef.current?.focus();
   }, [open]);
   const buildPanel = useMemo(() => ({ open, setOpen }), [open, setOpen]);
+  const [buildRunning, setBuildRunning] = useState(false);
+  const buildRunningValue = useMemo(() => ({ running: buildRunning, setRunning: setBuildRunning }), [buildRunning]);
   const [responses, setResponses] = useState<Record<string, string>>({});
   const publish = useCallback(
     (artifactId: string, response: string) =>
@@ -200,6 +220,7 @@ export function AppWorkspace({
     <OpenUICloudProvider token={frontendTokenPath(appId)}>
     <DashboardResponsesContext value={dashboardResponses}>
     <BuildPanelContext value={buildPanel}>
+    <BuildRunningContext value={buildRunningValue}>
     <RenameAppContext value={startRename}>
       {/* The Build panel runs the full height beside the dashboard column, header included. */}
       <div className="relative flex h-full min-h-0">
@@ -271,6 +292,7 @@ export function AppWorkspace({
         </aside>
       </div>
     </RenameAppContext>
+    </BuildRunningContext>
     </BuildPanelContext>
     </DashboardResponsesContext>
     </OpenUICloudProvider>
