@@ -2,6 +2,8 @@
 export const LINKS = {
   github: "https://github.com/thesysdev/opendashboards",
   app: "/apps",
+  /* The Billing section of the workspace you were last in: where paid plans are bought. */
+  billing: "/billing",
   dashboards: "https://www.openui.com/dashboards",
   openui: "https://www.openui.com",
   /* Where you create a Thesys API key and set up the OpenUI Dashboards API. */

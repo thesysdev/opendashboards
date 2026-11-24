@@ -346,7 +346,7 @@ describe("deleting a workspace", () => {
       })
       .returning();
     const [app] = await db.insert(apps).values({ userId: bob.id, orgId, name: "Bob's app" }).returning();
-    await db.insert(appConnections).values({ appId: app.id, connectionId: connection.id });
+    await db.insert(appConnections).values({ appId: app.id, connectionId: connection.id, createdBy: "seed" });
     await db.insert(dashboards).values({ appId: app.id, userId: bob.id, artifactId: "art_bob", title: "Signups", position: 0 });
     return orgId;
   }

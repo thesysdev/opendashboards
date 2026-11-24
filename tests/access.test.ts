@@ -727,7 +727,7 @@ describe("guests of an app", () => {
     const eds = await signedIn("ed");
     expect(await appsService.addConnection("ed", { appId, connectionId: eds })).toMatchObject({ ok: false, error: { code: "guests_cant_sign_in" } });
     // Even if it were already there: a guest never queries through it, and is told why.
-    await db.insert(appConnections).values({ appId, connectionId: eds });
+    await db.insert(appConnections).values({ appId, connectionId: eds, createdBy: "seed" });
     expect(await connections.open("gina", eds, "mcp", { orgId: acme, appId })).toBeNull();
     expect(await connections.whyClosed("gina", eds, { appId })).toMatchObject({ code: "guest" });
   });

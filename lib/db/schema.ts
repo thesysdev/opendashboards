@@ -1,5 +1,6 @@
 import { sql } from "drizzle-orm";
 import {
+  boolean,
   check,
   index,
   integer,
@@ -230,6 +231,12 @@ export const appConnections = pgTable(
     connectionId: uuid("connection_id")
       .notNull()
       .references(() => dataConnections.id, { onDelete: "restrict" }),
+    /**
+     * Who added it to the app: picking it, or the Build agent querying it for
+     * them. Nullable only for rows a deployment from before this column writes
+     * while this one rolls out; the migration filled in the rest.
+     */
+    createdBy: text("created_by"),
     firstUsedAt: timestamp("first_used_at", { withTimezone: true }).notNull().defaultNow(),
   },
   (table) => [
@@ -352,6 +359,45 @@ export const mcpOAuthSignIns = pgTable(
   },
   (table) => [index("mcp_oauth_sign_ins_user_id_idx").on(table.userId)],
 );
+
+/**
+ * A workspace's Stripe subscription, as Stripe last told us. No row: the free
+ * plan. Read and written only by lib/billing, from webhooks and from Stripe
+ * itself, never from the browser.
+ */
+export const orgBilling = pgTable(
+  "org_billing",
+  {
+    orgId: uuid("org_id")
+      .primaryKey()
+      .references(() => orgs.id, { onDelete: "cascade" }),
+    stripeCustomerId: text("stripe_customer_id").notNull(),
+    /** Null until a subscription starts, and after one ends. */
+    stripeSubscriptionId: text("stripe_subscription_id"),
+    /** The plan id in config's catalog. Null without a live subscription. */
+    plan: text("plan"),
+    interval: text("interval").$type<"month" | "year">(),
+    /** Stripe's subscription status: active, trialing, past_due, canceled, … */
+    status: text("status"),
+    /** Seats bought: the subscription's quantity. */
+    seats: integer("seats").notNull().default(1),
+    currentPeriodEnd: timestamp("current_period_end", { withTimezone: true }),
+    cancelAtPeriodEnd: boolean("cancel_at_period_end").notNull().default(false),
+    /** Who first went to checkout for it. */
+    createdBy: text("created_by").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [uniqueIndex("org_billing_customer_idx").on(table.stripeCustomerId)],
+);
+
+/** Stripe webhook events already handled, so a retried one is handled once. */
+export const stripeEvents = pgTable("stripe_events", {
+  id: text("id").primaryKey(),
+  type: text("type").notNull(),
+  createdBy: text("created_by").notNull().default("stripe"),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+});
 
 export type DataConnectionRow = typeof dataConnections.$inferSelect;
 export type ConnectionSignInRow = typeof connectionSignIns.$inferSelect;

@@ -21,8 +21,8 @@ export type Plan = {
   featured?: boolean;
 };
 
-/* Paid plans aren't self-serve yet, so they go to a call with the team. */
-const TALK_TO_US = { label: "Talk to us", href: LINKS.sales, external: true };
+/* Paid plans are bought in the workspace's Billing section, after signing in. */
+const billing = (label: string) => ({ label, href: LINKS.billing, external: false });
 
 export const PLANS: Plan[] = [
   {
@@ -44,7 +44,7 @@ export const PLANS: Plan[] = [
     unit: "plan",
     includes: "Free",
     highlights: ["10 data connections", "25 apps", "More AI usage"],
-    cta: TALK_TO_US,
+    cta: billing("Get Standard"),
   },
   {
     id: "team",
@@ -63,7 +63,7 @@ export const PLANS: Plan[] = [
       "Shared connections",
       "Roles and general access",
     ],
-    cta: TALK_TO_US,
+    cta: billing("Get Team"),
     featured: true,
   },
   {

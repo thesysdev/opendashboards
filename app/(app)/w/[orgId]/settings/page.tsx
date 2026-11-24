@@ -3,12 +3,14 @@ import { notFound } from "next/navigation";
 import { Suspense } from "react";
 
 import { PageHeader, SectionLabel } from "@/components/page-header";
+import { BillingSection, type BillingView } from "@/components/settings/billing";
 import { DangerZone, GuestRow, InviteForm, MemberRow, PendingInviteRow, WorkspaceNameForm } from "@/components/settings/workspace";
 import { Skeleton } from "@/components/ui/skeleton";
 import { getAppService } from "@/lib/apps";
 import { getOrgService, requireMemberOf } from "@/lib/orgs";
 import { asWorkspace } from "@/lib/orgs/access";
 import { can } from "@/lib/orgs/policy";
+import { getPlans } from "@/lib/plans";
 
 export const metadata: Metadata = { title: "Workspace settings" };
 
@@ -36,6 +38,7 @@ async function WorkspaceSettings({ params }: { params: Params }) {
   const admins = org.members.filter((entry) => entry.role === "admin").length;
   // A guest from before they joined: marked, since removing them from the workspace ends it.
   const memberEmails = new Set(org.members.flatMap((entry) => (entry.email ? [entry.email] : [])));
+  const billing = await billingView(org.id, can("billing", "update", workspace));
   return (
     <>
       <PageHeader
@@ -54,6 +57,13 @@ async function WorkspaceSettings({ params }: { params: Params }) {
           </div>
         )}
       </section>
+
+      {billing && (
+        <section id="billing" aria-labelledby="billing-title" className="mb-10 scroll-mt-6">
+          <SectionLabel id="billing-title">Billing</SectionLabel>
+          <BillingSection view={billing} />
+        </section>
+      )}
 
       <section aria-labelledby="members">
         <SectionLabel id="members">Members</SectionLabel>
@@ -128,6 +138,20 @@ async function WorkspaceSettings({ params }: { params: Params }) {
       </section>
     </>
   );
+}
+
+/** The Billing section's data, or null when billing is off (self-hosted, local). */
+async function billingView(orgId: string, canManage: boolean): Promise<BillingView | null> {
+  const plans = getPlans();
+  if (!plans) return null;
+  const overview = await plans.overview(orgId);
+  const { subscription } = overview;
+  return {
+    orgId,
+    ...overview,
+    subscription: subscription && { ...subscription, currentPeriodEnd: subscription.currentPeriodEnd?.toISOString() ?? null },
+    canManage,
+  };
 }
 
 function SettingsSkeleton() {

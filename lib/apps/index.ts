@@ -4,6 +4,7 @@ import { cache } from "react";
 
 import { track } from "@/lib/analytics";
 import { getDb } from "@/lib/db";
+import { getGate } from "@/lib/plans";
 
 import { createAppService, type AppService } from "./service";
 import { createThreadService, type ThreadService } from "./threads";
@@ -16,7 +17,7 @@ let appService: AppService | undefined;
 let threadService: ThreadService | undefined;
 
 export function getAppService(): AppService {
-  appService ??= createAppService({ db: getDb() });
+  appService ??= createAppService({ db: getDb(), gate: getGate() });
   return appService;
 }
 

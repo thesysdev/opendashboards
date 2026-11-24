@@ -23,6 +23,7 @@ import { logError } from "@/lib/log";
 import { accessFor, appAccess, appFacts, appsOpenTo, asApp, roleIn, workspaceFacts, type AppAccess, type Scope } from "@/lib/orgs/access";
 import { can, decide, refusal, type AppFacts, type ConnectionFacts, type ConnectionKind } from "@/lib/orgs/policy";
 import { connectionKind, isSignIn } from "@/lib/connections/kind";
+import { OPEN_GATE, type Gate } from "@/lib/entitlements";
 
 import { fail, fromValidation, internalError, notFound, ok, type AppResult } from "./errors";
 import {
@@ -138,7 +139,7 @@ export type AppDetail = {
  * Who may see or change it is decided by lib/orgs/access, from the database:
  * an app the caller can't open looks exactly like a missing one.
  */
-export function createAppService({ db, now = () => new Date() }: { db: Database; now?: () => Date }) {
+export function createAppService({ db, now = () => new Date(), gate = OPEN_GATE }: { db: Database; now?: () => Date; gate?: Gate }) {
   async function guard<T>(operation: string, fn: () => Promise<AppResult<T>>): Promise<AppResult<T>> {
     try {
       return await fn();
@@ -389,19 +390,27 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
           .select({ name: apps.name })
           .from(apps)
           .where(and(eq(apps.orgId, scope.orgId), eq(apps.userId, scope.userId)));
-        const [app] = await db
-          .insert(apps)
-          .values({
-            userId: scope.userId,
-            orgId: scope.orgId,
-            name: appName(sources, taken.map((row) => row.name)),
-            pendingPrompt: prompt,
-            pendingConnectionIds: connectionIds,
-          })
-          .returning({ id: apps.id });
-        // The sources picked for it are the app's from the start: they show on it, and the agent is told about them.
-        await db.insert(appConnections).values(connectionIds.map((connectionId) => ({ appId: app.id, connectionId }))).onConflictDoNothing();
-        return ok({ id: app.id });
+        return db.transaction(async (tx) => {
+          // Checked in the same transaction as the insert, so two can't pass at the plan's limit.
+          const refused = await gate(tx, scope.orgId, "createApp");
+          if (refused) return fail(refused);
+          const [app] = await tx
+            .insert(apps)
+            .values({
+              userId: scope.userId,
+              orgId: scope.orgId,
+              name: appName(sources, taken.map((row) => row.name)),
+              pendingPrompt: prompt,
+              pendingConnectionIds: connectionIds,
+            })
+            .returning({ id: apps.id });
+          // The sources picked for it are the app's from the start: they show on it, and the agent is told about them.
+          await tx
+            .insert(appConnections)
+            .values(connectionIds.map((connectionId) => ({ appId: app.id, connectionId, createdBy: scope.userId })))
+            .onConflictDoNothing();
+          return ok({ id: app.id });
+        });
       });
     },
 
@@ -409,8 +418,11 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
       return guard("rename", async () => {
         const parsed = renameAppSchema.safeParse(input);
         if (!parsed.success) return fromValidation(parsed.error);
-        const renaming = decide("app", "update", (await appFacts(db, userId, parsed.data.id))?.facts ?? null);
+        const app = await appFacts(db, userId, parsed.data.id);
+        const renaming = decide("app", "update", app?.facts ?? null);
         if (!renaming.allowed) return refusal(renaming);
+        const refused = await gate(db, app!.orgId, "renameApp");
+        if (refused) return fail(refused);
         const updated = await db
           .update(apps)
           .set({ name: parsed.data.name, updatedAt: now() })
@@ -694,9 +706,13 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
     },
 
     /** Adds a connection the caller can query to an app, so it shows there and the agent uses it. */
-    addConnection(userId: string, input: unknown): Promise<AppResult> {
+    async addConnection(userId: string, input: unknown): Promise<AppResult> {
       const parsed = addAppConnectionSchema.safeParse(input);
-      if (!parsed.success) return Promise.resolve(notFound());
+      if (!parsed.success) return notFound();
+      const app = await appFacts(db, userId, parsed.data.appId);
+      if (!app) return notFound();
+      const refused = await gate(db, app.orgId, "addAppConnection");
+      if (refused) return fail(refused);
       return service.recordConnectionUse(userId, parsed.data.appId, parsed.data.connectionId);
     },
 
@@ -739,7 +755,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
           }
         }
 
-        await db.insert(appConnections).values({ appId, connectionId }).onConflictDoNothing();
+        await db.insert(appConnections).values({ appId, connectionId, createdBy: userId }).onConflictDoNothing();
         return ok(undefined);
       });
     },

@@ -13,6 +13,9 @@ import { workspacePath } from "@/lib/apps/paths";
 import { getOrgService, LAST_ORG_COOKIE, requireKnownUser } from "@/lib/orgs";
 import { roleIn } from "@/lib/orgs/access";
 import { fail, type OrgResult } from "@/lib/orgs/errors";
+import { logError } from "@/lib/log";
+import { getPlans } from "@/lib/plans";
+import { z } from "zod";
 
 /*
  * Public POST endpoints like every Server Action: each authenticates itself,
@@ -44,9 +47,17 @@ export async function rememberWorkspaceAction(orgId: unknown): Promise<void> {
   if (typeof orgId === "string" && (await roleIn(getDb(), user.id, orgId))) await rememberOrg(orgId);
 }
 
-/** Creates a workspace. The caller opens it at its address. */
+/**
+ * Creates a workspace. The caller opens it at its address. Each person gets
+ * one Free workspace: someone who already created one is told a new one
+ * starts on a paid plan (`plan_limit`), and pays with `checkoutWorkspaceAction`.
+ */
 export async function createOrgAction(input: unknown): Promise<OrgResult<{ id: string }>> {
   const user = await requireKnownUser();
+  const plans = getPlans();
+  if (plans && !(await plans.mayCreateFree(user.id))) {
+    return fail({ code: "plan_limit", message: "You already have a Free workspace, so a new one starts on a paid plan." });
+  }
   const result = await getOrgService().create(user, input);
   if (!result.ok) return result;
   await rememberOrg(result.data.id);
@@ -69,6 +80,36 @@ export async function createFirstWorkspaceAction(): Promise<OrgResult<never>> {
   track(user.id, "workspace_created", { org_id: result.data.id, first: true }, result.data.id);
   revalidateShell();
   redirect(workspacePath(result.data.id));
+}
+
+const paidWorkspaceSchema = z.object({
+  name: z.string().trim().min(1, "Enter a name.").max(60, "Keep the name under 60 characters."),
+  planId: z.string().min(1).max(40),
+  interval: z.enum(["month", "year"]),
+});
+
+/** The plans a new workspace can be bought on, cheapest first. None when billing is off. */
+export async function paidPlansAction(): Promise<{ id: string; name: string }[]> {
+  await requireKnownUser();
+  const settings = config().plans;
+  if (!settings) return [];
+  return Object.entries(settings.catalog).flatMap(([id, plan]) => (plan.stripe ? [{ id, name: plan.name }] : []));
+}
+
+/** Stripe Checkout for a new workspace on a paid plan. It's created once the checkout is paid. */
+export async function checkoutWorkspaceAction(input: unknown): Promise<OrgResult<{ url: string }>> {
+  const user = await requireKnownUser();
+  const plans = getPlans();
+  const parsed = paidWorkspaceSchema.safeParse(input);
+  if (!plans) return fail({ code: "not_found", message: "Billing isn't available." });
+  if (!parsed.success) return fail({ code: "validation", field: "name", message: parsed.error.issues[0]?.message ?? "Check the form." });
+  try {
+    const started = await plans.checkoutNewWorkspace({ userId: user.id, ...parsed.data, cancelPath: "/apps" });
+    return started.ok ? { ok: true, data: { url: started.url } } : fail({ code: "validation", message: started.message });
+  } catch (error) {
+    logError("billing.newWorkspace", error);
+    return fail({ code: "internal", message: "Stripe couldn't be reached. Try again." });
+  }
 }
 
 export async function renameOrgAction(input: unknown): Promise<OrgResult> {
@@ -167,6 +208,17 @@ export async function deleteOrgAction(input: unknown): Promise<OrgResult<never>>
   const orgs = getOrgService();
   const plan = await orgs.dashboardsToDelete(user.id, input);
   if (!plan.ok) return plan;
+  // A paid plan ends now: there'll be nothing left to bill.
+  const billing = getPlans()?.billing;
+  const orgId = orgOf(input);
+  if (billing && orgId) {
+    try {
+      await billing.cancelNow(orgId);
+    } catch (error) {
+      logError("billing.cancelOnDelete", error);
+      return fail({ code: "internal", message: "Stripe couldn't cancel the workspace's plan. Nothing was deleted. Try again." });
+    }
+  }
   if (!(await deleteDashboardsInCloud(plan.data.artifactIds))) {
     return fail({ code: "internal", message: "OpenUI Cloud couldn't delete some of the workspace's dashboards. Nothing else was deleted. Try again." });
   }

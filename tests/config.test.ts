@@ -9,6 +9,7 @@ import {
   validateConfig,
   type Settings,
 } from "@/config";
+import { hostedPlans } from "@/config/plans";
 
 const PROD_SECRETS = {
   NODE_ENV: "production",
@@ -104,6 +105,24 @@ describe("demo datasets", () => {
       "demoData.retail: postgres needs a host, database and user",
       "demoData.Retail Sales: key must be lowercase letters, digits or _ (at most 40)",
     ]);
+  });
+});
+
+describe("plans", () => {
+  const ids = { monthly: "price_m", annual: "price_y", portal: { month: "bpc_m", year: "bpc_y" } };
+
+  it("accept the hosted catalog with its Stripe ids, and then need Stripe's secrets", () => {
+    const withPlans = editedProd((s) => (s.plans = hostedPlans({ standard: ids, team: ids })));
+    expect(settingsProblems("prod", withPlans)).toEqual([]);
+    expect(secretProblems("prod", withPlans, PROD_SECRETS)).toEqual([
+      "STRIPE_SECRET_KEY is not set; prod has paid plans",
+      "STRIPE_WEBHOOK_SECRET is not set; prod has paid plans",
+    ]);
+  });
+
+  it("refuse a paid plan without its Stripe ids", () => {
+    const missing = editedProd((s) => (s.plans = hostedPlans({ standard: { ...ids, annual: "" }, team: ids })));
+    expect(settingsProblems("prod", missing)).toEqual(["plans.catalog.standard: a paid plan needs its Stripe prices and portal configurations"]);
   });
 });
 
