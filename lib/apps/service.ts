@@ -389,6 +389,9 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
           .select({ name: apps.name })
           .from(apps)
           .where(and(eq(apps.orgId, scope.orgId), eq(apps.userId, scope.userId)));
+        // Stamped from the same clock as renames and sharing changes, not the database's,
+        // so "most recently updated first" holds even when the two clocks disagree.
+        const createdAt = now();
         const [app] = await db
           .insert(apps)
           .values({
@@ -397,6 +400,8 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
             name: appName(sources, taken.map((row) => row.name)),
             pendingPrompt: prompt,
             pendingConnectionIds: connectionIds,
+            createdAt,
+            updatedAt: createdAt,
           })
           .returning({ id: apps.id });
         // The sources picked for it are the app's from the start: they show on it, and the agent is told about them.
