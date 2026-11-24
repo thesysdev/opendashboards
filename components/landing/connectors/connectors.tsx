@@ -1,54 +1,65 @@
 import {
-  siAirtable,
   siClickhouse,
   siDatabricks,
-  siDatadog,
   siGithub,
-  siGooglebigquery,
+  siGoogleads,
   siGoogleanalytics,
+  siGooglebigquery,
+  siGooglesearchconsole,
   siGooglesheets,
-  siHotjar,
+  siGoogletagmanager,
   siHubspot,
-  siJira,
-  siLemonsqueezy,
+  siInstagram,
   siLinear,
   siMatomo,
-  siMixpanel,
+  siMeta,
   siModelcontextprotocol,
   siMongodb,
   siMysql,
   siNotion,
-  siPaddle,
-  siPaypal,
+  siPinterest,
   siPlausibleanalytics,
   siPostgresql,
   siPosthog,
-  siQuickbooks,
-  siSentry,
-  siShopify,
+  siReddit,
+  siSemrush,
+  siSimilarweb,
   siSnowflake,
   siStripe,
   siSupabase,
-  siZendesk,
+  siTiktok,
+  siX,
 } from "simple-icons";
 
 import { SectionHeader } from "../section-header";
 import { LogoBubbles, type Logo } from "./logo-bubbles";
 
-/** Each group's marks, in saturated colours that hold on the white badge. */
+/** Tools grouped by what you'd build with them. Each group's marks, in saturated colours that hold on the white badge. */
 const GROUPS: { title: string; description: string; logos: Logo[] }[] = [
   {
-    title: "Product analytics",
-    description: "Traffic, signups, funnels, feature usage and retention.",
+    title: "SEO",
+    description: "Clicks, rankings, impressions and organic traffic.",
     logos: [
-      { icon: siPosthog, name: "PostHog", color: "#1d4aff" },
+      { icon: siGooglesearchconsole, name: "Search Console", color: "#458cf5" },
       { icon: siGoogleanalytics, name: "Google Analytics", color: "#e37400" },
-      { icon: siMixpanel, name: "Mixpanel", color: "#7856ff" },
-      { icon: siHotjar, name: "Hotjar", color: "#ff3c00" },
+      { icon: siSemrush, name: "Semrush", color: "#ff642d" },
+      { icon: siSimilarweb, name: "Similarweb", color: "#092540" },
       { icon: siPlausibleanalytics, name: "Plausible", color: "#5850ec" },
       { icon: siMatomo, name: "Matomo", color: "#2f6be0" },
-      { icon: siDatadog, name: "Datadog", color: "#7b3fe4" },
-      { icon: siSentry, name: "Sentry", color: "#6c5fc7" },
+      { icon: siGoogletagmanager, name: "Tag Manager", color: "#246fdb" },
+    ],
+  },
+  {
+    title: "Ad campaigns",
+    description: "Spend, clicks, conversions and return on ad spend.",
+    logos: [
+      { icon: siGoogleads, name: "Google Ads", color: "#4285f4" },
+      { icon: siMeta, name: "Meta", color: "#0467df" },
+      { icon: siInstagram, name: "Instagram", color: "#ff0069" },
+      { icon: siTiktok, name: "TikTok", color: "#111111" },
+      { icon: siReddit, name: "Reddit", color: "#ff4500" },
+      { icon: siX, name: "X", color: "#111111" },
+      { icon: siPinterest, name: "Pinterest", color: "#bd081c" },
     ],
   },
   {
@@ -66,36 +77,23 @@ const GROUPS: { title: string; description: string; logos: Logo[] }[] = [
     ],
   },
   {
-    title: "Revenue and CRM",
-    description: "MRR, subscriptions, invoices, deals and pipeline.",
-    logos: [
-      { icon: siStripe, name: "Stripe", color: "#635bff" },
-      { icon: siPaypal, name: "PayPal", color: "#0070e0" },
-      { icon: siShopify, name: "Shopify", color: "#5a9e2f" },
-      { icon: siPaddle, name: "Paddle", color: "#d4a000" },
-      { icon: siLemonsqueezy, name: "Lemon Squeezy", color: "#e69500" },
-      { icon: siQuickbooks, name: "QuickBooks", color: "#2ca01c" },
-      { icon: siHubspot, name: "HubSpot", color: "#ff5c35" },
-    ],
-  },
-  {
     title: "Anything else",
-    description: "Issues, tickets, docs and sheets, through any MCP server.",
+    description: "If there's an MCP server for it, you can connect it.",
     logos: [
       { icon: siModelcontextprotocol, name: "MCP", color: "#111111" },
+      { icon: siPosthog, name: "PostHog", color: "#1d4aff" },
+      { icon: siStripe, name: "Stripe", color: "#635bff" },
+      { icon: siHubspot, name: "HubSpot", color: "#ff5c35" },
       { icon: siGithub, name: "GitHub", color: "#181717" },
-      { icon: siLinear, name: "Linear", color: "#5e6ad2" },
       { icon: siNotion, name: "Notion", color: "#111111" },
-      { icon: siJira, name: "Jira", color: "#2684ff" },
+      { icon: siLinear, name: "Linear", color: "#5e6ad2" },
       { icon: siGooglesheets, name: "Google Sheets", color: "#0f9d58" },
-      { icon: siAirtable, name: "Airtable", color: "#0aa8ff" },
-      { icon: siZendesk, name: "Zendesk", color: "#0a8f8f" },
     ],
   },
 ];
 
 /**
- * "Connect the tools you already use": four groups of tools in one panel,
+ * "Connect the tools you already use": four groups of tools by use case in one panel,
  * split by hairlines (two by two below 1024px), each led by its logos. Phones
  * get a swipeable row of separate cards, the next one peeking in.
  */
