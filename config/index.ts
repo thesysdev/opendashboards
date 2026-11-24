@@ -3,7 +3,16 @@ import { local } from "./local";
 import { prod } from "./prod";
 import type { Environment, EnvironmentSettings, Settings } from "./settings";
 
-export { ENVIRONMENTS, type DemoData, type DemoDataset, type Environment, type Settings } from "./settings";
+export {
+  ENVIRONMENTS,
+  type CatalogPlan,
+  type DemoData,
+  type DemoDataset,
+  type Environment,
+  type PlansSettings,
+  type Settings,
+  type StripePlan,
+} from "./settings";
 
 /**
  * OpenDashboards' configuration, in one place. The environment follows Next.js's
@@ -58,6 +67,10 @@ export const secrets = {
   supabaseUrl: () => process.env.SUPABASE_URL,
   /** Demo data: the password of the Demo Data project's read-only role. Unset locally: no demo datasets. */
   demoDataPassword: () => process.env.DEMO_DATABASE_PASSWORD,
+  /** Stripe's API key. Needed only when settings have plans. */
+  stripeSecretKey: () => process.env.STRIPE_SECRET_KEY,
+  /** Verifies that webhook events came from Stripe. */
+  stripeWebhookSecret: () => process.env.STRIPE_WEBHOOK_SECRET,
 };
 
 /**
@@ -66,7 +79,7 @@ export const secrets = {
  * change Node's connection defaults.
  */
 export function settingsProblems(name: Environment, settings: Settings): string[] {
-  const problems = demoDatasetProblems(settings);
+  const problems = [...demoDatasetProblems(settings), ...planProblems(settings)];
   if (name === "local") return problems;
   if (settings.auth.devUser !== null) problems.push(`${name}: auth.devUser must be null; only local may skip the gateway`);
   if (settings.auth.publicHost === null) problems.push(`${name}: auth.publicHost must be set; it sits behind the gateway`);
@@ -99,6 +112,35 @@ function demoDatasetProblems(settings: Settings): string[] {
   return problems;
 }
 
+/**
+ * A plan catalog needs its free plan, Stripe ids on every paid plan and none
+ * on the free one, and limits that are whole numbers. (A missing or
+ * mistyped entitlement doesn't compile.)
+ */
+function planProblems(settings: Settings): string[] {
+  const { plans } = settings;
+  if (!plans) return [];
+  const problems: string[] = [];
+  const free = plans.catalog[plans.free];
+  if (!free) problems.push(`plans.free: "${plans.free}" isn't in the catalog`);
+  else if (free.stripe) problems.push(`plans.free: the free plan can't have Stripe prices`);
+  for (const [id, plan] of Object.entries(plans.catalog)) {
+    const label = `plans.catalog.${id}`;
+    if (!plan.name.trim()) problems.push(`${label}: name is empty`);
+    if (id !== plans.free) {
+      const ids = plan.stripe ? [plan.stripe.monthly, plan.stripe.annual, plan.stripe.portal.month, plan.stripe.portal.year] : [];
+      if (ids.length === 0 || ids.some((value) => !value.trim())) problems.push(`${label}: a paid plan needs its Stripe prices and portal configurations`);
+    }
+    for (const [entitlement, value] of Object.entries(plan.entitlements)) {
+      if ("max" in value && value.max !== null && (!Number.isInteger(value.max) || value.max < 1)) {
+        problems.push(`${label}.${entitlement}: max must be a whole number of 1 or more, or null`);
+      }
+    }
+  }
+  if (!/^[^@\s]+@[^@\s]+$/.test(plans.supportEmail)) problems.push("plans.supportEmail must be an email address");
+  return problems;
+}
+
 /** Which secrets an environment's settings need, and which are missing or invalid. */
 export function secretProblems(name: Environment, settings: Settings, env: Env = process.env): string[] {
   const problems: string[] = [];
@@ -117,6 +159,8 @@ export function secretProblems(name: Environment, settings: Settings, env: Env =
   if (name !== "local" && settings.demoData.datasets.length && !env.DEMO_DATABASE_PASSWORD) {
     problems.push(`DEMO_DATABASE_PASSWORD is not set; ${name} offers demo datasets`);
   }
+  if (settings.plans && !env.STRIPE_SECRET_KEY) problems.push(`STRIPE_SECRET_KEY is not set; ${name} has paid plans`);
+  if (settings.plans && !env.STRIPE_WEBHOOK_SECRET) problems.push(`STRIPE_WEBHOOK_SECRET is not set; ${name} has paid plans`);
   return problems;
 }
 

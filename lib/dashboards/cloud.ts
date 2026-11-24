@@ -27,7 +27,8 @@ export type CloudIdentity = { userId: string; groupIds: string[] };
  * change the app gets its edit group; someone who may only view it gets its
  * view group. (An owner whose role is viewer can still only view.)
  */
-export function cloudIdentity(userId: string, grant: AppGrant): CloudIdentity {
+export function cloudIdentity(userId: string, grant: AppGrant, { viewOnly = false }: { viewOnly?: boolean } = {}): CloudIdentity {
   const groups = appGroups(grant.appId);
-  return { userId, groupIds: [can("dashboard", "update", grant.facts) ? groups.edit : groups.view] };
+  // A view-only workspace (over its plan's limits) can open its dashboards but not change them.
+  return { userId, groupIds: [!viewOnly && can("dashboard", "update", grant.facts) ? groups.edit : groups.view] };
 }

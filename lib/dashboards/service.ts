@@ -4,6 +4,7 @@ import type { Database } from "@/lib/db";
 import { dashboards } from "@/lib/db/schema";
 import { appAccess, appFacts, type AppGrant } from "@/lib/orgs/access";
 import { can } from "@/lib/orgs/policy";
+import { OPEN_GATE, type Gate } from "@/lib/entitlements";
 
 /**
  * OpenDashboards' record of dashboards: which app each OpenUI Cloud artifact belongs
@@ -12,7 +13,7 @@ import { can } from "@/lib/orgs/policy";
  * follows its app: whoever can open the app can open it, and whoever can
  * change the app can change it. `user_id` is who created it.
  */
-export function createDashboardService({ db }: { db: Database }) {
+export function createDashboardService({ db, gate = OPEN_GATE }: { db: Database; gate?: Gate }) {
   return {
     /**
      * Records a dashboard the agent created in this app, with its title and
@@ -80,7 +81,10 @@ export function createDashboardService({ db }: { db: Database }) {
       dashboardId: string,
       changes: { title?: string; description?: string | null },
     ): Promise<boolean> {
-      if (!can("dashboard", "rename", (await appFacts(db, userId, appId))?.facts ?? null)) return false;
+      const app = await appFacts(db, userId, appId);
+      if (!can("dashboard", "rename", app?.facts ?? null)) return false;
+      // A view-only workspace keeps its dashboards as they are.
+      if (await gate(db, app!.orgId, "editDashboard")) return false;
       const renamed = await db
         .update(dashboards)
         .set(changes)

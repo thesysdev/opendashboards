@@ -1,6 +1,7 @@
 import type { z } from "zod";
 
-export type OrgErrorCode = "validation" | "not_found" | "forbidden" | "conflict" | "internal";
+/** plan_limit: the workspace's plan doesn't allow it (at a limit, no viewer role, or view-only). */
+export type OrgErrorCode = "validation" | "not_found" | "forbidden" | "conflict" | "plan_limit" | "internal";
 
 export type OrgError = { code: OrgErrorCode; message: string; field?: string };
 

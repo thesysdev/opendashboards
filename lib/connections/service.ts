@@ -21,6 +21,7 @@ import { track } from "@/lib/analytics";
 import { logError, logRejection, logWarning } from "@/lib/log";
 import { appAccess, appOpenTo, appsOpenTo, isUuid, roleIn, workspaceFacts, type Scope } from "@/lib/orgs/access";
 import { can, decide, refusal, type ConnectionFacts, type ConnectionKind } from "@/lib/orgs/policy";
+import { OPEN_GATE, type Gate } from "@/lib/entitlements";
 import { count } from "@/lib/metrics";
 import type { SecretBox, SecretContext } from "@/lib/secrets";
 import { MAX_SECRET_BYTES, SecretTooLargeError, secretBytes, type SealedSecret } from "@/lib/secrets/types";
@@ -122,6 +123,8 @@ export type ConnectionServiceDeps = {
   signInTtlMs?: number;
   /** Demo datasets on offer, and the shared read-only password. No password: none on offer. */
   demo?: { datasets: () => DemoDataset[]; password: () => string | undefined };
+  /** The workspace's plan: whether it may add a connection or rename one. Everything allowed without. */
+  gate?: Gate;
 };
 
 /** How an installed demo dataset reads in lists and pickers. */
@@ -157,7 +160,18 @@ const DEFAULT_KEY_CACHE_TTL_MS = 5 * 60 * 1000;
  */
 export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db } = deps;
+  const gate = deps.gate ?? OPEN_GATE;
   const now = deps.now ?? (() => new Date());
+
+  /** Adds a connection row (and anything with it) only if the plan still allows one, under the plan's lock. */
+  async function insertWithinPlan(orgId: string, insert: (tx: Parameters<Parameters<Database["transaction"]>[0]>[0]) => Promise<void>) {
+    return db.transaction(async (tx) => {
+      const refused = await gate(tx, orgId, "createConnection");
+      if (refused) return fail(refused);
+      await insert(tx);
+      return null;
+    });
+  }
   const keyCache = createKeyCache(deps.keyCacheTtlMs ?? DEFAULT_KEY_CACHE_TTL_MS, now);
 
   const context = (type: ConnectionType, userId: string, connectionId: string): SecretContext => ({
@@ -612,6 +626,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         const { userId, orgId } = scope;
         const creating = decide("connection", "create", await workspaceFacts(db, userId, orgId));
         if (!creating.allowed) return refusal(creating);
+        // Before testing the credential, so nobody fills in a form only to hit the limit; checked again on insert.
+        const early = await gate(db, orgId, "createConnection");
+        if (early) return fail(early);
         const envelope = createEnvelopeSchema.safeParse(input);
         if (!envelope.success) return fromValidation(envelope.error);
         const type = envelope.data.type as ConnectionType;
@@ -635,19 +652,22 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           // Sealed first: no point testing a credential we can't store.
           const secret = await sealCredential(credential.data, context(type, userId, id));
           warnings = await check(config, credential.data);
-          await db.insert(dataConnections).values({
-            id,
-            userId,
-            orgId,
-            sharing: "org",
-            name,
-            type,
-            config,
-            secret,
-            credentialHint: source.credential.hint(credential.data),
-            status: "ok",
-            lastCheckedAt: now(),
+          const refused = await insertWithinPlan(orgId, async (tx) => {
+            await tx.insert(dataConnections).values({
+              id,
+              userId,
+              orgId,
+              sharing: "org",
+              name,
+              type,
+              config,
+              secret,
+              credentialHint: source.credential.hint(credential.data),
+              status: "ok",
+              lastCheckedAt: now(),
+            });
           });
+          if (refused) return refused;
         } catch (error) {
           return checkFailure(error, type);
         }
@@ -748,6 +768,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!parsed.success) return fromValidation(parsed.error);
         const managed = await findManaged(userId, parsed.data.id, "update");
         if (!managed.ok) return managed;
+        const refused = managed.data.row.orgId ? await gate(db, managed.data.row.orgId, "renameConnection") : null;
+        if (refused) return fail(refused);
         const updated = await db
           .update(dataConnections)
           .set({ name: parsed.data.name, updatedAt: now() })
@@ -956,6 +978,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         } else {
           const creating = decide("connection", "create", await workspaceFacts(db, userId, orgId));
           if (!creating.allowed) return refusal(creating);
+          // Before sending them off to sign in; checked again when the sign-in is saved.
+          const refused = await gate(db, orgId, "createConnection");
+          if (refused) return fail(refused);
         }
         const tooLarge = refuseIfTooLarge(sign.config.type, sign.pending, "create");
         if (tooLarge) return tooLarge;
@@ -1071,7 +1096,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         try {
           const secret = await sealCredential(input.credential, context(config.type, userId, id));
           const warnings = await check(config, input.credential);
-          await db.transaction(async (tx) => {
+          const orgId = input.orgId;
+          const refused = await insertWithinPlan(orgId, async (tx) => {
             await tx.insert(dataConnections).values({
               id,
               userId,
@@ -1087,6 +1113,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             });
             await tx.insert(connectionSignIns).values({ id: randomUUID(), connectionId: id, userId, secret, status: "ok", lastCheckedAt: now() });
           });
+          if (refused) return refused;
           return ok({ id, warnings });
         } catch (error) {
           return checkFailure(error, config.type);

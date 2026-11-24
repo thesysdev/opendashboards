@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import posthog from "posthog-js";
 import { useRef, useState, useTransition } from "react";
 
-import { createOrgAction, switchDevUserAction } from "@/app/(app)/settings/actions";
+import { checkoutWorkspaceAction, createOrgAction, paidPlansAction, switchDevUserAction } from "@/app/(app)/settings/actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -155,13 +155,28 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; o
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  /** Set once the server says this workspace must be paid for: the plan and period to buy. */
+  const [paid, setPaid] = useState<{ planId: string; interval: "month" | "year" } | null>(null);
+  const [plans, setPlans] = useState<{ id: string; name: string }[]>([]);
 
   function submit(event: React.FormEvent) {
     event.preventDefault();
     startTransition(async () => {
+      if (paid) {
+        const checkout = await checkoutWorkspaceAction({ name, ...paid });
+        if (checkout.ok) window.location.assign(checkout.data.url);
+        else setError(checkout.error.message);
+        return;
+      }
       const result = await createOrgAction({ name });
       if (!result.ok) {
         setError(result.error.message);
+        // Their one Free workspace is taken: this one is paid for first.
+        if (result.error.code === "plan_limit") {
+          const plans = await paidPlansAction();
+          setPlans(plans);
+          if (plans[0]) setPaid({ planId: plans[0].id, interval: "year" });
+        }
         return;
       }
       onOpenChange(false);
@@ -202,12 +217,37 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; o
             />
             {error && <FieldError>{error}</FieldError>}
           </Field>
+          {paid && (
+            <div className="flex flex-wrap gap-2">
+              <select
+                aria-label="Plan"
+                value={paid.planId}
+                onChange={(event) => setPaid({ ...paid, planId: event.target.value })}
+                className="h-8 rounded-md border bg-background px-2 text-sm"
+              >
+                {plans.map((plan) => (
+                  <option key={plan.id} value={plan.id}>
+                    {plan.name}
+                  </option>
+                ))}
+              </select>
+              <select
+                aria-label="Billing period"
+                value={paid.interval}
+                onChange={(event) => setPaid({ ...paid, interval: event.target.value as "month" | "year" })}
+                className="h-8 rounded-md border bg-background px-2 text-sm"
+              >
+                <option value="year">Billed annually</option>
+                <option value="month">Billed monthly</option>
+              </select>
+            </div>
+          )}
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={pending || !name.trim()}>
-              {pending ? "Creating…" : "Create workspace"}
+              {pending ? "Creating…" : paid ? "Continue to payment" : "Create workspace"}
             </Button>
           </DialogFooter>
         </form>
