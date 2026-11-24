@@ -13,7 +13,7 @@ import { getPlans } from "@/lib/plans";
 export const GET = route(async (request, user) => {
   const plans = getPlans();
   const sessionId = new URL(request.url).searchParams.get("session_id");
-  if (!plans || !sessionId) redirect("/apps");
+  if (!plans || !sessionId || !sessionId.startsWith("cs_")) redirect("/apps");
   const orgId = await plans.billing.completeCheckout(sessionId, user.id);
   redirect(orgId ? `${workspacePath(orgId, "settings")}#billing` : "/apps");
 });

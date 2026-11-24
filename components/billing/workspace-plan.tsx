@@ -1,7 +1,6 @@
 "use client";
 
 import { PartyPopperIcon, PlugZapIcon, RocketIcon, type LucideIcon } from "lucide-react";
-import Link from "next/link";
 import { createContext, useContext, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -87,7 +86,7 @@ export function UpgradePrompt({
       {plan.canManageBilling &&
         (action === "seat" ? (
           <Button size="sm" asChild>
-            <Link href={`${workspacePath(plan.orgId, "settings")}#buy-seats`}>Add a seat</Link>
+            <a href={`${workspacePath(plan.orgId, "settings")}#buy-seats`}>Add a seat</a>
           </Button>
         ) : (
           <>

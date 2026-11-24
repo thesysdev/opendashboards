@@ -259,7 +259,16 @@ export function createBilling(deps: {
      * it. Returns the workspace's id.
      */
     async completeCheckout(sessionId: string, userId: string): Promise<string | null> {
-      const session = await stripe.checkout.sessions.retrieve(sessionId);
+      let session: Stripe.Checkout.Session;
+      try {
+        session = await stripe.checkout.sessions.retrieve(sessionId);
+      } catch (error) {
+        const missing =
+          (error as { code?: string }).code === "resource_missing" ||
+          (error as { statusCode?: number }).statusCode === 404;
+        if (missing) return null;
+        throw error;
+      }
       if (session.metadata?.user_id !== userId) return null;
       return completeSession(session);
     },

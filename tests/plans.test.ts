@@ -25,6 +25,7 @@ const billing = {
   planOf: async (orgId: string) => subscribed.get(orgId)?.plan ?? "free",
   seatsOf: async (orgId: string) => subscribed.get(orgId)?.seats ?? 1,
   changeSeats: async () => ({ url: "https://billing.stripe.test/confirm" }),
+  startCheckout: async () => ({ url: "https://checkout.stripe.test" }),
 } as unknown as Billing;
 
 const plans = createPlans({ db, settings, billing });
@@ -147,6 +148,25 @@ describe("seats", () => {
       message: "2 seats are in use. To go lower, first remove an editor, make them a viewer, or revoke an invite.",
     });
     expect(await plans.changeSeats(orgId, 2)).toEqual({ ok: true, url: "https://billing.stripe.test/confirm" });
+  });
+});
+
+describe("upgrade fit", () => {
+  it("refuses a plan that would leave the workspace view-only, and allows one that fits", async () => {
+    const orgId = await workspace();
+    subscribed.set(orgId, { plan: "team", seats: 3 });
+    await orgService.invite(alice.id, { orgId, email: "bob@example.com", role: "editor" });
+    await orgService.invite(alice.id, { orgId, email: "carol@example.com", role: "editor" });
+    subscribed.set(orgId, { plan: "free", seats: 1 });
+
+    expect(await plans.upgrade(orgId, { planId: "standard", interval: "month", userId: alice.id })).toEqual({
+      ok: false,
+      message: "Standard allows 1 editor. You have 3, so the workspace would stay view-only. Choose a plan that fits, or remove 2 editors first.",
+    });
+    expect(await plans.upgrade(orgId, { planId: "team", interval: "month", userId: alice.id })).toEqual({
+      ok: true,
+      url: "https://checkout.stripe.test",
+    });
   });
 });
 

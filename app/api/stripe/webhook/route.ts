@@ -19,7 +19,11 @@ export async function POST(request: Request): Promise<Response> {
     await plans.billing.handleWebhook(body, signature);
   } catch (error) {
     // A bad signature is someone else's request; anything else Stripe retries.
-    if (error instanceof Error && error.name === "StripeSignatureVerificationError") {
+    if (
+      error instanceof Error &&
+      (error.name === "StripeSignatureVerificationError" ||
+        (error as { type?: string }).type === "StripeSignatureVerificationError")
+    ) {
       logRejection("stripe.webhook_signature", error);
       return new Response(null, { status: 400 });
     }

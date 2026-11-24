@@ -165,7 +165,19 @@ export function createPlans(deps: { db: Database; settings: PlansSettings; billi
       if ((await billing.planOf(orgId)) !== settings.free) return { ok: false as const, message: "This workspace already has a plan. Change it in Manage billing." };
       const plan = settings.catalog[input.planId];
       if (!plan?.stripe) return { ok: false as const, message: "That plan isn't available." };
-      const inUse = (await enforcement.getLimits(db, orgId)).editors.used;
+      const limits = await enforcement.getLimits(db, orgId);
+      const inUse = limits.editors.used;
+      const entitlements = entitlementsOf(plan, inUse);
+      const over = (Object.keys(limits) as LimitName[]).find((name) => entitlements[name].max !== null && limits[name].used > entitlements[name].max!);
+      if (over) {
+        const max = entitlements[over].max!;
+        const used = limits[over].used;
+        const remove = used - max;
+        return {
+          ok: false as const,
+          message: `${plan.name} allows ${max} ${noun(over, max)}. You have ${used}, so the workspace would stay view-only. Choose a plan that fits, or remove ${remove} ${noun(over, remove)} first.`,
+        };
+      }
       const { url } = await billing.startCheckout({
         orgId,
         planId: input.planId,
