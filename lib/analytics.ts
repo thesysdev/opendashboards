@@ -10,10 +10,10 @@ const POSTHOG_KEY = process.env.NEXT_PUBLIC_POSTHOG_KEY;
 const POSTHOG_HOST = "https://dgoeivjus9jfp.cloudfront.net";
 
 /**
- * Our own PostHog group type for workspaces. Not "org": that one is the
- * console's and the API's (coda) organizations, in the same project.
+ * Our own PostHog group type for orgs (workspaces in the UI). Not "org": that
+ * one is the console's and the API's (coda) organizations, in the same project.
  */
-const WORKSPACE_GROUP = "opendash_workspace";
+const ORG_GROUP = "opendash_org";
 
 let client: PostHog | undefined;
 
@@ -38,7 +38,7 @@ export function track(userId: string, event: string, properties: Record<string, 
         distinctId: userId,
         event: `opendashboards_${event}`,
         properties: { app: "opendashboards", environment: "production", ...properties },
-        ...(orgId ? { groups: { [WORKSPACE_GROUP]: orgId } } : {}),
+        ...(orgId ? { groups: { [ORG_GROUP]: orgId } } : {}),
       })
       .catch(() => {}),
   );
@@ -51,6 +51,6 @@ export function track(userId: string, event: string, properties: Record<string, 
 export function identifyWorkspace(orgId: string, createdAt: Date = new Date()): void {
   const client = posthog();
   if (!client) return;
-  client.groupIdentify({ groupType: WORKSPACE_GROUP, groupKey: orgId, properties: { created: createdAt.toISOString() } });
+  client.groupIdentify({ groupType: ORG_GROUP, groupKey: orgId, properties: { created: createdAt.toISOString() } });
   waitUntil(client.flush().catch(() => {}));
 }
