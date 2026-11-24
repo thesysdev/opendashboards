@@ -30,8 +30,9 @@ const FEATURES: { title: string; description: string; art: ReactNode }[] = [
 ];
 
 /**
- * The leading pair shows sharing and Sources. The remaining cards show
- * the everyday dashboard workflow on the same stage.
+ * Six cards, three by two on wide screens (two by three on tablets, one
+ * column on phones): sharing and Sources lead, then the everyday dashboard
+ * workflow on the same stage.
  */
 export function Features() {
   return (
@@ -50,7 +51,7 @@ export function Features() {
           Share live dashboards with your team and trace every number to its source.
         </p>
 
-        <div className="mt-10 grid grid-cols-1 gap-10 md:mt-16 md:grid-cols-2 md:gap-x-4 md:gap-y-12 min-[56.25rem]:gap-x-6 min-[56.25rem]:gap-y-16">
+        <div className="mt-10 grid grid-cols-1 gap-10 md:mt-16 md:grid-cols-2 md:gap-x-4 md:gap-y-12 min-[56.25rem]:gap-x-6 min-[56.25rem]:gap-y-16 min-[75rem]:grid-cols-3">
           {FEATURES.map((feature) => (
             <article key={feature.title} className="min-w-0">
               {/* Phones: the scene runs edge to edge, out past the section's gutter, with square sides. */}

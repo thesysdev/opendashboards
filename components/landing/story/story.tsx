@@ -1,6 +1,6 @@
 "use client";
 
-import { ChevronLeft, ChevronRight, LayoutDashboard, Pause, Play, Plug, UserRoundPlus } from "lucide-react";
+import { ChevronLeft, ChevronRight, LayoutDashboard, Pause, Play, Plug, RefreshCw, UserRoundPlus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 
 import { useReducedMotion } from "../use-reduced-motion";
@@ -11,6 +11,7 @@ const POINTS = [
   { id: "connect", Icon: Plug, title: "Connect", description: "Your tools, your databases and any MCP server." },
   { id: "build", Icon: LayoutDashboard, title: "Build a dashboard", description: "Ask in plain words. Each chart comes from the tool that has it." },
   { id: "share", Icon: UserRoundPlus, title: "Share", description: "Invite your team to view or edit it." },
+  { id: "live", Icon: RefreshCw, title: "Always current", description: "When your data changes, the dashboard updates. No regeneration." },
 ];
 
 const subscribeTab = (onChange: () => void) => {
@@ -87,7 +88,8 @@ function Fill({ step, running, className }: { step: Step; running: boolean; clas
 
 /**
  * "All your data. One question away." The heading and lead, then the film on
- * a flat stage with its three steps under it: connect, build a dashboard, share. The film plays only while it's on
+ * a flat stage with its four steps under it: connect, build a dashboard, share,
+ * always current. The film plays only while it's on
  * screen, in a visible tab and not paused, and each step's rule tracks its
  * clock; choosing a step jumps the film to it. Under reduced motion the film
  * rests on one frame until the reader presses play.
@@ -208,7 +210,7 @@ export function Story() {
           onPointerDown={holdRail}
           onTouchStart={holdRail}
           onWheel={holdRail}
-          className="-mx-(--gutter) mt-6 flex gap-4 overflow-x-hidden px-(--gutter) pb-1 md:mt-10 md:snap-x md:snap-mandatory md:scroll-px-(--gutter) md:gap-6 md:overflow-x-auto md:overscroll-x-contain [scrollbar-width:none] min-[75rem]:mx-0 min-[75rem]:grid min-[75rem]:grid-cols-3 min-[75rem]:overflow-visible min-[75rem]:px-0 min-[75rem]:pb-0 [&::-webkit-scrollbar]:hidden"
+          className="-mx-(--gutter) mt-6 flex gap-4 overflow-x-hidden px-(--gutter) pb-1 md:mt-10 md:snap-x md:snap-mandatory md:scroll-px-(--gutter) md:gap-6 md:overflow-x-auto md:overscroll-x-contain [scrollbar-width:none] min-[75rem]:mx-0 min-[75rem]:grid min-[75rem]:grid-cols-4 min-[75rem]:overflow-visible min-[75rem]:px-0 min-[75rem]:pb-0 [&::-webkit-scrollbar]:hidden"
         >
           {POINTS.map(({ id, Icon, title, description }, index) => (
             <li

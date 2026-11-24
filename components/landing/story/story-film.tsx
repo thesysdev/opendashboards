@@ -9,25 +9,32 @@ import { BRANDS, type Brand } from "../brands";
 import { blurIn, blurSwap, camAt, lerp, ramp, type CamKey } from "./motion";
 
 /*
- * The story film, in three beats. Connect: PostHog, your database and Stripe
- * connect one after another. Build a dashboard: a question is asked, the data
- * it needs flies out of the sentence, each piece is fetched from the tool that
- * has it, and the dashboard streams in. Share: the dashboard is shared with
- * the team. Every frame is a pure function of T. World units are px in a
- * 1200×600 viewport.
+ * The story film, in four beats, as one continuous shot. Connect: PostHog, your
+ * database and Stripe connect one after another, then fold into one circle,
+ * the question's send button. Build a dashboard: the input grows out of that
+ * button, a question is asked, the data it needs flies out of the sentence,
+ * each piece is fetched from the tool that has it, and the dashboard streams
+ * in. Share: the dashboard is shared with the team. Always current: the shared
+ * dashboard refreshes with new numbers. Every frame is a pure function of T.
+ * World units are px in a 1200×600 viewport.
  */
 
+/** The build runs on its own clock from here: the input, the question, the fetch, the dashboard. */
+const BUILD_FROM = 2.6;
+/** Where Share hands over to the live refresh. */
+const LIVE_FROM = 17.3;
+export const FILM_LENGTH = LIVE_FROM + 5.6;
 export const FILM_STEPS = [
-  { id: "connect", start: 0, length: 3 },
-  { id: "build", start: 3, length: 10.4 },
-  { id: "share", start: 13.4, length: 6.6 },
+  { id: "connect", start: 0, length: BUILD_FROM },
+  { id: "build", start: BUILD_FROM, length: 10.4 },
+  { id: "share", start: BUILD_FROM + 10.4, length: LIVE_FROM - BUILD_FROM - 10.4 },
+  { id: "live", start: LIVE_FROM, length: FILM_LENGTH - LIVE_FROM },
 ] as const;
-export const FILM_LENGTH = 20;
-/** The build runs on its own clock from here: the question, the fetch, the dashboard. */
-const BUILD_FROM = 3;
 /** The moment reduced motion rests on: every need fetched. */
 export const FILM_STILL = BUILD_FROM + 6.9;
-const RESET = 19.7;
+/** The loop whips back through a short blur, and restarts in the middle of it. */
+const WHIP: [number, number] = [FILM_LENGTH - 0.7, FILM_LENGTH];
+const RESET = FILM_LENGTH - 0.3;
 
 const INPUT = { x: 600, y: 300, w: 760, h: 76, pad: 32 };
 const QUERY_SIZE = 22;
@@ -43,11 +50,16 @@ const DASH = { x: 100, y: 750, w: 1000, h: 700 };
 const BUILD_AT = 8.0;
 const VIEW = { cx: 600, cy: DASH.y + DASH.h / 2, s: 0.78 };
 
-/** Connect: each tool's button is pressed in turn, connects, and the tiles clear for the question. */
-const CONNECT_AT = [0.95, 1.3, 1.65];
+/** Connect: each tool's button is pressed in turn and connects. Its pill keeps one width, so nothing shifts as its label changes. */
+const CONNECT_AT = [0.75, 1.05, 1.35];
 const CONNECTING = 0.3;
-const CONNECT_OUT = 2.45;
 const CONNECT_W = 340;
+const CONNECT_PILL = 116;
+/** Then the tiles fold into one circle in the middle: the input at its smallest, around where its send button appears. */
+const FOLD: [number, number] = [1.95, 2.55];
+/** On the build's clock: the send button pops in, then the input grows sideways from it, the button riding its right end. */
+const BUTTON_IN: [number, number] = [0, 0.25];
+const GROW: [number, number] = [0.05, 0.5];
 
 /*
  * Share, on the film's clock: Share sits at the dashboard's top right, level with its title. It's
@@ -55,20 +67,27 @@ const CONNECT_W = 340;
  * teammates' avatars land beside the button.
  */
 const SHARE = { right: 53, top: 34, h: 40, panel: 300 };
-const SHARE_AT = 13.3;
-const PRESS_AT = 14.85;
-const PANEL_AT = 15.0;
+const SHARE_AT = 12.9;
+const SHARE_PUSH: [number, number] = [13.5, 14.3];
+const PRESS_AT = 14.45;
+const PANEL_AT = 14.6;
 const INVITES = [
-  { initial: "M", name: "Maya", tone: "#ba625c", role: "Can edit", at: 15.35 },
-  { initial: "J", name: "Jon", tone: "#6357e0", role: "Can view", at: 15.7 },
-  { initial: "A", name: "Ana", tone: "#d62ee8", role: "Can edit", at: 16.05 },
+  { initial: "M", name: "Maya", tone: "#ba625c", role: "Can edit", at: 14.95 },
+  { initial: "J", name: "Jon", tone: "#6357e0", role: "Can view", at: 15.3 },
+  { initial: "A", name: "Ana", tone: "#d62ee8", role: "Can edit", at: 15.65 },
 ];
-const COPY_AT = 16.6;
-const PANEL_OUT = 17.2;
-const JOINED_AT = 17.35;
+const COPY_AT = 16.2;
+const PANEL_OUT = 16.8;
+const JOINED_AT = 16.95;
 const SHARE_CAM = { cx: 640, cy: DASH.y + 150, s: 1.1 };
-/** Connect is framed close, then eases out to the question's framing as the tiles clear. */
+/** Connect is framed close, then eases out to the question's framing as the input grows. */
 const CONNECT_CAM = 1.3;
+
+/** "Always current": the notch drops in and the dashboard refreshes, then the new numbers land at REFRESH_AT and the notch confirms and lifts away. */
+const UPDATING_AT = LIVE_FROM + 0.5;
+const REFRESH_AT = LIVE_FROM + 1.8;
+const NOTCH_OUT: [number, number] = [LIVE_FROM + 3.2, LIVE_FROM + 3.6];
+const PUSH = { cx: 600, cy: DASH.y + 230, s: 1.15 };
 
 const X0 = LIST.x + LIST.w;
 const X1 = SRC.x;
@@ -199,15 +218,19 @@ function Query({ tc, anchors, onMeasure }: { tc: number; anchors: Anchors | null
           style={{
             left: INPUT.x,
             top: INPUT.y,
-            width: INPUT.w,
+            // It grows sideways out of the send button the tools folded into; the button rides its right end.
+            width: lerp(INPUT.h, INPUT.w, ramp(tc, GROW[0], GROW[1])),
             height: INPUT.h,
-            ...(m > 0 ? { opacity: 1 - m, filter: `blur(${(m * 6).toFixed(2)}px)` } : blurIn(tc, 0.1, 0.55, 12)),
+            ...(m > 0 ? { opacity: 1 - m, filter: `blur(${(m * 6).toFixed(2)}px)` } : null),
           }}
         >
           <span
             data-ready={tc > 1.25 || undefined}
             className="grid size-12 shrink-0 place-items-center rounded-full bg-[#e5e5ea] text-white data-ready:bg-[#0a0a0b]"
-            style={{ scale: `${1 - press * 0.12}` }}
+            style={{
+              scale: `${lerp(0.5, 1, ramp(tc, BUTTON_IN[0], BUTTON_IN[1])) - press * 0.12}`,
+              opacity: ramp(tc, BUTTON_IN[0], BUTTON_IN[1]),
+            }}
           >
             <ArrowUp className="size-5" />
           </span>
@@ -370,21 +393,34 @@ function DataGraph({ tc, anchors }: { tc: number; anchors: Anchors | null }) {
 /** Camera: hold on the tools and the question, ease in on the graph, then down to the dashboard as it streams, a push to Share, and back for the loop. */
 const CAMERA: CamKey[] = [
   [0, 600, 300, CONNECT_CAM],
-  [CONNECT_OUT - 0.1, 600, 300, CONNECT_CAM],
-  [BUILD_FROM, 600, 300, 1],
+  [FOLD[0], 600, 300, CONNECT_CAM],
+  [BUILD_FROM + GROW[1], 600, 300, 1],
   [BUILD_FROM + 3.4, 600, 300, 1],
   [BUILD_FROM + 7.2, 600, 300, 1.12],
   [BUILD_FROM + 7.6, 600, 300, 1.12],
   [BUILD_FROM + 8.5, VIEW.cx, VIEW.cy, VIEW.s],
-  [13.9, VIEW.cx, VIEW.cy, VIEW.s],
-  [14.7, SHARE_CAM.cx, SHARE_CAM.cy, SHARE_CAM.s],
-  [17.7, SHARE_CAM.cx, SHARE_CAM.cy, SHARE_CAM.s],
-  [18.5, VIEW.cx, VIEW.cy, VIEW.s],
-  [19.3, VIEW.cx, VIEW.cy, VIEW.s],
-  [20.0, 600, 300, CONNECT_CAM],
+  [SHARE_PUSH[0], VIEW.cx, VIEW.cy, VIEW.s],
+  [SHARE_PUSH[1], SHARE_CAM.cx, SHARE_CAM.cy, SHARE_CAM.s],
+  [LIVE_FROM, SHARE_CAM.cx, SHARE_CAM.cy, SHARE_CAM.s],
+  [LIVE_FROM + 0.7, PUSH.cx, PUSH.cy, PUSH.s],
+  [NOTCH_OUT[1], PUSH.cx, PUSH.cy, PUSH.s],
+  [NOTCH_OUT[1] + 0.7, VIEW.cx, VIEW.cy, VIEW.s],
+  [WHIP[0], VIEW.cx, VIEW.cy, VIEW.s],
+  [WHIP[1], 600, 300, CONNECT_CAM],
 ];
 
-const CAMERA_NARROW: CamKey[] = CAMERA.map(([t, x, y, s]) => [t, x, y, s === 1.12 ? 0.95 : s === SHARE_CAM.s ? 0.9 : s === CONNECT_CAM ? 1.15 : s]);
+const CAMERA_NARROW: CamKey[] = CAMERA.map(([t, x, y, s]) => [
+  t,
+  x,
+  y,
+  s === 1.12 ? 0.95 : s === SHARE_CAM.s ? 0.9 : s === PUSH.s ? 0.88 : s === CONNECT_CAM ? 1.15 : s,
+]);
+
+/** The dashboard's three captures: as built, refreshing, and with the new numbers. */
+const shotAt = (tc: number) =>
+  `/landing/dashboards/story${tc >= REFRESH_AT ? "-refreshed" : tc >= UPDATING_AT ? "-updating" : ""}-light.png`;
+
+
 
 /** A tool's tile: its mark on its brand colour, its name and what it holds. */
 function ToolTile({ need, className = "" }: { need: NeedSpec; className?: string }) {
@@ -401,43 +437,58 @@ function ToolTile({ need, className = "" }: { need: NeedSpec; className?: string
   );
 }
 
-/** Connect: the three tools, each connected in turn, then cleared away for the question. */
+/**
+ * Connect: the three tools, each connected in turn. Then all three fold into one circle in the
+ * middle: the input at its smallest, which the send button appears in and the input grows from.
+ * Each pill stays dark while it connects and turns green with a small pop: no colour fade, so it
+ * never passes through grey, and it keeps one width, so nothing shifts.
+ */
 function Connect({ tc }: { tc: number }) {
-  if (tc >= CONNECT_OUT + 0.6) return null;
+  const fold = ramp(tc, FOLD[0], FOLD[1]);
+  const content = 1 - ramp(tc, FOLD[0], FOLD[0] + 0.25);
   return NEEDS.map((n, i) => {
     const at = CONNECT_AT[i];
     const state = tc < at ? "idle" : tc < at + CONNECTING ? "loading" : "ok";
     const press = ramp(tc, at - 0.08, at) * (1 - ramp(tc, at + 0.05, at + 0.2));
-    const leave = ramp(tc, CONNECT_OUT + i * 0.06, CONNECT_OUT + i * 0.06 + 0.35);
+    const pop = ramp(tc, at + CONNECTING, at + CONNECTING + 0.12) * (1 - ramp(tc, at + CONNECTING + 0.12, at + CONNECTING + 0.32));
+    const w = lerp(CONNECT_W, INPUT.h, fold);
+    const h = lerp(SRC.h, INPUT.h, fold);
+    const cy = lerp(n.y, INPUT.y, fold);
     return (
       <div
         key={n.id}
-        className={`flex items-center gap-3 rounded-[14px] bg-white pr-3 pl-3 ${EDGE}`}
+        className={`flex items-center gap-3 overflow-hidden bg-white pr-3 pl-3 ${EDGE}`}
         style={{
-          left: 600 - CONNECT_W / 2,
-          top: n.y - SRC.h / 2,
-          width: CONNECT_W,
-          height: SRC.h,
-          ...(leave > 0 ? { opacity: 1 - leave, filter: `blur(${(leave * 6).toFixed(2)}px)` } : blurIn(tc, 0.15 + i * 0.1, 0.5, 8)),
+          left: 600 - w / 2,
+          top: cy - h / 2,
+          width: w,
+          height: h,
+          borderRadius: lerp(14, INPUT.h / 2, fold),
+          // It takes on the input's shadow as it becomes the input.
+          boxShadow: `0 1px 2px rgb(16 24 40 / ${(0.06 * fold).toFixed(3)}), 0 8px 20px -10px rgb(16 24 40 / ${(0.22 * fold).toFixed(3)})`,
+          ...(fold > 0 ? null : blurIn(tc, 0.15 + i * 0.1, 0.5, 8)),
         }}
       >
-        <ToolTile need={n} className="flex-1" />
-        <span
-          data-state={state}
-          className={`inline-flex h-8 items-center gap-[7px] rounded-full px-3.5 text-[13px] font-medium whitespace-nowrap transition-[background-color,color,border-color] duration-150 motion-reduce:transition-none data-[state=idle]:bg-[#0a0a0b] data-[state=idle]:text-white data-[state=loading]:bg-white data-[state=ok]:border-[rgb(31_157_85/0.35)] data-[state=ok]:bg-white data-[state=ok]:text-[#1f9d55] ${EDGE}`}
-          style={{ scale: `${1 - press * 0.08}` }}
-        >
-          {state === "ok" ? (
-            <>
-              <Check className="size-3.5 stroke-[2.4]" /> Connected
-            </>
-          ) : state === "loading" ? (
-            <>
-              <Spinner /> Connecting
-            </>
-          ) : (
-            "Connect"
-          )}
+        <span className="flex min-w-0 flex-1 items-center gap-3" style={{ opacity: content }}>
+          <ToolTile need={n} className="flex-1" />
+          <span
+            data-state={state}
+            className={`inline-flex h-8 shrink-0 items-center justify-center gap-[7px] rounded-full bg-[#0a0a0b] text-[13px] font-medium whitespace-nowrap text-white data-[state=ok]:border-[rgb(31_157_85/0.35)] data-[state=ok]:bg-white data-[state=ok]:text-[#1f9d55] ${EDGE}`}
+            style={{ width: CONNECT_PILL, scale: `${1 - press * 0.08 + pop * 0.05}` }}
+          >
+            {state === "ok" ? (
+              <>
+                <Check className="size-3.5 stroke-[2.4]" /> Connected
+              </>
+            ) : state === "loading" ? (
+              <>
+                <i className="size-[13px] animate-spin rounded-full border-[1.5px] border-white/35 border-t-white [animation-duration:0.8s] motion-reduce:animate-none" />
+                Connecting
+              </>
+            ) : (
+              "Connect"
+            )}
+          </span>
         </span>
       </div>
     );
@@ -535,7 +586,7 @@ export function StoryFilm({ T }: { T: number }) {
   const tb = tc - BUILD_FROM;
   const cam = camAt(useNarrow() ? CAMERA_NARROW : CAMERA, T);
   // The loop whips back to the start through a short blur.
-  const whip = ramp(T, 19.3, 20);
+  const whip = ramp(T, WHIP[0], WHIP[1]);
   const blur = Math.sin(Math.PI * whip) * 8;
 
   return (
@@ -550,7 +601,7 @@ export function StoryFilm({ T }: { T: number }) {
           } as CSSProperties
         }
       >
-        <Connect tc={tc} />
+        {tc < BUILD_FROM ? <Connect tc={tc} /> : null}
         {tb >= 0 && tb < 9 ? (
           <>
             <Query tc={tb} anchors={anchors} onMeasure={setAnchors} />
@@ -560,9 +611,9 @@ export function StoryFilm({ T }: { T: number }) {
         {tb >= BUILD_AT ? (
           <div style={{ left: DASH.x, top: DASH.y, width: DASH.w, height: DASH.h }}>
             <div className={`absolute inset-0 overflow-hidden rounded-[20px] bg-white ${EDGE}`}>
-              {/* Rendered once with the OpenUI Dashboards UI library: it rises in at the build. */}
+              {/* Rendered once with the OpenUI Dashboards UI library: it rises in at the build, and the refresh lands newer numbers in place. */}
               <Image
-                src="/landing/dashboards/story-light.png"
+                src={shotAt(tc)}
                 alt=""
                 width={2000}
                 height={1616}
@@ -570,12 +621,67 @@ export function StoryFilm({ T }: { T: number }) {
                 className="block h-auto w-full"
                 style={blurIn(tb, BUILD_AT, 0.6, 14)}
               />
+              {/* While the data refetches, a highlight sweeps across the dashboard on the film's clock, about once a second. */}
+              {tc >= UPDATING_AT && tc < REFRESH_AT + 0.3 ? (
+                <span
+                  className="pointer-events-none absolute inset-0 z-1 bg-[linear-gradient(105deg,transparent_35%,rgb(255_255_255/0.7)_50%,transparent_65%)] bg-size-[250%_100%] bg-no-repeat"
+                  style={{
+                    backgroundPosition: `${(130 - (((tc - UPDATING_AT) % 1.1) / 1.1) * 160).toFixed(1)}% 0`,
+                    opacity: ramp(tc, UPDATING_AT, UPDATING_AT + 0.3) * (1 - ramp(tc, REFRESH_AT, REFRESH_AT + 0.3)),
+                  }}
+                />
+              ) : null}
+              {tc >= UPDATING_AT && tc < NOTCH_OUT[1] ? <Notch tc={tc} /> : null}
             </div>
             {/* Outside the dashboard's clip, so the share panel can hang below its edge if it needs to. */}
             <Share tc={tc} />
           </div>
         ) : null}
       </div>
+      {/* The later captures, loaded early so each swap is instant. */}
+      {["updating", "refreshed"].map((state) => (
+        <Image key={state} src={`/landing/dashboards/story-${state}-light.png`} alt="" width={2000} height={1616} sizes="1000px" loading="eager" className="hidden" />
+      ))}
     </div>
+  );
+}
+
+/**
+ * "Updating data…", then "Up to date": a solid tab hanging from a line along
+ * the dashboard's top edge, blue while it works and green once it's done. It
+ * drops in, confirms, and lifts away.
+ */
+function Notch({ tc }: { tc: number }) {
+  const done = tc >= REFRESH_AT;
+  const fade = ramp(tc, NOTCH_OUT[0], NOTCH_OUT[1]);
+  return (
+    <>
+      <span
+        data-done={done || undefined}
+        className="absolute inset-x-0 top-0 z-2 h-0.5 bg-[#4b4bf7] data-done:bg-[#1f9d55]"
+        style={{ opacity: ramp(tc, UPDATING_AT, UPDATING_AT + 0.35) * (1 - fade) }}
+      />
+      <span
+        data-done={done || undefined}
+        className="absolute top-0 left-1/2 isolate z-2 box-border inline-flex h-[26px] w-[168px] items-center justify-center text-[13px] font-medium whitespace-nowrap text-white [--tone:#4b4bf7] before:absolute before:inset-0 before:-z-1 before:origin-top before:rounded-b-[9px] before:bg-(--tone) before:[transform:perspective(36px)_rotateX(-10deg)] data-done:[--tone:#1f9d55]"
+        style={
+          tc >= NOTCH_OUT[0]
+            ? { opacity: 1 - fade, translate: `-50% ${(-fade * 100).toFixed(1)}%` }
+            : { translate: `-50% ${((ramp(tc, UPDATING_AT, UPDATING_AT + 0.35) - 1) * 100).toFixed(1)}%` }
+        }
+      >
+        <span className="inline-flex -translate-y-px items-center gap-[7px]">
+          {done ? (
+            <>
+              <Check className="size-[13px] stroke-[2.75]" /> Up to date
+            </>
+          ) : (
+            <>
+              <i className="size-[11px] animate-spin rounded-full border-[1.75px] border-white/35 border-t-white [animation-duration:0.8s]" /> Updating data…
+            </>
+          )}
+        </span>
+      </span>
+    </>
   );
 }
