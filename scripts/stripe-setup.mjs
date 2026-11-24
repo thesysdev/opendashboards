@@ -105,7 +105,17 @@ const portals = {
   },
 };
 
-const ids = Object.fromEntries(
-  Object.keys(PLANS).map((id) => [id, { monthly: prices[id].monthly, annual: prices[id].annual, portal: portals[id] }]),
-);
-console.log(`plans: hostedPlans(${JSON.stringify(ids, null, 2)}),`);
+const envVars = {
+  STRIPE_PRICE_STANDARD_MONTHLY: prices.standard.monthly,
+  STRIPE_PRICE_STANDARD_ANNUAL: prices.standard.annual,
+  STRIPE_PORTAL_STANDARD_MONTHLY: portals.standard.month,
+  STRIPE_PORTAL_STANDARD_ANNUAL: portals.standard.year,
+  STRIPE_PRICE_TEAM_MONTHLY: prices.team.monthly,
+  STRIPE_PRICE_TEAM_ANNUAL: prices.team.annual,
+  STRIPE_PORTAL_TEAM_MONTHLY: portals.team.month,
+  STRIPE_PORTAL_TEAM_ANNUAL: portals.team.year,
+  STRIPE_PORTAL_TEAM_SEATS: portals.team.seats,
+};
+for (const [name, value] of Object.entries(envVars)) {
+  console.log(`${name}=${value}`);
+}

@@ -45,6 +45,43 @@ export type PlansSettings = {
   supportEmail: string;
 };
 
+export const STRIPE_PLAN_ENV_VARS = [
+  "STRIPE_PRICE_STANDARD_MONTHLY",
+  "STRIPE_PRICE_STANDARD_ANNUAL",
+  "STRIPE_PORTAL_STANDARD_MONTHLY",
+  "STRIPE_PORTAL_STANDARD_ANNUAL",
+  "STRIPE_PRICE_TEAM_MONTHLY",
+  "STRIPE_PRICE_TEAM_ANNUAL",
+  "STRIPE_PORTAL_TEAM_MONTHLY",
+  "STRIPE_PORTAL_TEAM_ANNUAL",
+  "STRIPE_PORTAL_TEAM_SEATS",
+] as const;
+
+/** Build hosted plans from Stripe env vars; returns null when none are set. */
+export function plansFromEnv(env: Record<string, string | undefined>): PlansSettings | null {
+  const read = (name: (typeof STRIPE_PLAN_ENV_VARS)[number]) => env[name]?.trim() ?? "";
+  if (!STRIPE_PLAN_ENV_VARS.some((name) => read(name).length > 0)) return null;
+  return hostedPlans({
+    standard: {
+      monthly: read("STRIPE_PRICE_STANDARD_MONTHLY"),
+      annual: read("STRIPE_PRICE_STANDARD_ANNUAL"),
+      portal: {
+        month: read("STRIPE_PORTAL_STANDARD_MONTHLY"),
+        year: read("STRIPE_PORTAL_STANDARD_ANNUAL"),
+      },
+    },
+    team: {
+      monthly: read("STRIPE_PRICE_TEAM_MONTHLY"),
+      annual: read("STRIPE_PRICE_TEAM_ANNUAL"),
+      portal: {
+        month: read("STRIPE_PORTAL_TEAM_MONTHLY"),
+        year: read("STRIPE_PORTAL_TEAM_ANNUAL"),
+        seats: read("STRIPE_PORTAL_TEAM_SEATS"),
+      },
+    },
+  });
+}
+
 /** OpenDashboards' plans, with one environment's Stripe ids. */
 export function hostedPlans(stripe: { standard: StripePlan; team: StripePlan }): PlansSettings {
   return {

@@ -1,5 +1,6 @@
 import { common } from "./common";
 import { local } from "./local";
+import { plansFromEnv } from "./plans";
 import { prod } from "./prod";
 import type { Environment, EnvironmentSettings, Settings } from "./settings";
 
@@ -41,14 +42,15 @@ export function environment(env: Env = process.env): Environment {
 }
 
 /** The settings for an environment. */
-export function settingsFor(name: Environment): Settings {
-  return { ...common, ...ENVIRONMENT_SETTINGS[name] };
+export function settingsFor(name: Environment, env: Env = process.env): Settings {
+  const envSettings = ENVIRONMENT_SETTINGS[name];
+  return { ...common, ...envSettings, plans: envSettings.plans ?? plansFromEnv(env) };
 }
 
 /** This process's settings. */
-export function config(): Settings & { env: Environment } {
-  const env = environment();
-  return { env, ...settingsFor(env) };
+export function config(env: Env = process.env): Settings & { env: Environment } {
+  const name = environment(env);
+  return { env: name, ...settingsFor(name, env) };
 }
 
 /** Secrets, from environment variables only. Never logged, never in settings files. */
@@ -173,7 +175,7 @@ export function secretProblems(name: Environment, settings: Settings, env: Env =
  */
 export function validateConfig({ withSecrets }: { withSecrets: boolean }, env: Env = process.env): void {
   const name = environment(env);
-  const settings = settingsFor(name);
+  const settings = settingsFor(name, env);
   const problems = [...settingsProblems(name, settings), ...(withSecrets ? secretProblems(name, settings, env) : [])];
   if (problems.length) {
     throw new ConfigError(`Invalid ${name} configuration:\n${problems.map((problem) => `  - ${problem}`).join("\n")}`);

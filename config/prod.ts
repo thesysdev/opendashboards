@@ -6,6 +6,6 @@ export const prod: EnvironmentSettings = {
   appOrigin: "https://opendashboards.com",
   secrets: { allowPlaintext: false },
   network: { connectAttemptTimeoutMs: null },
-  // Off until the live-mode Stripe ids are in: then `hostedPlans({ standard: …, team: … })` from ./plans.
+  // Loaded from STRIPE_PRICE_* and STRIPE_PORTAL_* env vars when set (scripts/stripe-setup.mjs prints them).
   plans: null,
 };
