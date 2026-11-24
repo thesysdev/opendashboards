@@ -37,7 +37,7 @@ export function track(userId: string, event: string, properties: Record<string, 
       .captureImmediate({
         distinctId: userId,
         event: `opendashboards_${event}`,
-        properties: { app: "opendashboards", environment: "production", ...properties },
+        properties: { app: "opendashboards", ...properties },
         ...(orgId ? { groups: { [ORG_GROUP]: orgId } } : {}),
       })
       .catch(() => {}),
