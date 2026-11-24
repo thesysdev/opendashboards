@@ -503,7 +503,9 @@ function TurnEffects({
   const messages = useThread((s) => s.messages);
   const publish = usePublishDashboardResponse();
   const setCreating = useSetCreatingDashboard();
-  const handled = useRef(new Set<string>());
+  // Each tool message's content as last handled: a dashboard's first response
+  // (it started building) is replaced in place by its last (saved or failed).
+  const handled = useRef(new Map<string, string>());
   const opening = useRef<string | null>(null);
   useEffect(() => {
     if (!isRunning) return;
@@ -521,17 +523,19 @@ function TurnEffects({
     for (const message of turn) {
       if (message.role !== "tool") continue;
       answered.add(message.toolCallId);
-      if (handled.current.has(message.id)) continue;
-      handled.current.add(message.id);
+      if (handled.current.get(message.id) === message.content) continue;
+      const first = !handled.current.has(message.id);
+      handled.current.set(message.id, message.content);
       const tool = toolNames.get(message.toolCallId);
       if (tool !== "create_dashboard" && tool !== "edit_dashboard") continue;
       const artifactId = artifactIdOf(message.content);
       if (!artifactId) {
-        if (tool === "create_dashboard") setCreating(null); // It failed: nothing to show.
+        // It failed before it had an id: nothing to show. After, the dashboard is already open.
+        if (tool === "create_dashboard" && first) setCreating(null);
         continue;
       }
       publish(artifactId, message.content);
-      if (tool === "create_dashboard") {
+      if (tool === "create_dashboard" && first) {
         opening.current = artifactId;
         setCreating((current) => ({ at: current?.at ?? pathname, response: message.content }));
         router.refresh(); // The server has recorded it; the sidebar picks it up.

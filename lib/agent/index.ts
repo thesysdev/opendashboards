@@ -2,6 +2,7 @@ import "server-only";
 
 import OpenAI from "openai";
 import type { RunnableToolFunctionWithContext } from "openai/lib/RunnableFunction";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { z } from "zod";
 
 import { config, secrets } from "@/config";
@@ -51,6 +52,11 @@ export type TurnContext = ToolContext & {
   signal: AbortSignal;
   /** Every dashboard this turn created or changed. */
   dashboards: string[];
+  /**
+   * Sends a tool call's result to the chat before the loop has it, such as a
+   * dashboard that has started building. The loop's own result replaces it.
+   */
+  sendToolResult?: (toolCallId: string, content: string) => void;
 };
 
 type AgentTool = RunnableToolFunctionWithContext<TurnContext>;
@@ -68,11 +74,14 @@ export function agentTools(): AgentTool[] {
   return [...dataTools, listDashboards, readDashboardTool, createDashboard, editDashboard, deleteDashboardTool];
 }
 
+/** One call of a tool: its name, the arguments as the model wrote them, and the loop running it. */
+type Call = { name: string; input: string; runner: unknown };
+
 function define(
   name: string,
   description: string,
   parameters: Record<string, unknown>,
-  run: (args: unknown, turn: TurnContext) => Promise<unknown>,
+  run: (args: unknown, turn: TurnContext, call: Call) => Promise<unknown>,
 ): AgentTool {
   return {
     type: "function",
@@ -80,10 +89,11 @@ function define(
       name,
       description,
       parameters,
-      parse: (input: string) => JSON.parse(input || "{}") as unknown,
-      async function(args: unknown, _runner: unknown, turn: TurnContext) {
+      // The arguments as written travel along, so a tool can find its own call in the loop.
+      parse: (input: string) => ({ input, args: JSON.parse(input || "{}") as unknown }),
+      async function(parsed: { input: string; args: unknown }, runner: unknown, turn: TurnContext) {
         try {
-          return await run(args, turn);
+          return await run(parsed.args, turn, { name, input: parsed.input, runner });
         } catch (error) {
           if (turn.signal.aborted) throw error;
           if (error instanceof ToolError) return { error: { code: error.code, message: error.message } };
@@ -93,6 +103,27 @@ function define(
       },
     },
   };
+}
+
+/**
+ * The id of the tool call running now: in the model's latest message, the
+ * call to this tool with these exact arguments. Two identical calls in one
+ * round take one id each.
+ */
+function toolCallIdOf(call: Call, claimed: Set<string>): string | null {
+  const messages = (call.runner as { messages?: ChatCompletionMessageParam[] }).messages ?? [];
+  const latest = messages.findLast((message) => message.role === "assistant");
+  if (latest?.role !== "assistant") return null;
+  const match = latest.tool_calls?.find(
+    (toolCall) =>
+      toolCall.type === "function" &&
+      toolCall.function.name === call.name &&
+      toolCall.function.arguments === call.input &&
+      !claimed.has(toolCall.id),
+  );
+  if (!match) return null;
+  claimed.add(match.id);
+  return match.id;
 }
 
 const listDashboards = define(
@@ -172,14 +203,16 @@ const createArgs = z.object({
 
 const createDashboard = define(
   "create_dashboard",
-  "Creates a live dashboard in this app, with its title and description. It opens for the user when the turn ends.",
+  "Creates a live dashboard in this app, with its title and description, and opens it for the user. " +
+    "Returns once the dashboard is saved, or says why it couldn't be built.",
   z.toJSONSchema(createArgs),
-  async (input, turn) => {
+  async (input, turn, call) => {
     const args = parseArgs(createArgs, input);
-    const response = await getDashboards().create({ title: args.title, prompt: args.prompt }, turn, {
+    const build = getDashboards().create({ title: args.title, prompt: args.prompt }, turn, {
+      stream: true,
       signal: turn.signal,
     });
-    return remember(response, { title: args.title, description: args.description }, turn);
+    return follow(build, { title: args.title, description: args.description }, turn, call);
   },
 );
 
@@ -190,18 +223,20 @@ const editArgs = z.object({
 
 const editDashboard = define(
   "edit_dashboard",
-  "Changes what a dashboard in this app shows, in place. Its title and description stay as they are: the user renames dashboards.",
+  "Changes what a dashboard in this app shows, in place. Its title and description stay as they are: the user renames dashboards. " +
+    "Returns once the change is saved, or says why it couldn't be made.",
   z.toJSONSchema(editArgs),
-  async (input, turn) => {
+  async (input, turn, call) => {
     const args = parseArgs(editArgs, input);
     const dashboard = await getDashboardService().findByArtifact(turn.userId, args.dashboard);
     if (!dashboard || dashboard.appId !== turn.appId) {
       throw new ToolError("dashboard_not_found", `No dashboard ${args.dashboard} in this app.`);
     }
-    const response = await getDashboards().edit({ id: args.dashboard, prompt: args.prompt }, turn, {
+    const build = getDashboards().edit({ id: args.dashboard, prompt: args.prompt }, turn, {
+      stream: true,
       signal: turn.signal,
     });
-    return remember(response, null, turn);
+    return follow(build, null, turn, call);
   },
 );
 
@@ -224,6 +259,46 @@ const deleteDashboardTool = define(
     return { deleted: args.dashboard };
   },
 );
+
+/** Tool calls of this turn's dashboards that already sent their first result, per turn. */
+const claimedCalls = new WeakMap<TurnContext, Set<string>>();
+
+/**
+ * Follows a streamed create or edit. OpenUI Cloud sends two messages: the
+ * first as soon as the dashboard has an id, the last once it's saved or
+ * failed. The first is recorded and goes to the chat at once, so the
+ * dashboard opens and shows its build steps; the last is the tool result the
+ * model reads, and replaces the first in the chat.
+ */
+async function follow(
+  build: AsyncIterable<string>,
+  created: { title: string; description: string } | null,
+  turn: TurnContext,
+  call: Call,
+): Promise<string> {
+  let first: string | undefined;
+  let last: string | undefined;
+  for await (const message of build) {
+    if (first === undefined) {
+      first = message;
+      if (artifactOf(message)) {
+        await remember(message, created, turn);
+        let claimed = claimedCalls.get(turn);
+        if (!claimed) claimedCalls.set(turn, (claimed = new Set()));
+        const toolCallId = toolCallIdOf(call, claimed);
+        if (toolCallId) turn.sendToolResult?.(toolCallId, message);
+      }
+    }
+    last = message;
+  }
+  if (first === undefined || last === undefined) {
+    logError("agent.dashboard", new Error("OpenUI Cloud's stream had no message"));
+    throw new ToolError("no_artifact", "OpenUI Cloud didn't return a dashboard.");
+  }
+  // Failed before it had an id: Cloud's own sentence says why, for the model to act on.
+  if (!artifactOf(first)) throw new ToolError("build_failed", last);
+  return last;
+}
 
 /**
  * Records a new dashboard against the app with its title and description,

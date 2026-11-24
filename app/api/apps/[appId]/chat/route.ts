@@ -21,6 +21,9 @@ type Ctx = { params: Promise<{ appId: string }> };
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
 
+// Dashboards build inside the turn (the model checks the data first), so a turn needs time to finish.
+export const maxDuration = 300;
+
 /**
  * One turn of the Build chat. Runs the agent's tool loop over OpenUI Gateway
  * and streams it as AG-UI events (text, tool calls and their results) for
@@ -95,6 +98,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
     async start(controller) {
       const emit = (event: BaseEvent) => controller.enqueue(encoder.encode(sse(event)));
       const translate = createAgUiTranslator(emit);
+      turn.sendToolResult = (toolCallId, content) => translate.result(toolCallId, content);
       emit({ type: EventType.RUN_STARTED, threadId, runId } as BaseEvent);
 
       const runner = getGateway().chat.completions.runTools(
