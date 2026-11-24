@@ -1,8 +1,8 @@
 "use client";
 
 import { BuildingIcon, CheckIcon, LinkIcon, Loader2Icon, LockIcon, UsersIcon, XIcon } from "lucide-react";
-import { Popover as PopoverPrimitive } from "radix-ui";
-import { useEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
+import { Portal } from "radix-ui";
+import { type RefObject, useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import { toast } from "sonner";
 
 import {
@@ -61,10 +61,12 @@ export function ShareApp({
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const nudge = useShareNudge(app.id, dashboardCount);
+  const shareButton = useRef<HTMLButtonElement>(null);
   const added = teammates.filter((teammate) => teammate.access);
   const unshared = app.teamAccess === "private" && !guests.length && !added.length;
   // Nothing to suggest once it's shared.
   const showNudge = nudge.pending && !open && unshared;
+  const nudgeAt = useBelow(shareButton, showNudge);
 
   function openDialog(next: boolean) {
     if (next) {
@@ -96,25 +98,17 @@ export function ShareApp({
 
   return (
     <>
+      <Button ref={shareButton} variant="outline" size="sm" onClick={() => openDialog(true)}>
+        {unshared ? <LockIcon aria-hidden /> : <UsersIcon aria-hidden />}
+        Share
+      </Button>
       {/* In a portal, so whatever the page draws under the header can't cover or clip it. */}
-      <PopoverPrimitive.Root open={showNudge}>
-        <PopoverPrimitive.Anchor asChild>
-          <Button variant="outline" size="sm" onClick={() => openDialog(true)}>
-            {unshared ? <LockIcon aria-hidden /> : <UsersIcon aria-hidden />}
-            Share
-          </Button>
-        </PopoverPrimitive.Anchor>
-        <PopoverPrimitive.Portal>
-          <PopoverPrimitive.Content
+      {nudgeAt && (
+        <Portal.Root>
+          <div
             role="status"
-            side="bottom"
-            align="end"
-            sideOffset={8}
-            collisionPadding={8}
-            // A suggestion: it doesn't take focus, and only its own buttons put it away.
-            onOpenAutoFocus={(event) => event.preventDefault()}
-            onInteractOutside={(event) => event.preventDefault()}
-            className="relative z-50 w-64 rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
+            style={{ top: nudgeAt.top, right: nudgeAt.right }}
+            className="fixed z-50 w-64 max-w-[calc(100vw-1rem)] rounded-lg border bg-popover p-3 text-popover-foreground shadow-lg"
           >
             {/* Points at the Share button above. */}
             <span aria-hidden className="absolute -top-1.5 right-6 size-3 rotate-45 border-t border-l bg-popover" />
@@ -127,9 +121,9 @@ export function ShareApp({
             <Button size="sm" className="mt-2" onClick={() => openDialog(true)}>
               Share
             </Button>
-          </PopoverPrimitive.Content>
-        </PopoverPrimitive.Portal>
-      </PopoverPrimitive.Root>
+          </div>
+        </Portal.Root>
+      )}
       <Dialog open={open} onOpenChange={openDialog}>
         {/* One column no wider than the dialog: on a phone a long email is cut short, and what's beside it stays on screen. */}
         <DialogContent className="max-h-[calc(100dvh-2rem)] grid-cols-[minmax(0,1fr)] overflow-y-auto sm:max-w-md">
@@ -483,4 +477,29 @@ function CopyLink({ appId }: { appId: string }) {
       {copied ? "Link copied" : "Copy link"}
     </Button>
   );
+}
+
+/** Where, in the viewport, a box hanging 8px below `anchor` and right-aligned with it goes, while `active`. */
+function useBelow(anchor: RefObject<HTMLElement | null>, active: boolean) {
+  const [place, setPlace] = useState<{ top: number; right: number } | null>(null);
+  useLayoutEffect(() => {
+    const node = anchor.current;
+    if (!active || !node) return;
+    const update = () => {
+      const rect = node.getBoundingClientRect();
+      setPlace({ top: rect.bottom + 8, right: document.documentElement.clientWidth - rect.right });
+    };
+    update();
+    // The header reflows when the sidebar opens or closes, without the window resizing.
+    const observer = new ResizeObserver(update);
+    observer.observe(node.closest("header") ?? node);
+    window.addEventListener("resize", update);
+    window.addEventListener("scroll", update, true);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener("resize", update);
+      window.removeEventListener("scroll", update, true);
+    };
+  }, [anchor, active]);
+  return active ? place : null;
 }
