@@ -12,6 +12,7 @@ import { parseMessage } from "@openuidev/lang-core";
 
 import { config, secrets } from "@/config";
 import { getDb } from "@/lib/db";
+import { getGate } from "@/lib/plans";
 import { logError } from "@/lib/log";
 import { appFacts } from "@/lib/orgs/access";
 import { can } from "@/lib/orgs/policy";
@@ -50,7 +51,7 @@ export function getDashboards(): Dashboard<ToolContext> {
 }
 
 export function getDashboardService(): DashboardService {
-  service ??= createDashboardService({ db: getDb() });
+  service ??= createDashboardService({ db: getDb(), gate: getGate() });
   return service;
 }
 

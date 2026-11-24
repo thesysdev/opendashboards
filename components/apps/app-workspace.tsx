@@ -8,6 +8,7 @@ import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, 
 
 import { renameAppAction } from "@/app/(app)/apps/actions";
 import { InlineRename } from "@/components/inline-rename";
+import { useViewOnly } from "@/components/billing/workspace-plan";
 import { OpenSidebarButton } from "@/components/shell/sidebar";
 import { Button } from "@/components/ui/button";
 import { appPath, dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/apps/paths";
@@ -94,7 +95,11 @@ function AppTitle({
   // A saved name shows until the server's copy catches up.
   const [saved, setSaved] = useState<{ from: string; to: string } | null>(null);
   const shown = saved && saved.from === name ? saved.to : name;
+  const viewOnly = useViewOnly();
 
+  if (viewOnly) {
+    return <h1 className="min-w-0 truncate px-1.5 py-1 text-sm font-semibold">{shown}</h1>;
+  }
   if (renaming) {
     return (
       <h1 className="min-w-0 flex-1 sm:max-w-sm">

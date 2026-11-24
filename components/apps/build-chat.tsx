@@ -33,6 +33,8 @@ import "@openuidev/react-ui/styles/index.css";
 
 import { takePendingPromptAction } from "@/app/(app)/apps/actions";
 import { VIEWING_DASHBOARD } from "@/lib/agent/messages";
+import { UpgradeDialog } from "@/components/billing/upgrade";
+import { useViewOnly, useWorkspacePlan } from "@/components/billing/workspace-plan";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -80,6 +82,7 @@ export function BuildChat({
   // Taken once: sending the first prompt refreshes the page, which turns
   // hasPendingPrompt off mid-send, and reopening a thread then would abort it.
   const [startedWithPrompt] = useState(hasPendingPrompt);
+  const viewOnly = useViewOnly();
   const cloud = useOpenuiCloudStorage({ token: frontendTokenPath(appId) });
   // Set when this session starts a conversation of its own: there's then nothing to reopen.
   const startedThread = useRef(false);
@@ -139,7 +142,7 @@ export function BuildChat({
         <div className="flex min-h-0 flex-1 flex-col [&_.openui-behind-the-scenes\_\_items]:overscroll-auto!">
           <ThreadBar />
           <ThreadMessages hasDashboards={dashboards.length > 0} />
-          <Composer />
+          {viewOnly ? <BuildingPaused /> : <Composer />}
         </div>
         <TurnEffects appId={appId} dashboards={dashboards} hasPendingPrompt={hasPendingPrompt} />
         {/* A new app's first prompt starts its own conversation: nothing to reopen. */}
@@ -375,6 +378,28 @@ function AssistantTurn({
         />
       )}
       {answer?.content && <MarkDownRenderer textMarkdown={answer.content} options={markdownOptions} className="text-sm" />}
+    </div>
+  );
+}
+
+/** In place of the composer while the workspace is over its plan; the chat above still reads as it was. */
+function BuildingPaused() {
+  const plan = useWorkspacePlan();
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="m-3 rounded-xl border p-4 text-center">
+      <p className="text-sm font-medium">Building is paused</p>
+      <p className="mt-0.5 text-sm text-muted-foreground">
+        {plan?.canManageBilling ? "Pick a plan to keep building." : "Ask an admin to pick a plan."}
+      </p>
+      {plan?.canManageBilling && (
+        <>
+          <Button size="sm" className="mt-3" onClick={() => setOpen(true)}>
+            See plans
+          </Button>
+          <UpgradeDialog orgId={plan.orgId} open={open} onOpenChange={setOpen} />
+        </>
+      )}
     </div>
   );
 }

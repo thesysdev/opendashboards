@@ -173,6 +173,15 @@ const policy = {
     },
   },
 
+  /** The workspace's plan: every member sees it and its usage; only admins pay, change or cancel it. */
+  billing: {
+    notFound: NO_WORKSPACE,
+    actions: {
+      view: onWorkspace({ allow: member, denied: NO_WORKSPACE }),
+      update: onWorkspace({ allow: admin, denied: "Only an admin can manage billing." }),
+    },
+  },
+
   member: {
     notFound: NO_WORKSPACE,
     actions: {

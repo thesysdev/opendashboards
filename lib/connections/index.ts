@@ -2,6 +2,7 @@ import "server-only";
 
 import { config, secrets } from "@/config";
 import { getDb } from "@/lib/db";
+import { getGate } from "@/lib/plans";
 import { getSecretBox } from "@/lib/secrets";
 import { sourceFor } from "@/lib/sources";
 
@@ -19,6 +20,7 @@ export function getConnectionService(): ConnectionService {
     sources: sourceFor,
     demo: { datasets: () => config().demoData.datasets, password: secrets.demoDataPassword },
     signInTtlMs: config().mcp.oauthSignInTtlMs,
+    gate: getGate(),
   });
   return service;
 }

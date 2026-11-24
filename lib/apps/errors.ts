@@ -7,6 +7,8 @@ export type AppErrorCode =
   | "thread_conflict"
   /** A connection that requires sign-in, on an app with guests: they could never see its data. */
   | "guests_cant_sign_in"
+  /** The workspace's plan doesn't allow it: at a limit, or view-only. */
+  | "plan_limit"
   | "internal";
 
 export type AppError = { code: AppErrorCode; message: string; field?: string };

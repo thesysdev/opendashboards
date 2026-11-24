@@ -1,6 +1,6 @@
 "use client";
 
-import { Loader2Icon } from "lucide-react";
+import { ArmchairIcon, Loader2Icon, UsersIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { useId, useState, useTransition } from "react";
 import { toast } from "sonner";
@@ -15,6 +15,7 @@ import {
   revokeInviteAction,
 } from "@/app/(app)/settings/actions";
 import { removeAppGuestAction } from "@/app/(app)/apps/actions";
+import { UpgradePrompt, useAtLimit, useViewOnly, useWorkspacePlan } from "@/components/billing/workspace-plan";
 import { AvatarCircle } from "@/components/shell/avatar-circle";
 import {
   AlertDialog,
@@ -46,11 +47,14 @@ function RoleSelect({
   value,
   onChange,
   disabled,
+  unavailable = [],
   label,
 }: {
   value: OrgRole;
   onChange: (role: OrgRole) => void;
   disabled?: boolean;
+  /** Roles the plan doesn't allow picking now. */
+  unavailable?: OrgRole[];
   label: string;
 }) {
   return (
@@ -65,7 +69,7 @@ function RoleSelect({
       )}
     >
       {ROLES.map((role) => (
-        <option key={role.value} value={role.value}>
+        <option key={role.value} value={role.value} disabled={role.value !== value && unavailable.includes(role.value)}>
           {role.label}
         </option>
       ))}
@@ -131,7 +135,27 @@ export function WorkspaceNameForm({ orgId, name }: { orgId: string; name: string
 }
 
 /** Adds someone by email. Nothing is sent and nothing is accepted: they're a member on their next sign-in. */
-export function InviteForm({ orgId }: { orgId: string }) {
+/** What the plan allows in the member list right now. */
+function useMemberRules() {
+  const plan = useWorkspacePlan();
+  const viewOnly = useViewOnly();
+  const editorsFull = useAtLimit("editors");
+  const seats = plan?.limits.editors.max ?? 0;
+  return {
+    /** No room for another admin or editor: over the plan, or every seat (or the one editor) taken. */
+    noMoreEditors: viewOnly || editorsFull,
+    /** The plan has no viewer role (Free, Standard). */
+    noViewers: plan !== null && !plan.viewerRole,
+    /** Free or Standard with its one editor in place: nobody else can join, so the form becomes the Team nudge. */
+    nobodyMore: plan !== null && !plan.perSeat && !plan.viewerRole && editorsFull,
+    /** On a per-seat plan with every seat taken: what to say. */
+    seatsFull: plan !== null && plan.perSeat && editorsFull && !viewOnly ? `All ${seats} ${seats === 1 ? "seat is" : "seats are"} taken` : null,
+  };
+}
+
+/** Invites people, or (on a plan that can't add anyone) the nudge to Team. `children` is the form's note. */
+export function InviteForm({ orgId, children }: { orgId: string; children?: React.ReactNode }) {
+  const rules = useMemberRules();
   const [email, setEmail] = useState("");
   const [role, setRole] = useState<OrgRole>("editor");
   const [error, setError] = useState<string | null>(null);
@@ -154,6 +178,10 @@ export function InviteForm({ orgId }: { orgId: string }) {
     });
   }
 
+  if (rules.nobodyMore) {
+    return <UpgradePrompt icon={UsersIcon} title="Build together on Team" detail="Add editors and free viewers." action="team" />;
+  }
+  const builder = role !== "viewer";
   return (
     <form onSubmit={submit}>
       <div className="flex flex-wrap items-center gap-2">
@@ -169,16 +197,26 @@ export function InviteForm({ orgId }: { orgId: string }) {
           aria-invalid={error ? true : undefined}
           className="h-8 min-w-48 flex-1 bg-background"
         />
-        <RoleSelect value={role} onChange={setRole} label="Role" />
-        <Button type="submit" size="sm" disabled={pending || !email.trim()}>
+        <RoleSelect
+          value={role}
+          onChange={(next) => {
+            setRole(next);
+            setError(null);
+          }}
+          unavailable={rules.noViewers ? ["viewer"] : []}
+          label="Role"
+        />
+        <Button type="submit" size="sm" disabled={pending || !email.trim() || (builder && rules.noMoreEditors)}>
           {pending ? "Adding…" : "Add"}
         </Button>
       </div>
+      {builder && rules.seatsFull && <UpgradePrompt icon={ArmchairIcon} title={rules.seatsFull} action="seat" className="mt-2" />}
       {error && (
         <p role="alert" className="mt-2 text-sm text-destructive">
           {error}
         </p>
       )}
+      {children}
     </form>
   );
 }
@@ -196,6 +234,7 @@ export function MemberRow({
 }) {
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
+  const rules = useMemberRules();
   // Your own role, lowered: you lose the controls to put it back, so it's asked first.
   const [demoting, setDemoting] = useState<OrgRole | null>(null);
   const name = member.email ?? "Someone who hasn't signed in lately";
@@ -231,7 +270,17 @@ export function MemberRow({
       </div>
       {pending && <Loader2Icon className="size-4 animate-spin text-muted-foreground" aria-hidden />}
       {canManage ? (
-        <RoleSelect value={member.role} onChange={pickRole} disabled={pending || lastAdmin} label={`Role of ${name}`} />
+        <RoleSelect
+          value={member.role}
+          onChange={pickRole}
+          disabled={pending || lastAdmin}
+          // A viewer moving up takes a seat; becoming a viewer needs a plan with viewers.
+          unavailable={[
+            ...(member.role === "viewer" && rules.noMoreEditors ? (["admin", "editor"] as const) : []),
+            ...(rules.noViewers ? (["viewer"] as const) : []),
+          ]}
+          label={`Role of ${name}`}
+        />
       ) : (
         <span className="text-sm text-muted-foreground">{roleLabel(member.role)}</span>
       )}

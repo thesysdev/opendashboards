@@ -291,7 +291,7 @@ describe("rename and remove", () => {
   it("refuses to delete a connection an app uses, and lists the apps", async () => {
     const id = await createOk("alice");
     const [app] = await db.insert(apps).values({ userId: "alice", orgId: workspaceOf("alice").orgId, name: "Growth" }).returning();
-    await db.insert(appConnections).values({ appId: app.id, connectionId: id });
+    await db.insert(appConnections).values({ appId: app.id, connectionId: id, createdBy: "seed" });
     const { service } = makeService();
 
     expect(await service.remove("alice", { id })).toMatchObject({
@@ -552,7 +552,7 @@ describe("demo datasets", () => {
     expect(await service.rename("alice", { id, name: "Mine" })).toMatchObject({ ok: false });
 
     const [app] = await db.insert(apps).values({ userId: "alice", orgId: workspaceOf("alice").orgId, name: "Sales" }).returning();
-    await db.insert(appConnections).values({ appId: app.id, connectionId: id });
+    await db.insert(appConnections).values({ appId: app.id, connectionId: id, createdBy: "seed" });
     expect(await service.uninstallDemo(workspaceOf("alice"), { dataset: "retail" })).toMatchObject({
       ok: false,
       error: { code: "in_use", apps: [{ id: app.id, name: "Sales" }] },

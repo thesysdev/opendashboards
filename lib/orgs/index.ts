@@ -7,6 +7,7 @@ import { cache } from "react";
 import { identifyWorkspace, track } from "@/lib/analytics";
 import { requireUser, type CurrentUser } from "@/lib/auth/user";
 import { getDb } from "@/lib/db";
+import { getGate } from "@/lib/plans";
 import type { OrgRole } from "@/lib/db/schema";
 import { logError } from "@/lib/log";
 
@@ -28,7 +29,7 @@ export const NO_WORKSPACE_PATH = "/welcome";
 let service: OrgService | undefined;
 
 export function getOrgService(): OrgService {
-  service ??= createOrgService({ db: getDb() });
+  service ??= createOrgService({ db: getDb(), gate: getGate() });
   return service;
 }
 
