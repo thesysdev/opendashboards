@@ -227,8 +227,8 @@ export function ShareApp({
             <p>Only share with people you trust.</p>
             {personalConnections > 0 && (
               <p>
-                This app uses {personalConnections === 1 ? "1 connection" : `${personalConnections} connections`} with a personal
-                sign-in. Members sign in themselves to see its data.
+                This app uses {personalConnections === 1 ? "1 connection that requires" : `${personalConnections} connections that require`}{" "}
+                sign-in. Members sign in with their own account to see its data, and guests can&apos;t be added.
               </p>
             )}
           </div>

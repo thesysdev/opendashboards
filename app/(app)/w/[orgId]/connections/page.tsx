@@ -1,8 +1,8 @@
-import { KeyRoundIcon, LockIcon, PlugIcon, UsersIcon } from "lucide-react";
+import { KeyRoundIcon, LogInIcon, PlugIcon, UsersIcon } from "lucide-react";
 import type { Metadata } from "next";
 import { Suspense } from "react";
 
-import { ConnectionActions, StopSharingButton } from "@/components/connections/connection-actions";
+import { ConnectionActions } from "@/components/connections/connection-actions";
 import { ConnectorCatalog } from "@/components/connections/connector-catalog";
 import { SignInResult } from "@/components/connections/sign-in-result";
 import { BuildButton } from "@/components/connections/build-button";
@@ -98,7 +98,8 @@ async function ConnectionsContent({ params }: { params: Params }) {
           <SectionLabel id="add-connection">Add a connection</SectionLabel>
           {team && (
             <p className="-mt-1 mb-3 text-sm text-muted-foreground">
-              A key or password serves everyone in {team}. A sign-in is yours alone until you share it.
+              A key or password is shared with everyone in {team}. A sign-in is either shared with the workspace, so everyone
+              queries as you, or requires sign-in, so everyone signs in with their own account. That can&apos;t be changed later.
             </p>
           )}
           <ConnectorCatalog
@@ -138,20 +139,26 @@ function ConnectionRow({
   /** Whether the reader may remove sample data from the workspace. */
   canRemoveSample: boolean;
 }) {
-  const signedIn = connection.signIn === "oauth";
+  const { facts, kind } = connection;
   const detail = connection.demo
     ? `Sample data · ${connection.demo.summary}`
     : [
         connection.source,
         connection.detail,
-        // Whose account a shared sign-in runs as, and who added anything that isn't the reader's own.
-        ...(team && connection.addedBy
-          ? [signedIn ? `signed in by ${connection.addedBy} · everyone queries as them` : `added by ${connection.addedBy}`]
+        // Whose account a shared sign-in runs as; who added a key that isn't the reader's own.
+        ...(kind === "signInShared" && team && connection.signInStatus !== "none"
+          ? [facts.signedIn ? "everyone queries as you" : `everyone queries as ${connection.signedInAs ?? "someone"}`]
           : []),
-        ...(team && signedIn && connection.mine && connection.sharing === "org" ? ["everyone queries as you"] : []),
+        ...(kind === "key" && team && connection.addedBy ? [`added by ${connection.addedBy}`] : []),
       ]
         .filter(Boolean)
         .join(" · ");
+  // What the reader may do with it: each comes from the policy.
+  const actions = {
+    manage: connection.canManage,
+    signIn: can("connection", "signIn", facts),
+    signOut: can("connection", "signOut", facts),
+  };
 
   return (
     <li className="p-3.5">
@@ -160,34 +167,28 @@ function ConnectionRow({
         <div className="min-w-0 flex-1">
           <p className="flex items-center gap-1.5 text-sm font-medium">
             <span className="truncate">{connection.name}</span>
-            <Status status={connection.status} />
+            {connection.signInStatus === null ? <Status status={connection.status} /> : <SignInStatus connection={connection} />}
           </p>
           <p className="truncate text-sm text-muted-foreground">{detail}</p>
         </div>
-        {team && !connection.demo && <SharingBadge sharing={connection.sharing} />}
+        {team && !connection.demo && <KindBadge kind={kind} />}
         {canBuild && <BuildButton connectionId={connection.id} name={connection.name} />}
-        {connection.demo ? (
-          canRemoveSample && <SampleDataActions dataset={connection.demo.key} name={connection.name} apps={connection.apps} />
-        ) : connection.canManage ? (
-          <ConnectionActions
-            connection={{
-              id: connection.id,
-              name: connection.name,
-              type: connection.type,
-              apps: connection.apps,
-              signIn: connection.signIn,
-              sharing: connection.sharing,
-              mine: connection.mine,
-            }}
-            secretMode={secretMode}
-            team={team}
-          />
-        ) : (
-          // A viewer can't manage connections, but can always take back a sign-in of theirs that everyone queries as.
-          signedIn &&
-          connection.sharing === "org" &&
-          can("connection", "stopSharing", connection.facts) && <StopSharingButton connection={{ id: connection.id, name: connection.name }} />
-        )}
+        {connection.demo
+          ? canRemoveSample && <SampleDataActions dataset={connection.demo.key} name={connection.name} apps={connection.apps} />
+          : (actions.manage || actions.signIn || actions.signOut) && (
+              <ConnectionActions
+                connection={{
+                  id: connection.id,
+                  name: connection.name,
+                  type: connection.type,
+                  apps: connection.apps,
+                  kind,
+                  signedIn: connection.signInStatus !== "none" && facts.signedIn,
+                }}
+                actions={actions}
+                secretMode={secretMode}
+              />
+            )}
       </div>
       <UsedBy apps={connection.apps} />
     </li>
@@ -205,13 +206,34 @@ function Status({ status }: { status: ConnectionStatus }) {
   );
 }
 
-/** With others in the workspace: whether a connection serves everyone, or only the person who signed in. */
-function SharingBadge({ sharing }: { sharing: ConnectionSummary["sharing"] }) {
-  const Icon = sharing === "org" ? UsersIcon : LockIcon;
+/**
+ * A sign-in's state for the reader: the one it runs with, or theirs where
+ * everyone signs in. On a phone only its dot shows, so the name keeps the room.
+ */
+function SignInStatus({ connection }: { connection: ConnectionSummary }) {
+  const signedIn = connection.signInStatus === "signedIn";
+  const { label, text, dot } = signedIn
+    ? { label: connection.kind === "signInEach" ? "Signed in" : null, text: "text-muted-foreground", dot: "bg-emerald-500/50" }
+    : connection.signInStatus === "expired"
+      ? { label: "Sign-in expired", text: "text-red-600", dot: "bg-red-500" }
+      : { label: connection.kind === "signInEach" ? "Not signed in" : "Nobody signed in", text: "text-amber-600", dot: "bg-amber-500" };
+  return (
+    <span className={cn("flex shrink-0 items-center gap-1 text-xs font-normal", text)}>
+      {/* A problem reads as words on a wide screen; the working dot always shows. */}
+      <span role="img" aria-label={label ?? "Connected"} className={cn("size-1.5 rounded-full", dot, !signedIn && "sm:hidden")} />
+      {label && <span className="hidden sm:inline">{label}</span>}
+    </span>
+  );
+}
+
+/** With others in the workspace: shared with it (one credential for everyone), or requiring each person's own sign-in. */
+function KindBadge({ kind }: { kind: ConnectionSummary["kind"] }) {
+  const each = kind === "signInEach";
+  const Icon = each ? LogInIcon : UsersIcon;
   return (
     <span className="hidden shrink-0 items-center gap-1 rounded-md bg-neutral-100 px-1.5 py-0.5 text-[0.6875rem] text-neutral-600 sm:flex">
       <Icon className="size-3" aria-hidden />
-      {sharing === "org" ? "Everyone" : "Only you"}
+      {each ? "Requires sign-in" : "Shared with workspace"}
     </span>
   );
 }

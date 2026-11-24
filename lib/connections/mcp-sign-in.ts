@@ -42,13 +42,15 @@ export const mcpSignInRedirectUri = () => `${appConfig().appOrigin}/api/mcp/oaut
  */
 const RETURN_PATH = /^\/w\/[0-9a-f-]{36}\/apps\/[0-9a-f-]{36}(\/[0-9a-f-]{36})?$/;
 
+/** How a new connection is used, fixed once added: each member signs in themselves unless it's shared. */
+const sharing = z.enum(["personal", "org"]).default("personal");
+
 const startSchema = z.union([
-  z.object({ name: connectionNameSchema, url: z.string() }).strict(),
+  z.object({ name: connectionNameSchema, url: z.string(), sharing }).strict(),
   // A known server: its endpoint comes from the preset, never the browser.
-  z.object({ name: connectionNameSchema, service: z.enum(MCP_SERVICE_KEYS) }).strict(),
+  z.object({ name: connectionNameSchema, service: z.enum(MCP_SERVICE_KEYS), sharing }).strict(),
+  // Signing in to a connection that exists: as themselves, or (a shared one) as the one everyone runs as.
   z.object({ connectionId: z.uuid(), returnTo: z.string().regex(RETURN_PATH).optional() }).strict(),
-  // A sign-in of the caller's own to the server a teammate's personal connection points at.
-  z.object({ like: z.uuid(), returnTo: z.string().regex(RETURN_PATH).optional() }).strict(),
 ]);
 
 /** What a pending sign-in keeps sealed, besides the settings it will save. */
@@ -57,11 +59,16 @@ type PendingSecret = PendingSignIn & { requireIss: boolean; returnTo?: string };
 type Deps = { service?: ConnectionService; testHooks?: OAuthTestHooks; redirectUri?: string };
 
 /**
- * Starts a sign-in for a new server in the member's org, again for an
- * existing connection of theirs, or of their own to the server a teammate's
- * personal connection points at. Returns where to send the browser.
+ * Starts a sign-in: to a new server in the member's org, or to a connection
+ * that exists. Adding a server that already has a connection requiring
+ * sign-in signs in to that one instead (`existing` names it). Returns where
+ * to send the browser.
  */
-export async function startMcpSignIn(scope: Scope, input: unknown, deps: Deps = {}): Promise<Result<{ authorizationUrl: string }>> {
+export async function startMcpSignIn(
+  scope: Scope,
+  input: unknown,
+  deps: Deps = {},
+): Promise<Result<{ authorizationUrl: string; existing: string | null }>> {
   const { userId } = scope;
   const service = deps.service ?? getConnectionService();
   const parsed = startSchema.safeParse(input);
@@ -72,24 +79,19 @@ export async function startMcpSignIn(scope: Scope, input: unknown, deps: Deps = 
   let connectionId: string | null = null;
   let returnTo: string | undefined;
   let preset: McpServiceKey | undefined;
-  let ownCopy = false;
+  let sharingOf: "personal" | "org" = "personal";
+  let existing: string | null = null;
   let orgId = scope.orgId;
-  if ("like" in parsed.data) {
+  if ("connectionId" in parsed.data) {
     ({ returnTo } = parsed.data);
-    const theirs = await service.signInNeeded(userId, parsed.data.like);
-    if (!theirs || theirs.config.type !== "mcp") return notFound();
-    ({ name } = theirs);
-    ({ url, service: preset } = theirs.config as { url: string; service?: McpServiceKey });
+    const found = await service.forSignIn(userId, parsed.data.connectionId);
+    if (!found.ok) return found;
+    if (found.data.config.type !== "mcp") return notFound();
+    ({ name } = found.data);
+    ({ url, service: preset } = found.data.config as { url: string; service?: McpServiceKey });
+    connectionId = found.data.id;
     // In the workspace that connection is in, whichever one the caller has open.
-    ({ orgId } = theirs);
-    ownCopy = true;
-  } else if ("connectionId" in parsed.data) {
-    ({ returnTo } = parsed.data);
-    const existing = await service.open(userId, parsed.data.connectionId, "mcp");
-    if (!existing) return notFound();
-    ({ name } = existing);
-    ({ url, service: preset } = existing.config as { url: string; service?: McpServiceKey });
-    connectionId = existing.id;
+    ({ orgId } = found.data);
   } else {
     if ("service" in parsed.data && !mcpService(parsed.data.service)?.auth.includes("oauth")) {
       return fail({ code: "validation", message: `${mcpService(parsed.data.service)?.label} doesn't support signing in. Use an API key.` });
@@ -97,7 +99,14 @@ export async function startMcpSignIn(scope: Scope, input: unknown, deps: Deps = 
     const settings = mcpConfigSchema.safeParse("service" in parsed.data ? { service: parsed.data.service } : { url: parsed.data.url });
     if (!settings.success) return fromValidation(settings.error);
     ({ url, service: preset } = settings.data);
-    ({ name } = parsed.data);
+    ({ name, sharing: sharingOf } = parsed.data);
+    // One connection per server that requires sign-in: everyone signs in to the same one.
+    const already = sharingOf === "personal" ? await service.signInConnectionTo(scope, url) : null;
+    if (already) {
+      connectionId = already.id;
+      ({ name } = already);
+      existing = already.name;
+    }
   }
 
   try {
@@ -119,31 +128,57 @@ export async function startMcpSignIn(scope: Scope, input: unknown, deps: Deps = 
         name,
         config: { type: "mcp", url, headerName: "Authorization", ...(preset && { service: preset }), oauth: discovery.settings },
         pending: JSON.stringify(pending),
+        sharing: sharingOf,
       },
-      { ownCopy },
     );
     if (!saved.ok) return saved;
-    return ok({ authorizationUrl: started.authorizationUrl.href });
+    return ok({ authorizationUrl: started.authorizationUrl.href, existing });
   } catch (error) {
     return failure("start", error);
   }
 }
 
-/** Finishes a sign-in from the callback's query parameters. */
+/** Where a sign-in started, to go back to however it ended. Null when it isn't known which sign-in it was. */
+type StartedFrom = { orgId: string | null; returnTo: string | null };
+
+/**
+ * Finishes a sign-in from the callback's query parameters. Whether it worked
+ * or not, `from` says where it started, once it's known which sign-in it was.
+ */
 export async function finishMcpSignIn(
   userId: string,
   params: URLSearchParams,
   deps: Deps = {},
-): Promise<Result<{ id: string; orgId: string | null; returnTo: string | null }>> {
+): Promise<Result<{ id: string; orgId: string | null; returnTo: string | null }> & { from: StartedFrom | null }> {
   const service = deps.service ?? getConnectionService();
   const state = params.get("state");
-  if (!state) return fail({ code: "oauth_failed", message: "The sign-in came back without its state, so it can't be trusted. Start again." });
+  if (!state) {
+    return { ...fail({ code: "oauth_failed", message: "The sign-in came back without its state, so it can't be trusted. Start again." }), from: null };
+  }
 
   // Taken once, for this user only, before it expires: a replayed or someone else's callback finds nothing.
   const taken = await service.takeSignIn(userId, hashState(state));
   if (!taken) {
-    return fail({ code: "oauth_expired", message: "This sign-in expired or was already used. Start it again from Data Connections." });
+    return {
+      ...fail({ code: "oauth_expired", message: "This sign-in expired or was already used. Start it again from Data Connections." }),
+      from: null,
+    };
   }
+  const pending = JSON.parse(taken.pending) as PendingSecret;
+  // Checked again on the way out: only our own app paths, ever.
+  const from: StartedFrom = { orgId: taken.orgId, returnTo: pending.returnTo && RETURN_PATH.test(pending.returnTo) ? pending.returnTo : null };
+  const result = await finishTaken(userId, params, taken, pending, service, deps);
+  return { ...result, from };
+}
+
+async function finishTaken(
+  userId: string,
+  params: URLSearchParams,
+  taken: NonNullable<Awaited<ReturnType<ConnectionService["takeSignIn"]>>>,
+  pending: PendingSecret,
+  service: ConnectionService,
+  deps: Deps,
+): Promise<Result<{ id: string; orgId: string | null; returnTo: string | null }>> {
   // How it ended, once it's known which sign-in this was. `renewal`: signing in again to a connection that exists.
   const finished = (outcome: "done" | "denied" | "failed", errorCode: string | null = null) =>
     track(
@@ -166,7 +201,6 @@ export async function finishMcpSignIn(
 
   if (taken.config.type !== "mcp" || !taken.config.oauth) return internalError();
   const settings = taken.config.oauth;
-  const pending = JSON.parse(taken.pending) as PendingSecret;
 
   // RFC 9207: the response must come from the authorization server this sign-in went to.
   const iss = params.get("iss");
@@ -178,7 +212,14 @@ export async function finishMcpSignIn(
   try {
     const tokens = await exchangeOAuthCode(settings, pending, code, deps.testHooks);
     const credential = writeOAuthCredential({ kind: "oauth", client: pending.client, tokens });
-    const saved = await service.saveSignedIn(userId, { orgId: taken.orgId, connectionId: taken.connectionId, name: taken.name, config: taken.config, credential });
+    const saved = await service.saveSignedIn(userId, {
+      orgId: taken.orgId,
+      connectionId: taken.connectionId,
+      sharing: taken.sharing,
+      name: taken.name,
+      config: taken.config,
+      credential,
+    });
     // Checked again on the way out: only our own app paths, ever.
     const back = pending.returnTo && RETURN_PATH.test(pending.returnTo) ? pending.returnTo : null;
     finished(saved.ok ? "done" : "failed", saved.ok ? null : saved.error.code);

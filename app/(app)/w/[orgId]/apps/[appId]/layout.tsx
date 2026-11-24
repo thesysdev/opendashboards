@@ -6,7 +6,7 @@ import { Suspense } from "react";
 import { AddAppConnection } from "@/components/apps/add-app-connection";
 import { AppMenu } from "@/components/apps/app-menu";
 import { ShareApp } from "@/components/apps/share-app";
-import { SignInAgainBanner } from "@/components/apps/sign-in-again-banner";
+import { SignInAgainBanner, type SignInProblem } from "@/components/apps/sign-in-again-banner";
 import { SignInResult } from "@/components/connections/sign-in-result";
 import { AppWorkspace } from "@/components/apps/app-workspace";
 import { BuildChat } from "@/components/apps/build-chat";
@@ -82,22 +82,7 @@ async function AppView({ params, children }: { params: Params; children: React.R
       notice={
         <>
           <SignInResult />
-          <SignInAgainBanner
-            connections={[
-              // Signing in again is for whoever signed in: a teammate's sign-in isn't theirs to renew.
-              ...app.connections
-                .filter((connection) => connection.signIn === "oauth" && connection.status === "invalid" && connection.mine)
-                .map(({ id, name }) => ({ id, name })),
-              // A teammate's personal sign-in runs as the reader's own sign-in to the same server: theirs to renew.
-              ...app.connections.flatMap(({ name, expiredOwnSignIn }) => (expiredOwnSignIn ? [{ id: expiredOwnSignIn, name }] : [])),
-            ]}
-            // A sign-in shared with the workspace is its owner's to renew: everyone else is told who to ask.
-            expired={app.connections
-              .filter((connection) => connection.signIn === "oauth" && connection.status === "invalid" && !connection.mine && connection.sharing === "org")
-              .map(({ id, name, ownerEmail }) => ({ id, name, owner: ownerEmail }))}
-            // A guest can't sign in to a workspace's sources: only its members can.
-            others={app.guest ? [] : app.connections.filter((connection) => connection.needsSignIn).map(({ id, name }) => ({ id, name }))}
-          />
+          <SignInAgainBanner problems={app.connections.flatMap((connection) => signInProblem(connection))} />
         </>
       }
       // Viewing only: no Build panel, no rename, no menu. The server refuses those anyway.
@@ -110,7 +95,7 @@ async function AppView({ params, children }: { params: Params; children: React.R
               app={{ id: app.id, name: app.name, teamAccess: app.teamAccess }}
               workspace={workspace ?? "your workspace"}
               owner={{ email: app.ownerEmail ?? "The owner", you: app.access === "owner" }}
-              personalConnections={app.connections.filter((connection) => connection.sharing === "personal").length}
+              personalConnections={app.connections.filter((connection) => connection.kind === "signInEach").length}
               guests={guests.map(({ email }) => email)}
               teammates={teammates.map(({ userId, email, role, access }) => ({ id: userId, email: email ?? "Someone", viewer: role === "viewer", access }))}
               dashboardCount={app.dashboards.length}
@@ -150,6 +135,15 @@ function ConnectionBadges({ app }: { app: AppDetail }) {
       {connection.name}
     </span>
   ));
+}
+
+/** What keeps a connection's data from loading for the reader, if anything: one banner row per connection. */
+function signInProblem(connection: AppDetail["connections"][number]): SignInProblem[] {
+  const { id, name, kind, signInStatus, signedInByMe, signedInAs, canSignIn } = connection;
+  const row = (problem: SignInProblem["problem"], by: string | null = null) => [{ id, name, problem, by, canSignIn }];
+  if (kind === "key" || signInStatus === "signedIn") return [];
+  if (signInStatus === "expired") return signedInByMe ? row("expired") : row("theirsExpired", signedInAs);
+  return kind === "signInEach" ? row("notSignedIn") : row("nobody");
 }
 
 function AppSkeleton() {

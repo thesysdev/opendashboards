@@ -35,9 +35,10 @@ export const orgRoleEnum = pgEnum("org_role", ["admin", "editor", "viewer"]);
 export const appTeamAccessEnum = pgEnum("app_team_access", ["private", "view", "edit"]);
 
 /**
- * Whose queries a connection serves. org: every member of its org (keys,
- * passwords, service accounts, and a sign-in its owner chose to share).
- * personal: only the member who signed in.
+ * How a connection is used, fixed when it's added. org: shared with the
+ * workspace, with one credential everyone's queries use (a key, password or
+ * service account, or one person's sign-in). personal: requires sign-in, so
+ * each member signs in with their own account and queries run as them.
  */
 export const connectionSharingEnum = pgEnum("connection_sharing", ["personal", "org"]);
 
@@ -125,7 +126,11 @@ export const dataConnections = pgTable(
      * Fixed after creation: pointing elsewhere means a new connection.
      */
     config: jsonb("config").$type<ConnectionConfig>().notNull(),
-    /** The API key or password, sealed by a SecretBox. Never sent to the browser. Null for a demo dataset. */
+    /**
+     * The API key or password, sealed by a SecretBox. Never sent to the browser.
+     * Null for a demo dataset, and for a sign-in, whose tokens are in
+     * `connection_sign_ins`.
+     */
     secret: jsonb("secret").$type<SealedSecret>(),
     /** e.g. "phx_…a1b2", so the UI never needs the credential itself. */
     credentialHint: text("credential_hint").notNull(),
@@ -145,8 +150,39 @@ export const dataConnections = pgTable(
     index("data_connections_org_id_idx").on(table.orgId),
     // Each demo dataset is installed at most once per org.
     uniqueIndex("data_connections_org_demo_idx").on(table.orgId, table.demoDataset),
-    // A demo dataset has no secret of its own; every other connection has one.
-    check("data_connections_secret_or_demo", sql`(${table.demoDataset} IS NULL) = (${table.secret} IS NOT NULL)`),
+    // A demo dataset has no secret of its own, and a key always has one. A sign-in's tokens are in
+    // connection_sign_ins; one written by a version from before that has them here until `adoptOrphans`.
+    check(
+      "data_connections_secret_or_demo",
+      sql`CASE WHEN ${table.demoDataset} IS NOT NULL THEN ${table.secret} IS NULL WHEN ${table.config} -> 'oauth' IS NULL THEN ${table.secret} IS NOT NULL ELSE true END`,
+    ),
+  ],
+);
+
+/**
+ * Someone's sign-in to a connection: their own OAuth tokens. A connection
+ * shared with the workspace has at most one, which everyone's queries use; one
+ * that requires sign-in has one per member who signed in, each used only for
+ * that member's queries. The secret is sealed for `user_id` and the connection.
+ */
+export const connectionSignIns = pgTable(
+  "connection_sign_ins",
+  {
+    id: uuid("id").primaryKey(),
+    connectionId: uuid("connection_id")
+      .notNull()
+      .references(() => dataConnections.id, { onDelete: "cascade" }),
+    /** Who signed in: the account the queries run as. */
+    userId: text("user_id").notNull(),
+    secret: jsonb("secret").$type<SealedSecret>().notNull(),
+    status: connectionStatusEnum("status").notNull(),
+    lastCheckedAt: timestamp("last_checked_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("connection_sign_ins_connection_user_idx").on(table.connectionId, table.userId),
+    index("connection_sign_ins_user_id_idx").on(table.userId),
   ],
 );
 
@@ -302,8 +338,10 @@ export const mcpOAuthSignIns = pgTable(
     userId: text("user_id").notNull(),
     /** The org a new connection from this sign-in will belong to. */
     orgId: uuid("org_id").references(() => orgs.id, { onDelete: "cascade" }),
-    /** Set when signing in again to an existing connection. */
+    /** Set when signing in to an existing connection. */
     connectionId: uuid("connection_id").references(() => dataConnections.id, { onDelete: "cascade" }),
+    /** How a new connection from this sign-in is used. Ignored for an existing one. */
+    sharing: connectionSharingEnum("sharing").notNull().default("personal"),
     name: text("name").notNull(),
     /** The connection's settings once signed in: the server and its authorization server, nothing secret. */
     config: jsonb("config").notNull(),
@@ -316,6 +354,7 @@ export const mcpOAuthSignIns = pgTable(
 );
 
 export type DataConnectionRow = typeof dataConnections.$inferSelect;
+export type ConnectionSignInRow = typeof connectionSignIns.$inferSelect;
 export type ConnectionStatus = (typeof connectionStatusEnum.enumValues)[number];
 export type OrgRole = (typeof orgRoleEnum.enumValues)[number];
 export type AppTeamAccess = (typeof appTeamAccessEnum.enumValues)[number];

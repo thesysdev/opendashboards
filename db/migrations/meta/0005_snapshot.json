@@ -1,5 +1,5 @@
 {
-  "id": "c64843c1-ce17-4657-a841-4da9563c5d9c",
+  "id": "d531f049-e258-4908-8166-6e349dea3ae1",
   "prevId": "85d70323-a393-4066-bc93-4a500dcc72c1",
   "version": "7",
   "dialect": "postgresql",
@@ -462,6 +462,121 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
+    "public.connection_sign_ins": {
+      "name": "connection_sign_ins",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true
+        },
+        "connection_id": {
+          "name": "connection_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "secret": {
+          "name": "secret",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "status": {
+          "name": "status",
+          "type": "connection_status",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "last_checked_at": {
+          "name": "last_checked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "connection_sign_ins_connection_user_idx": {
+          "name": "connection_sign_ins_connection_user_idx",
+          "columns": [
+            {
+              "expression": "connection_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "connection_sign_ins_user_id_idx": {
+          "name": "connection_sign_ins_user_id_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "connection_sign_ins_connection_id_data_connections_id_fk": {
+          "name": "connection_sign_ins_connection_id_data_connections_id_fk",
+          "tableFrom": "connection_sign_ins",
+          "tableTo": "data_connections",
+          "columnsFrom": [
+            "connection_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
     "public.dashboards": {
       "name": "dashboards",
       "schema": "",
@@ -738,7 +853,7 @@
       "checkConstraints": {
         "data_connections_secret_or_demo": {
           "name": "data_connections_secret_or_demo",
-          "value": "(\"data_connections\".\"demo_dataset\" IS NULL) = (\"data_connections\".\"secret\" IS NOT NULL)"
+          "value": "CASE WHEN \"data_connections\".\"demo_dataset\" IS NOT NULL THEN \"data_connections\".\"secret\" IS NULL WHEN \"data_connections\".\"config\" -> 'oauth' IS NULL THEN \"data_connections\".\"secret\" IS NOT NULL ELSE true END"
         }
       },
       "isRLSEnabled": false
@@ -770,6 +885,14 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "sharing": {
+          "name": "sharing",
+          "type": "connection_sharing",
+          "typeSchema": "public",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'personal'"
         },
         "name": {
           "name": "name",

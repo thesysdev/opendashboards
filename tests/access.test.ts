@@ -9,7 +9,17 @@ import { createConnectionService } from "@/lib/connections/service";
 import { createOrgService } from "@/lib/orgs/service";
 import { createDashboardService } from "@/lib/dashboards/service";
 import { createDatabase } from "@/lib/db";
-import { appMembers, apps, dataConnections, mcpOAuthSignIns, orgMembers, type AppTeamAccess, type OrgRole } from "@/lib/db/schema";
+import {
+  appConnections,
+  appMembers,
+  apps,
+  connectionSignIns,
+  dataConnections,
+  mcpOAuthSignIns,
+  orgMembers,
+  type AppTeamAccess,
+  type OrgRole,
+} from "@/lib/db/schema";
 import { appGroups, cloudIdentity } from "@/lib/dashboards/cloud";
 import { accessFor, appAccess, asApp } from "@/lib/orgs/access";
 import { can } from "@/lib/orgs/policy";
@@ -43,7 +53,7 @@ async function keyed(userId: string, name = "Production") {
   return result.data.id;
 }
 
-/** A sign-in (OAuth) connection of `userId`'s in Acme, personal unless said otherwise. */
+/** A sign-in (OAuth) connection `userId` added to Acme, signed in as them: requires sign-in unless said otherwise. */
 async function signedIn(userId: string, sharing: "personal" | "org" = "personal") {
   const [row] = await db
     .insert(dataConnections)
@@ -60,14 +70,38 @@ async function signedIn(userId: string, sharing: "personal" | "org" = "personal"
         headerName: "Authorization",
         oauth: { issuer: "https://mcp.linear.app", tokenEndpoint: "https://mcp.linear.app/token", resource: "https://mcp.linear.app/mcp" },
       },
-      secret: { v: 1, provider: "plaintext", value: "{}" },
+      secret: null,
       credentialHint: "signed in",
       status: "ok",
       lastCheckedAt: new Date(),
     })
     .returning({ id: dataConnections.id });
+  await signInTo(row.id, userId);
   return row.id;
 }
+
+/** `userId`'s own sign-in to a connection. */
+async function signInTo(connectionId: string, userId: string, status: "ok" | "invalid" = "ok") {
+  await db.insert(connectionSignIns).values({
+    id: randomUUID(),
+    connectionId,
+    userId,
+    secret: { v: 1, provider: "plaintext", value: "{}" },
+    status,
+    lastCheckedAt: new Date(),
+  });
+}
+
+const SIGN = {
+  name: "Linear",
+  config: {
+    type: "mcp" as const,
+    url: "https://mcp.linear.app/mcp",
+    headerName: "Authorization",
+    oauth: { issuer: "https://mcp.linear.app", tokenEndpoint: "https://mcp.linear.app/token", resource: "https://mcp.linear.app/mcp" },
+  },
+  pending: "{}",
+};
 
 async function app(userId: string, teamAccess: AppTeamAccess = "private") {
   const connectionId = await keyed("alice", `Source ${randomUUID().slice(0, 8)}`);
@@ -216,82 +250,141 @@ describe("connections in a team", () => {
     expect(await connections.open("alice", connectionId, "posthog", { orgId: acme })).not.toBeNull();
   });
 
-  it("keep a sign-in to whoever signed in, the team's admin included", async () => {
-    const connectionId = await signedIn("ed");
-    expect(await connections.open("ed", connectionId, "mcp")).not.toBeNull();
-    for (const other of ["alice", "vera", "mallory"]) {
-      expect(await connections.open(other, connectionId, "mcp")).toBeNull();
-      expect(await connections.remove(other, { id: connectionId })).toMatchObject({ ok: false, error: { code: "not_found" } });
+  it("list every connection to every member, one that requires sign-in included", async () => {
+    const eds = await signedIn("ed");
+    for (const member of ["alice", "ed", "vera"]) {
+      expect((await connections.list(inAcme(member))).map((row) => row.id)).toContain(eds);
     }
-    expect((await connections.list(inAcme("alice"))).map((row) => row.id)).not.toContain(connectionId);
-    expect((await connections.list(inAcme("ed"))).find((row) => row.id === connectionId)).toMatchObject({ sharing: "personal", mine: true });
-  });
-
-  it("let only whoever signed in share a sign-in, after which everyone queries with it", async () => {
-    const connectionId = await signedIn("ed");
-    expect(await connections.setSharing("alice", { id: connectionId, sharing: "org" })).toMatchObject({ ok: false, error: { code: "not_found" } });
-    expect(await connections.setSharing("ed", { id: connectionId, sharing: "org" })).toEqual({ ok: true, data: undefined });
-
-    expect(await connections.open("vera", connectionId, "mcp")).not.toBeNull();
-    expect((await connections.list(inAcme("alice"))).find((row) => row.id === connectionId)).toMatchObject({
-      sharing: "org",
-      mine: false,
-      addedBy: "ed@example.com",
+    expect((await connections.list(inAcme("ed"))).find((row) => row.id === eds)).toMatchObject({
+      kind: "signInEach",
+      signInStatus: "signedIn",
+      mine: true,
     });
-    // Shared, but still Ed's: nobody else takes it back or signs in to it again.
-    expect(await connections.setSharing("alice", { id: connectionId, sharing: "personal" })).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect((await connections.list(inAcme("alice"))).find((row) => row.id === eds)).toMatchObject({
+      kind: "signInEach",
+      signInStatus: "none",
+      status: "invalid",
+    });
+    expect(await connections.list(workspaceOf("mallory"))).toEqual([]);
+  });
+
+  it("that require sign-in open only with the caller's own sign-in, never someone else's", async () => {
+    const eds = await signedIn("ed");
+    expect(await connections.open("ed", eds, "mcp")).not.toBeNull();
+    for (const other of ["alice", "vera", "mallory"]) expect(await connections.open(other, eds, "mcp")).toBeNull();
+    expect(await connections.whyClosed("alice", eds)).toMatchObject({ code: "sign_in_required" });
+    expect(await connections.whyClosed("mallory", eds)).toBeNull();
+
+    await signInTo(eds, "vera");
+    expect(await connections.open("vera", eds, "mcp")).not.toBeNull();
+    expect((await connections.list(inAcme("vera"))).find((row) => row.id === eds)).toMatchObject({ signInStatus: "signedIn" });
+  });
+
+  it("that require sign-in can be signed in to by any member, a viewer included", async () => {
+    const eds = await signedIn("ed");
+    expect(await connections.startSignIn(inAcme("vera"), { ...SIGN, connectionId: eds, stateHash: "a".repeat(64), sharing: "personal" })).toEqual({
+      ok: true,
+      data: undefined,
+    });
+    expect(await connections.startSignIn(inAcme("mallory"), { ...SIGN, connectionId: eds, stateHash: "b".repeat(64), sharing: "personal" })).toMatchObject({
+      ok: false,
+      error: { code: "not_found" },
+    });
+    // Saving it adds Vera's own sign-in; Ed's stays.
     expect(
-      await connections.startSignIn(inAcme("alice"), {
-        stateHash: "a".repeat(64),
-        connectionId,
-        name: "Linear",
-        config: { type: "mcp", url: "https://mcp.linear.app/mcp", headerName: "Authorization" },
-        pending: "{}",
-      }),
-    ).toMatchObject({ ok: false, error: { code: "forbidden" } });
-
-    expect(await connections.setSharing("ed", { id: connectionId, sharing: "personal" })).toEqual({ ok: true, data: undefined });
-    expect(await connections.open("vera", connectionId, "mcp")).toBeNull();
+      await connections.saveSignedIn("vera", { orgId: acme, connectionId: eds, sharing: "personal", ...SIGN, credential: "{}" }),
+    ).toMatchObject({ ok: true, data: { id: eds } });
+    expect(await db.select().from(connectionSignIns).where(eq(connectionSignIns.connectionId, eds))).toHaveLength(2);
   });
 
-  it("can always be taken back by whoever signed in, even once they're only a viewer", async () => {
-    const connectionId = await signedIn("ed", "org");
-    await seedTeam(db, "Acme", { ed: "viewer" });
-    // A viewer can't share anything, but can stop everyone querying as them.
-    expect(await connections.setSharing("ed", { id: connectionId, sharing: "org" })).toMatchObject({ ok: false, error: { code: "forbidden" } });
-    expect(await connections.setSharing("ed", { id: connectionId, sharing: "personal" })).toEqual({ ok: true, data: undefined });
-    expect(await connections.open("vera", connectionId, "mcp")).toBeNull();
+  it("let whoever signed in sign out, whatever their role, and only of their own (N-3)", async () => {
+    const eds = await signedIn("ed");
+    await signInTo(eds, "vera");
+    expect(await connections.signOut("alice", { id: eds })).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect(await connections.signOut("vera", { id: eds })).toEqual({ ok: true, data: undefined });
+    expect(await connections.open("vera", eds, "mcp")).toBeNull();
+    expect(await connections.open("ed", eds, "mcp")).not.toBeNull();
   });
 
-  it("are deleted when whoever signed in leaves or is removed, and keys keep serving the workspace", async () => {
+  it("that require sign-in are renamed or deleted only by whoever added them, or an admin", async () => {
+    const eds = await signedIn("ed");
+    await seedTeam(db, "Acme", { alice: "admin", ed: "editor", vera: "viewer", eve: "editor" });
+    expect(await connections.rename("eve", { id: eds, name: "Mine" })).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect(await connections.rename("alice", { id: eds, name: "Tracker" })).toEqual({ ok: true, data: undefined });
+    expect(await connections.remove("eve", { id: eds })).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect(await connections.remove("ed", { id: eds })).toEqual({ ok: true, data: undefined });
+  });
+
+  it("shared with the workspace run everyone's queries as whoever signed in", async () => {
     const eds = await signedIn("ed", "org");
-    const key = await keyed("ed");
-    const veras = await signedIn("vera", "org");
-    // A teammate's app that used Ed's sign-in.
-    const { appId } = await app("alice", "edit");
-    expect(await appsService.addConnection("alice", { appId, connectionId: eds })).toEqual({ ok: true, data: undefined });
-
-    // Removed: their sign-in is deleted outright, and taken off the app that used it. Their key stays.
-    expect(await orgsService.removeMember("alice", { orgId: acme, userId: "ed" })).toEqual({ ok: true, data: undefined });
-    expect(await db.select().from(dataConnections).where(eq(dataConnections.id, eds))).toEqual([]);
-    expect((await appsService.get("alice", appId))?.connections.map((row) => row.id)).not.toContain(eds);
-    expect(await connections.open("alice", key, "posthog")).not.toBeNull();
-
-    // Leaving ends the same way: their sign-in is deleted too.
-    expect(await orgsService.leave("vera", { orgId: acme })).toEqual({ ok: true, data: undefined });
-    expect(await db.select().from(dataConnections).where(eq(dataConnections.id, veras))).toEqual([]);
+    expect(await connections.open("vera", eds, "mcp")).not.toBeNull();
+    expect((await connections.list(inAcme("alice"))).find((row) => row.id === eds)).toMatchObject({
+      kind: "signInShared",
+      signInStatus: "signedIn",
+      signedInAs: "ed@example.com",
+    });
   });
 
-  it("never make a key personal", async () => {
-    const connectionId = await keyed("ed");
-    expect(await connections.setSharing("ed", { id: connectionId, sharing: "personal" })).toMatchObject({ ok: false, error: { code: "validation" } });
+  it("shared with the workspace are changed only by whoever signed in, or an admin (N-4)", async () => {
+    const eds = await signedIn("ed", "org");
+    await seedTeam(db, "Acme", { alice: "admin", ed: "editor", vera: "viewer", eve: "editor" });
+    expect(await connections.remove("eve", { id: eds })).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect(await connections.rename("eve", { id: eds, name: "Mine" })).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect(
+      await connections.startSignIn(inAcme("eve"), { ...SIGN, connectionId: eds, stateHash: "c".repeat(64), sharing: "org" }),
+    ).toMatchObject({ ok: false, error: { code: "forbidden" } });
+    expect(await connections.rename("alice", { id: eds, name: "Tracker" })).toEqual({ ok: true, data: undefined });
+  });
+
+  it("shared with the workspace run as whoever signs in again, and nobody once they sign out", async () => {
+    const eds = await signedIn("ed", "org");
+    expect(
+      await connections.saveSignedIn("alice", { orgId: acme, connectionId: eds, sharing: "org", ...SIGN, credential: "{}" }),
+    ).toMatchObject({ ok: true });
+    const holders = await db.select({ userId: connectionSignIns.userId }).from(connectionSignIns).where(eq(connectionSignIns.connectionId, eds));
+    expect(holders).toEqual([{ userId: "alice" }]);
+
+    // A viewer who signed in can always sign out: nobody keeps querying as them.
+    await seedTeam(db, "Acme", { alice: "viewer", ed: "admin", vera: "viewer" });
+    expect(await connections.signOut("alice", { id: eds })).toEqual({ ok: true, data: undefined });
+    expect(await connections.open("vera", eds, "mcp")).toBeNull();
+    expect(await connections.whyClosed("vera", eds)).toMatchObject({ code: "nobody_signed_in" });
+    expect((await connections.list(inAcme("vera"))).find((row) => row.id === eds)).toMatchObject({ signInStatus: "none", signedInAs: null });
+  });
+
+  it("lose the sign-ins of whoever leaves or is removed, and stay for everyone else", async () => {
+    const shared = await signedIn("ed", "org");
+    const each = await signedIn("ed");
+    await signInTo(each, "alice");
+    const key = await keyed("ed");
+    const { appId } = await app("alice", "edit");
+    expect(await appsService.addConnection("alice", { appId, connectionId: shared })).toEqual({ ok: true, data: undefined });
+
+    expect(await orgsService.removeMember("alice", { orgId: acme, userId: "ed" })).toEqual({ ok: true, data: undefined });
+    // The connections stay, apps keep them, and nobody queries as Ed.
+    expect((await db.select({ id: dataConnections.id }).from(dataConnections).where(eq(dataConnections.orgId, acme))).map((row) => row.id)).toEqual(
+      expect.arrayContaining([shared, each, key]),
+    );
+    expect((await appsService.get("alice", appId))?.connections.map((row) => row.id)).toContain(shared);
+    expect(await connections.open("alice", shared, "mcp")).toBeNull();
+    expect(await connections.open("alice", each, "mcp")).not.toBeNull();
+    expect(await connections.open("alice", key, "posthog")).not.toBeNull();
+    expect(await db.select().from(connectionSignIns).where(eq(connectionSignIns.userId, "ed"))).toEqual([]);
+  });
+
+  it("can't be replaced with a key when they sign in", async () => {
+    const eds = await signedIn("ed", "org");
+    expect(await connections.replaceCredential("ed", { id: eds, credential: "phx_abcdefghijklmnopqrstuvwxyz1234" })).toMatchObject({
+      ok: false,
+      error: { code: "validation" },
+    });
   });
 
   it("can't be deleted while another member's private app uses them, without naming that app", async () => {
     const { connectionId } = await app("ed");
     const result = await connections.remove("alice", { id: connectionId });
     expect(result).toMatchObject({ ok: false, error: { code: "in_use", apps: [] } });
-    expect(result.ok ? "" : result.error.message).toContain("another member's app");
+    expect(result.ok ? "" : result.error.message).toBe("1 app uses this connection. Delete it first.");
   });
 
   it("only join an app of the same org, by someone who can change it", async () => {
@@ -355,79 +448,51 @@ describe("sharing an app", () => {
   });
 });
 
-describe("a teammate's personal sign-in in a shared app", () => {
-  /** Ed's app, shared for editing, using Ed's personal Linear sign-in. */
+describe("an app using a connection that requires sign-in", () => {
+  /** Ed's app, shared for editing, on a connection everyone signs in to themselves. */
   async function sharedWithSignIn() {
     const { appId } = await app("ed", "edit");
     const eds = await signedIn("ed");
     expect(await appsService.addConnection("ed", { appId, connectionId: eds })).toEqual({ ok: true, data: undefined });
     return { appId, eds };
   }
+  const row = async (userId: string, appId: string, id: string) => (await appsService.get(userId, appId))?.connections.find((c) => c.id === id);
 
-  it("never runs a teammate's queries as its owner: they're asked to sign in", async () => {
+  it("asks each teammate to sign in, never running their queries as its owner", async () => {
     const { appId, eds } = await sharedWithSignIn();
     expect(await connections.open("alice", eds, "mcp", { orgId: acme })).toBeNull();
-    expect(await connections.signInNeeded("alice", eds)).toMatchObject({ orgId: acme, name: "Linear" });
-    expect((await appsService.get("alice", appId))?.connections.find((row) => row.id === eds)).toMatchObject({
-      sharing: "personal",
-      mine: false,
-      needsSignIn: true,
-    });
-    // Its owner needs nothing, and someone outside the workspace learns nothing.
-    expect(await connections.signInNeeded("ed", eds)).toBeNull();
-    expect((await appsService.get("ed", appId))?.connections.find((row) => row.id === eds)).toMatchObject({ mine: true, needsSignIn: false });
-    expect(await connections.signInNeeded("mallory", eds)).toBeNull();
+    expect(await row("alice", appId, eds)).toMatchObject({ kind: "signInEach", signInStatus: "none", canSignIn: true });
+    expect(await row("vera", appId, eds)).toMatchObject({ signInStatus: "none", canSignIn: true });
+    expect(await row("ed", appId, eds)).toMatchObject({ signInStatus: "signedIn", signedInByMe: true });
   });
 
-  it("opens as the teammate's own sign-in to the same server, once they have one", async () => {
+  it("opens as each teammate's own sign-in to it, once they have one", async () => {
     const { appId, eds } = await sharedWithSignIn();
-    const alices = await signedIn("alice");
-
-    const opened = await connections.open("alice", eds, "mcp", { orgId: acme });
-    expect(opened?.id).toBe(alices);
-    expect(await connections.signInNeeded("alice", eds)).toBeNull();
-    expect((await appsService.get("alice", appId))?.connections.find((row) => row.id === eds)).toMatchObject({ needsSignIn: false });
-    // Still not Vera's.
-    expect(await connections.open("vera", eds, "mcp", { orgId: acme })).toBeNull();
+    await signInTo(eds, "alice");
+    expect(await connections.open("alice", eds, "mcp", { orgId: acme })).toMatchObject({ id: eds });
+    expect(await row("alice", appId, eds)).toMatchObject({ signInStatus: "signedIn", signedInByMe: true });
   });
 
-  it("lets any member, a viewer included, start a sign-in of their own to that server and nothing else", async () => {
-    await sharedWithSignIn();
-    const sign = {
-      connectionId: null,
-      name: "Linear",
-      config: { type: "mcp" as const, url: "https://mcp.linear.app/mcp", headerName: "Authorization" },
-      pending: "{}",
-    };
-    expect(await connections.startSignIn(inAcme("vera"), { ...sign, stateHash: "b".repeat(64) })).toMatchObject({ ok: false, error: { code: "forbidden" } });
-    expect(await connections.startSignIn(inAcme("vera"), { ...sign, stateHash: "c".repeat(64) }, { ownCopy: true })).toEqual({ ok: true, data: undefined });
-    expect(await connections.startSignIn(inAcme("mallory"), { ...sign, stateHash: "d".repeat(64) }, { ownCopy: true })).toMatchObject({
-      ok: false,
-      error: { code: "not_found" },
-    });
-  });
-  it("counts the teammate's own sign-in to that server even once they've shared it with the workspace", async () => {
+  it("tells a teammate, a viewer included, when their own sign-in expired, once per connection (N-10, N-11)", async () => {
     const { appId, eds } = await sharedWithSignIn();
-    const alices = await signedIn("alice", "org");
-    expect((await connections.open("alice", eds, "mcp", { orgId: acme }))?.id).toBe(alices);
-    expect(await connections.signInNeeded("alice", eds)).toBeNull();
-    expect((await appsService.get("alice", appId))?.connections.find((row) => row.id === eds)).toMatchObject({ needsSignIn: false });
-  });
-
-  it("asks the teammate, a viewer included, to sign in again when their own sign-in has expired", async () => {
-    const { appId, eds } = await sharedWithSignIn();
-    const veras = await signedIn("vera");
-    const own = async () => (await appsService.get("vera", appId))?.connections.find((row) => row.id === eds);
-    expect(await own()).toMatchObject({ needsSignIn: false, expiredOwnSignIn: null });
-
-    await db.update(dataConnections).set({ status: "invalid" }).where(eq(dataConnections.id, veras));
-    expect(await own()).toMatchObject({ needsSignIn: false, expiredOwnSignIn: veras });
-    // Theirs to sign in to again, as a viewer; never Ed's.
-    const sign = { name: "Linear", config: { type: "mcp" as const, url: "https://mcp.linear.app/mcp", headerName: "Authorization" }, pending: "{}" };
-    expect(await connections.startSignIn(inAcme("vera"), { ...sign, connectionId: veras, stateHash: "e".repeat(64) })).toEqual({ ok: true, data: undefined });
-    expect(await connections.startSignIn(inAcme("vera"), { ...sign, connectionId: eds, stateHash: "f".repeat(64) })).toMatchObject({ ok: false });
+    await signInTo(eds, "vera", "invalid");
+    expect(await row("vera", appId, eds)).toMatchObject({ signInStatus: "expired", signedInByMe: true, canSignIn: true });
     // Ed's own sign-in isn't affected.
-    expect((await appsService.get("ed", appId))?.connections.find((row) => row.id === eds)).toMatchObject({ expiredOwnSignIn: null });
+    expect(await row("ed", appId, eds)).toMatchObject({ signInStatus: "signedIn" });
+    // Signing in again replaces Vera's expired sign-in rather than adding another.
+    expect(await connections.saveSignedIn("vera", { orgId: acme, connectionId: eds, sharing: "personal", ...SIGN, credential: "{}" })).toMatchObject({
+      ok: true,
+    });
+    expect(await row("vera", appId, eds)).toMatchObject({ signInStatus: "signedIn" });
+  });
+
+  it("tells everyone else whom to ask when a shared sign-in expired", async () => {
+    const { appId } = await app("ed", "edit");
+    const shared = await signedIn("ed", "org");
+    await appsService.addConnection("ed", { appId, connectionId: shared });
+    await db.update(connectionSignIns).set({ status: "invalid" }).where(eq(connectionSignIns.connectionId, shared));
+    expect(await row("alice", appId, shared)).toMatchObject({ signInStatus: "expired", signedInByMe: false, signedInAs: "ed@example.com", canSignIn: true });
+    expect(await row("vera", appId, shared)).toMatchObject({ signInStatus: "expired", signedInAs: "ed@example.com", canSignIn: false });
   });
 });
 
@@ -657,12 +722,14 @@ describe("guests of an app", () => {
     expect(await appAccess(db, "gina", appId)).toBeNull();
   });
 
-  it("never query through a personal sign-in added to the app later", async () => {
+  it("are told plainly, never given a connection that requires sign-in, and it can't be added to their app (N-1)", async () => {
     const { appId } = await withGuest();
     const eds = await signedIn("ed");
-    await appsService.addConnection("ed", { appId, connectionId: eds });
+    expect(await appsService.addConnection("ed", { appId, connectionId: eds })).toMatchObject({ ok: false, error: { code: "guests_cant_sign_in" } });
+    // Even if it were already there: a guest never queries through it, and is told why.
+    await db.insert(appConnections).values({ appId, connectionId: eds });
     expect(await connections.open("gina", eds, "mcp", { orgId: acme, appId })).toBeNull();
-    expect(await connections.signInNeeded("gina", eds)).toBeNull();
+    expect(await connections.whyClosed("gina", eds, { appId })).toMatchObject({ code: "guest" });
   });
 
   it("are invited by anyone who can change the app, and by nobody who can only view it", async () => {

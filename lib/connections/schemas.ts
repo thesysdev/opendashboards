@@ -27,8 +27,5 @@ export const replaceCredentialSchema = z
 export const renameSchema = z.object({ id: connectionIdSchema, name: connectionNameSchema }).strict();
 export const connectionRefSchema = z.object({ id: connectionIdSchema }).strict();
 
-/** Who a signed-in connection serves: only its owner, or the whole org. */
-export const sharingSchema = z.object({ id: connectionIdSchema, sharing: z.enum(["personal", "org"]) }).strict();
-
 /** A demo dataset, by its key in config. */
 export const demoRefSchema = z.object({ dataset: z.string().min(1).max(40) }).strict();

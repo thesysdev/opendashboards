@@ -1,4 +1,4 @@
-import type { ConnectionSharing, OrgRole } from "@/lib/db/schema";
+import type { OrgRole } from "@/lib/db/schema";
 
 /*
  * Who may do what, as one table: resource → action → rule. A rule's `allow`
@@ -33,13 +33,25 @@ export type AppFacts = {
   guest: boolean;
 };
 
+/**
+ * What a connection is, fixed when it's added:
+ * - key: an API key, password or service account, shared with the workspace.
+ * - signInShared: one person's sign-in, shared with the workspace: everyone's queries run as them.
+ * - signInEach: requires sign-in: each member signs in with their own account.
+ */
+export type ConnectionKind = "key" | "signInShared" | "signInEach";
+
 export type ConnectionFacts = {
   kind: "connection";
   /** The caller's role in the connection's workspace. null: not a member. */
   role: OrgRole | null;
-  /** They added it (for a sign-in: it's theirs). */
+  /** They added it. */
   own: boolean;
-  sharing: ConnectionSharing;
+  /** They hold its sign-in: the one of a shared sign-in, or their own of one that requires sign-in. */
+  signedIn: boolean;
+  /** For a shared sign-in: nobody holds it now (whoever signed in signed out or left). */
+  empty: boolean;
+  connection: ConnectionKind;
 };
 
 /** A Build chat. Each person's own: sharing an app never shares its chats. */
@@ -61,8 +73,8 @@ export type Decision = Allowed | Denied;
 
 type Rule<F extends Facts> = {
   allow: (facts: F) => boolean;
-  /** Told to someone who can see the thing but may not do this. */
-  denied: string;
+  /** Told to someone who can see the thing but may not do this: one message, or one per case. */
+  denied: string | ((facts: F) => string);
   /**
    * Who is told the thing exists when refused. By default, whoever can see
    * it (`sees`); a rule narrows or widens that only where it always has.
@@ -87,8 +99,48 @@ const canView = (f: AppFacts) => f.access !== null;
 /** Theirs or shared to edit, and their role lets them build: a viewer never does. */
 const canChange = (f: AppFacts) => (f.access === "owner" || f.access === "edit") && builder(f);
 
-const connectionVisible = (f: ConnectionFacts) => member(f) && (f.own || f.sharing === "org");
-const manages = (f: ConnectionFacts) => builder(f) && (f.own || f.sharing === "org");
+/** Every member sees every connection of their workspace: which ones they can query with is the credential's business. */
+const connectionVisible = (f: ConnectionFacts) => member(f);
+/**
+ * Renaming, testing or deleting it. A key is the workspace's: any editor or
+ * admin. A sign-in is someone's account: whoever signed in (for one that
+ * requires sign-in, whoever added it), or an admin.
+ */
+const manages = (f: ConnectionFacts) => {
+  switch (f.connection) {
+    case "key":
+      return builder(f);
+    case "signInShared":
+      return member(f) && (f.signedIn || admin(f));
+    case "signInEach":
+      return member(f) && (f.own || admin(f));
+  }
+};
+const notManaging = (f: ConnectionFacts) => {
+  switch (f.connection) {
+    case "key":
+      return EDITORS_ONLY;
+    case "signInShared":
+      return "Only whoever signed in to this connection, or an admin, can change it.";
+    case "signInEach":
+      return "Only whoever added this connection, or an admin, can change it.";
+  }
+};
+/**
+ * Signing in to it. One that requires sign-in: any member, as themselves. A
+ * shared one replaces the one sign-in everyone runs as: whoever holds it or an
+ * admin, or any editor once nobody does.
+ */
+const mayRunAs = (f: ConnectionFacts) => {
+  switch (f.connection) {
+    case "key":
+      return false;
+    case "signInShared":
+      return member(f) && (f.signedIn || admin(f) || (f.empty && builder(f)));
+    case "signInEach":
+      return member(f);
+  }
+};
 
 const NO_WORKSPACE = "This workspace doesn't exist, or you aren't a member.";
 const NO_APP = "This app doesn't exist or was deleted.";
@@ -199,23 +251,23 @@ const policy = {
     actions: {
       create: onWorkspace({ allow: builder, denied: EDITORS_ONLY }),
       view: onConnection({ allow: connectionVisible, denied: NO_CONNECTION }),
-      /** Query it. Someone else's personal sign-in opens only as the caller's own sign-in to the same server. */
+      /** Query it. One that requires sign-in then needs the caller's own sign-in, which isn't a permission. */
       use: onConnection({ allow: connectionVisible, denied: NO_CONNECTION }),
-      update: onConnection({ allow: manages, denied: EDITORS_ONLY }),
-      delete: onConnection({ allow: manages, denied: EDITORS_ONLY }),
-      /** Share a sign-in with the workspace: everyone's queries then run as them. */
-      share: onConnection({ allow: (f) => f.own && builder(f), denied: EDITORS_ONLY }),
+      update: onConnection({ allow: manages, denied: notManaging }),
+      delete: onConnection({ allow: manages, denied: notManaging }),
+      /** Sign in, or again: as themselves for one that requires sign-in, as the one everyone runs as for a shared one. */
+      signIn: onConnection({
+        allow: mayRunAs,
+        denied: (f) =>
+          f.connection === "key"
+            ? "This connection uses a key, not a sign-in."
+            : "Only whoever signed in to this connection, or an admin, can sign in to it again.",
+      }),
       /** Whatever their role, a viewer's included: nobody keeps querying as someone against their will. */
-      stopSharing: onConnection({
-        allow: (f) => f.own,
-        denied: "Only the person who signed in can share or unshare this connection.",
+      signOut: onConnection({
+        allow: (f) => member(f) && f.signedIn && f.connection !== "key",
+        denied: "You aren't signed in to this connection.",
       }),
-      signInAgain: onConnection({
-        allow: (f) => f.own,
-        denied: "Only the person who signed in can sign in to this connection again.",
-      }),
-      /** Sign in to the server a member's personal sign-in points at, to see its data as themselves. */
-      signInAsSelf: onWorkspace({ allow: member, denied: NO_WORKSPACE }),
     },
   },
 
@@ -278,7 +330,8 @@ export function decide<R extends ResourceName, A extends Action<R>>(
   const known = facts as Facts | null;
   if (known !== null && rule.allow(known)) return { allowed: true };
   const visible = known !== null && (rule.visibleTo ?? sees)(known);
-  return visible ? { allowed: false, code: "forbidden", reason: rule.denied } : { allowed: false, code: "not_found", reason: notFound };
+  if (!visible) return { allowed: false, code: "not_found", reason: notFound };
+  return { allowed: false, code: "forbidden", reason: typeof rule.denied === "string" ? rule.denied : rule.denied(known!) };
 }
 
 /** For pages and the sidebar: whether to offer something. */

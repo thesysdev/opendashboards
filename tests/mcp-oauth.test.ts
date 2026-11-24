@@ -12,7 +12,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { finishMcpSignIn, startMcpSignIn } from "@/lib/connections/mcp-sign-in";
 import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
-import { apps, dataConnections, mcpOAuthSignIns } from "@/lib/db/schema";
+import { apps, connectionSignIns, dataConnections, mcpOAuthSignIns } from "@/lib/db/schema";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 import type { McpConfig } from "@/lib/sources/mcp/catalog";
 import { McpError } from "@/lib/sources/mcp/errors";
@@ -201,9 +201,12 @@ describe("signing in", () => {
     const finished = await finishMcpSignIn("alice", approve(started.data.authorizationUrl), deps);
     expect(finished).toMatchObject({ ok: true });
     const [row] = await db.select().from(dataConnections);
-    expect(row).toMatchObject({ userId: "alice", type: "mcp", status: "ok", credentialHint: "signed in" });
+    // Requires sign-in unless chosen otherwise; the tokens are Alice's own sign-in to it, never on the connection.
+    expect(row).toMatchObject({ userId: "alice", type: "mcp", sharing: "personal", secret: null, credentialHint: "signed in" });
     expect((row.config as McpConfig).oauth).toMatchObject({ issuer: base, resource: `${base}/mcp` });
-    const credential = readOAuthCredential(await plaintextSecretBox.open(row.secret!, { purpose: "", userId: "", connectionId: "" }));
+    const [signIn] = await db.select().from(connectionSignIns);
+    expect(signIn).toMatchObject({ connectionId: row.id, userId: "alice", status: "ok" });
+    const credential = readOAuthCredential(await plaintextSecretBox.open(signIn.secret, { purpose: "", userId: "", connectionId: "" }));
     expect(credential.tokens).toMatchObject({ access_token: "at-" + issued, refresh_token: "rt-" + issued });
     expect(await db.select().from(mcpOAuthSignIns)).toHaveLength(0);
   });
@@ -253,6 +256,45 @@ describe("signing in", () => {
     const declined = new URLSearchParams({ error: "access_denied", state });
     expect(await finishMcpSignIn("alice", declined, deps)).toMatchObject({ ok: false, error: { code: "oauth_failed" } });
     expect(await db.select().from(mcpOAuthSignIns)).toHaveLength(0);
+  });
+
+  it("says where a declined sign-in started, to go back there (N-9)", async () => {
+    const APP = `/w/${workspaceOf("alice").orgId}/apps/0f8fad5b-d9cb-469f-a165-70867728950e`;
+    const first = await startMcpSignIn(workspaceOf("alice"), { name: "Linear", url: `${base}/mcp` }, deps);
+    if (!first.ok) throw new Error(first.error.code);
+    const created = await finishMcpSignIn("alice", approve(first.data.authorizationUrl), deps);
+    if (!created.ok) throw new Error(created.error.code);
+    const again = await startMcpSignIn(workspaceOf("alice"), { connectionId: created.data.id, returnTo: APP }, deps);
+    if (!again.ok) throw new Error(again.error.code);
+    const state = new URL(again.data.authorizationUrl).searchParams.get("state") ?? "";
+    expect(await finishMcpSignIn("alice", new URLSearchParams({ error: "access_denied", state }), deps)).toMatchObject({
+      ok: false,
+      from: { orgId: workspaceOf("alice").orgId, returnTo: APP },
+    });
+    // A callback that matches no sign-in of theirs says nothing about where it came from.
+    expect(await finishMcpSignIn("alice", new URLSearchParams({ error: "access_denied", state }), deps)).toMatchObject({ ok: false, from: null });
+  });
+
+  it("signs in to the workspace's connection to the same server instead of adding another", async () => {
+    const first = await startMcpSignIn(workspaceOf("alice"), { name: "Linear", url: `${base}/mcp` }, deps);
+    if (!first.ok) throw new Error(first.error.code);
+    expect(first.data.existing).toBeNull();
+    const created = await finishMcpSignIn("alice", approve(first.data.authorizationUrl), deps);
+    if (!created.ok) throw new Error(created.error.code);
+
+    const second = await startMcpSignIn(workspaceOf("alice"), { name: "Linear again", url: `${base}/mcp` }, deps);
+    if (!second.ok) throw new Error(second.error.code);
+    expect(second.data.existing).toBe("Linear");
+    expect(await finishMcpSignIn("alice", approve(second.data.authorizationUrl), deps)).toMatchObject({ ok: true, data: { id: created.data.id } });
+    expect(await db.select().from(dataConnections)).toHaveLength(1);
+    expect(await db.select().from(connectionSignIns)).toHaveLength(1);
+  });
+
+  it("adds a sign-in shared with the workspace when asked to", async () => {
+    const started = await startMcpSignIn(workspaceOf("alice"), { name: "Linear", url: `${base}/mcp`, sharing: "org" }, deps);
+    if (!started.ok) throw new Error(started.error.code);
+    expect(await finishMcpSignIn("alice", approve(started.data.authorizationUrl), deps)).toMatchObject({ ok: true });
+    expect((await db.select().from(dataConnections))[0]).toMatchObject({ sharing: "org", secret: null });
   });
 
   it("says when a server can't register OpenDashboards automatically", async () => {
@@ -351,7 +393,7 @@ describe("refreshing", () => {
     );
     expect(refreshCalls - before).toBe(1);
     expect(new Set(tokensSeen).size).toBe(1);
-    const stored = (await db.select().from(dataConnections).where(eq(dataConnections.id, connection.id)))[0];
+    const stored = (await db.select().from(connectionSignIns).where(eq(connectionSignIns.connectionId, connection.id)))[0];
     expect(stored.status).toBe("ok");
   });
 
@@ -369,7 +411,7 @@ describe("refreshing", () => {
           retest: (connection: OpenConnection<McpConfig>) => withCredential(connection, async () => {}, hooks).then(() => []),
         }) as unknown as ConnectionSource,
     });
-    const statusOf = async (id: string) => (await db.select().from(dataConnections).where(eq(dataConnections.id, id)))[0].status;
+    const statusOf = async (id: string) => (await db.select().from(connectionSignIns).where(eq(connectionSignIns.connectionId, id)))[0].status;
 
     it("renews an expired access token instead of marking a working sign-in invalid", async () => {
       const connection = await expireSoon(await signedIn());
@@ -408,8 +450,8 @@ describe("refreshing", () => {
     mode = { refresh: "invalid_grant" };
     const error = await withCredential(connection, async () => "unused", hooks).catch((e: unknown) => e);
     expect((error as McpError).code).toBe("reauth_required");
-    const [row] = await db.select().from(dataConnections);
-    expect(row).toMatchObject({ status: "invalid", credentialHint: "sign-in expired" });
+    const [row] = await db.select().from(connectionSignIns);
+    expect(row).toMatchObject({ status: "invalid" });
     expect(readOAuthCredential((await service.open("alice", connection.id, "mcp"))!.credential).tokens).toBeNull();
     expect(mcpSource.toError(error)).toMatchObject({ status: "invalid", error: { code: "reauth_required" } });
   });
@@ -420,7 +462,7 @@ describe("refreshing", () => {
     mode = { refresh: "down" };
     const error = await withCredential(connection, async () => "unused", hooks).catch((e: unknown) => e);
     expect((error as McpError).code).not.toBe("reauth_required");
-    const [row] = await db.select().from(dataConnections);
+    const [row] = await db.select().from(connectionSignIns);
     expect(row.status).toBe("ok");
     expect(readOAuthCredential((await service.open("alice", connection.id, "mcp"))!.credential).tokens?.refresh_token).toBe(before?.refresh_token);
   });

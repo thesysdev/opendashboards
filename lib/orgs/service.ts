@@ -1,8 +1,21 @@
-import { and, asc, count, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, count, eq, inArray, isNotNull, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 
 import type { Database } from "@/lib/db";
-import { appConnections, appGuests, appMembers, apps, dashboards, dataConnections, mcpOAuthSignIns, orgInvites, orgMembers, orgs, users, type OrgRole } from "@/lib/db/schema";
+import {
+  appGuests,
+  appMembers,
+  apps,
+  connectionSignIns,
+  dashboards,
+  dataConnections,
+  mcpOAuthSignIns,
+  orgInvites,
+  orgMembers,
+  orgs,
+  users,
+  type OrgRole,
+} from "@/lib/db/schema";
 import { logError } from "@/lib/log";
 
 import { roleIn, workspaceFacts } from "./access";
@@ -23,6 +36,8 @@ export type OrgMember = {
   joinedAt: Date;
   /** How many apps they own here: removing them deletes these. */
   appCount: number;
+  /** How many apps here they're also a guest of: removing them ends that too. */
+  guestAppCount: number;
 };
 export type OrgInvite = { email: string; role: OrgRole; invitedAt: Date };
 
@@ -115,30 +130,36 @@ export function createOrgService({ db }: { db: Database }) {
 
   /**
    * Someone no longer in a workspace leaves no sign-in behind: their sign-ins
-   * there are deleted with their stored credentials, and taken off any
-   * teammate's app that used them, along with sign-ins they had started and
-   * not finished. Nobody left could use, renew or delete them. Teammates are
-   * asked to sign in themselves. Connections with a key or password stay.
+   * to its connections are deleted with their tokens, along with sign-ins
+   * they had started and not finished. Nobody queries as them any more. A
+   * shared sign-in of theirs is left with nobody signed in until someone
+   * signs in again; the connections themselves stay, as do the apps using them.
    */
   async function deleteSignIns(orgId: string, userId: string): Promise<void> {
     await db.transaction(async (tx) => {
-      const theirs = await tx
-        .select({ id: dataConnections.id })
-        .from(dataConnections)
+      await tx
+        .delete(connectionSignIns)
         .where(
           and(
-            eq(dataConnections.orgId, orgId),
-            eq(dataConnections.userId, userId),
-            sql`${dataConnections.config} -> 'oauth' is not null`,
+            eq(connectionSignIns.userId, userId),
+            inArray(connectionSignIns.connectionId, tx.select({ id: dataConnections.id }).from(dataConnections).where(eq(dataConnections.orgId, orgId))),
           ),
         );
-      const ids = theirs.map((row) => row.id);
-      if (ids.length) {
-        await tx.delete(appConnections).where(inArray(appConnections.connectionId, ids));
-        await tx.delete(dataConnections).where(inArray(dataConnections.id, ids));
-      }
       await tx.delete(mcpOAuthSignIns).where(and(eq(mcpOAuthSignIns.orgId, orgId), eq(mcpOAuthSignIns.userId, userId)));
     });
+  }
+
+  /**
+   * Someone removed from a workspace loses access to it entirely: their
+   * guest access to its apps goes too (they may have been a guest before they
+   * joined). Being let in again starts clean.
+   */
+  async function forgetGuestAccess(orgId: string, userId: string): Promise<void> {
+    const [user] = await db.select({ email: users.email }).from(users).where(eq(users.id, userId)).limit(1);
+    if (!user) return;
+    await db
+      .delete(appGuests)
+      .where(and(eq(appGuests.email, user.email), inArray(appGuests.appId, db.select({ id: apps.id }).from(apps).where(eq(apps.orgId, orgId)))));
   }
 
   /**
@@ -180,6 +201,7 @@ export function createOrgService({ db }: { db: Database }) {
     });
     if (!gone) return false;
     await forgetAppShares(orgId, memberId);
+    await forgetGuestAccess(orgId, memberId);
     await deleteSignIns(orgId, memberId);
     return true;
   }
@@ -288,6 +310,21 @@ export function createOrgService({ db }: { db: Database }) {
         })
         .where(and(eq(dataConnections.userId, userId), isNull(dataConnections.orgId)));
       await db.update(mcpOAuthSignIns).set({ orgId }).where(and(eq(mcpOAuthSignIns.userId, userId), isNull(mcpOAuthSignIns.orgId)));
+      // A sign-in saved by that version kept its tokens on the connection: they move to whoever signed in,
+      // sealed for the same user and connection, as the migration moved the rest.
+      await db.transaction(async (tx) => {
+        const legacy = and(
+          eq(dataConnections.userId, userId),
+          sql`${dataConnections.config} -> 'oauth' is not null`,
+          isNotNull(dataConnections.secret),
+        );
+        await tx.execute(sql`
+          insert into ${connectionSignIns} (id, connection_id, user_id, secret, status, last_checked_at, created_at, updated_at)
+          select gen_random_uuid(), id, user_id, secret, status, last_checked_at, created_at, updated_at
+          from ${dataConnections} where ${legacy}
+          on conflict do nothing`);
+        await tx.update(dataConnections).set({ secret: null }).where(legacy);
+      });
     },
 
     /** The workspaces the user is in, the one they've been in longest first. */
@@ -352,6 +389,17 @@ export function createOrgService({ db }: { db: Database }) {
             .groupBy(apps.userId)
         ).map((row) => [row.userId, row.count]),
       );
+      // Apps here they're also a guest of, from before they joined: removing them takes that away too.
+      const guestOf = new Map(
+        (
+          await db
+            .select({ email: appGuests.email, count: count() })
+            .from(appGuests)
+            .innerJoin(apps, eq(apps.id, appGuests.appId))
+            .where(eq(apps.orgId, orgId))
+            .groupBy(appGuests.email)
+        ).map((row) => [row.email, row.count]),
+      );
       const invites = await db
         .select({ email: orgInvites.email, role: orgInvites.role, invitedAt: orgInvites.createdAt })
         .from(orgInvites)
@@ -361,7 +409,12 @@ export function createOrgService({ db }: { db: Database }) {
         id: org.id,
         name: org.name,
         role,
-        members: members.map((member) => ({ ...member, you: member.userId === userId, appCount: owned.get(member.userId) ?? 0 })),
+        members: members.map((member) => ({
+          ...member,
+          you: member.userId === userId,
+          appCount: owned.get(member.userId) ?? 0,
+          guestAppCount: member.email ? (guestOf.get(member.email) ?? 0) : 0,
+        })),
         invites,
       };
     },

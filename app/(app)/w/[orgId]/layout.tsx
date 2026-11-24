@@ -36,8 +36,11 @@ export default function WorkspaceLayout({ children, params }: { children: React.
       <div className="flex min-w-0 flex-1 flex-col">
         {/* With the sidebar collapsed the left margin matches the right (app/globals.css). */}
         <main data-main className="relative mx-2 mt-2 min-h-0 flex-1 overflow-y-auto rounded-xl border bg-background md:ml-0">
-          {/* The way back to a collapsed sidebar, on pages whose own header doesn't carry one. */}
-          <OpenSidebarButton floating className="absolute top-2.5 left-2 z-10" />
+          {/* The way back to a collapsed sidebar, on pages whose own header doesn't carry one. It stays at
+              the top while the page scrolls: on a phone it's the only way to the nav. */}
+          <div className="sticky top-0 z-10 h-0">
+            <OpenSidebarButton floating className="absolute top-2.5 left-2 bg-background/90 backdrop-blur-sm" />
+          </div>
           {children}
         </main>
         <Footer />

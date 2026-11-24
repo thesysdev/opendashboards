@@ -40,6 +40,7 @@ const ROLES: { value: OrgRole; label: string }[] = [
 ];
 
 const roleLabel = (role: OrgRole) => ROLES.find((entry) => entry.value === role)!.label;
+const article = (role: OrgRole) => (role === "admin" || role === "editor" ? "an" : "a");
 
 function RoleSelect({
   value,
@@ -189,12 +190,14 @@ export function MemberRow({
   lastAdmin,
 }: {
   orgId: string;
-  member: { userId: string; email: string | null; role: OrgRole; you: boolean; appCount: number };
+  member: { userId: string; email: string | null; role: OrgRole; you: boolean; appCount: number; guestAppCount: number };
   canManage: boolean;
   lastAdmin: boolean;
 }) {
   const [pending, startTransition] = useTransition();
   const [confirming, setConfirming] = useState(false);
+  // Your own role, lowered: you lose the controls to put it back, so it's asked first.
+  const [demoting, setDemoting] = useState<OrgRole | null>(null);
   const name = member.email ?? "Someone who hasn't signed in lately";
 
   function changeRole(role: OrgRole) {
@@ -202,6 +205,11 @@ export function MemberRow({
       const result = await changeMemberRoleAction({ orgId, userId: member.userId, role });
       if (!result.ok) toast.error(result.error.message);
     });
+  }
+
+  function pickRole(role: OrgRole) {
+    if (member.you && member.role === "admin" && role !== "admin") setDemoting(role);
+    else changeRole(role);
   }
 
   function remove() {
@@ -223,10 +231,24 @@ export function MemberRow({
       </div>
       {pending && <Loader2Icon className="size-4 animate-spin text-muted-foreground" aria-hidden />}
       {canManage ? (
-        <RoleSelect value={member.role} onChange={changeRole} disabled={pending || lastAdmin} label={`Role of ${name}`} />
+        <RoleSelect value={member.role} onChange={pickRole} disabled={pending || lastAdmin} label={`Role of ${name}`} />
       ) : (
         <span className="text-sm text-muted-foreground">{roleLabel(member.role)}</span>
       )}
+      <AlertDialog open={demoting !== null} onOpenChange={(open) => !open && setDemoting(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Make yourself {demoting ? `${article(demoting)} ${roleLabel(demoting)}` : ""}?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You&apos;ll lose the admin controls straight away, and only another admin can give them back.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={() => demoting && changeRole(demoting)}>Change my role</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {canManage && !member.you && (
         <>
           <Button variant="ghost" size="sm" onClick={() => setConfirming(true)} disabled={pending}>
@@ -245,7 +267,12 @@ export function MemberRow({
                         can&apos;t be undone.
                       </p>
                     )}
-                    <p>They lose access to this workspace straight away. Connections they added with a key or password keep working.</p>
+                    <p>
+                      They lose access to this workspace straight away
+                      {member.guestAppCount > 0 &&
+                        `, including ${member.guestAppCount === 1 ? "the 1 app" : `the ${member.guestAppCount} apps`} they were a guest of`}
+                      . Their sign-ins are deleted; the connections they added stay.
+                    </p>
                   </div>
                 </AlertDialogDescription>
               </AlertDialogHeader>
@@ -277,6 +304,7 @@ export function PendingInviteRow({
     startTransition(async () => {
       const result = await revokeInviteAction({ orgId, email: invite.email });
       if (!result.ok) toast.error(result.error.message);
+      else toast.success(`Invite to ${invite.email} revoked`);
     });
   }
   return (
@@ -289,7 +317,7 @@ export function PendingInviteRow({
       <span className="text-sm text-muted-foreground">{roleLabel(invite.role)}</span>
       {canManage && (
         <Button variant="ghost" size="sm" onClick={revoke} disabled={pending}>
-          Cancel
+          Revoke
         </Button>
       )}
     </li>
@@ -297,7 +325,12 @@ export function PendingInviteRow({
 }
 
 /** One guest of one app, for the workspace's admins: who, on which app, let in by whom. */
-export function GuestRow({ guest }: { guest: { appId: string; appName: string; email: string; invitedBy: string | null } }) {
+export function GuestRow({
+  guest,
+}: {
+  /** `alsoMember`: they joined the workspace since; removing them from it ends this too. */
+  guest: { appId: string; appName: string; email: string; invitedBy: string | null; alsoMember: boolean };
+}) {
   const [pending, startTransition] = useTransition();
   function remove() {
     startTransition(async () => {
@@ -310,7 +343,12 @@ export function GuestRow({ guest }: { guest: { appId: string; appName: string; e
     <li className="flex items-center gap-3 p-3.5">
       <AvatarCircle name={guest.email} className="bg-neutral-100 text-neutral-500" />
       <div className="min-w-0 flex-1">
-        <p className="truncate text-sm font-medium">{guest.email}</p>
+        <p className="flex items-center gap-1.5 truncate text-sm font-medium">
+          <span className="truncate">{guest.email}</span>
+          {guest.alsoMember && (
+            <span className="shrink-0 rounded-md bg-neutral-100 px-1.5 py-0.5 text-[0.6875rem] font-normal text-neutral-600">Also a member</span>
+          )}
+        </p>
         <p className="truncate text-sm text-muted-foreground">
           Can view {guest.appName}
           {guest.invitedBy ? ` · added by ${guest.invitedBy}` : ""}

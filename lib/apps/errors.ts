@@ -5,6 +5,8 @@ export type AppErrorCode =
   | "not_found"
   | "forbidden"
   | "thread_conflict"
+  /** A connection that requires sign-in, on an app with guests: they could never see its data. */
+  | "guests_cant_sign_in"
   | "internal";
 
 export type AppError = { code: AppErrorCode; message: string; field?: string };

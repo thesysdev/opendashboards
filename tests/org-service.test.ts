@@ -303,6 +303,24 @@ describe("roles and leaving", () => {
     expect(await service.leave(bob.id, { orgId })).toEqual({ ok: true, data: undefined });
     expect(await roleIn(db, bob.id, orgId)).toBeNull();
   });
+
+  it("ends the guest access of someone removed, here and nowhere else (N-2)", async () => {
+    const orgId = await team();
+    const [alices] = await db.insert(apps).values({ userId: alice.id, orgId, name: "Alice's app" }).returning();
+    const elsewhere = await team("Elsewhere");
+    const [other] = await db.insert(apps).values({ userId: alice.id, orgId: elsewhere, name: "Other" }).returning();
+    // A guest of both before joining Acme.
+    await db.insert(appGuests).values([
+      { appId: alices.id, email: bob.email, invitedBy: alice.id },
+      { appId: other.id, email: bob.email, invitedBy: alice.id },
+    ]);
+    await service.ensureUser(bob);
+    await service.invite(alice.id, { orgId, email: bob.email, role: "editor" });
+    expect((await service.get(alice.id, orgId))?.members.find((member) => member.userId === bob.id)).toMatchObject({ guestAppCount: 1 });
+
+    expect(await service.removeMember(alice.id, { orgId, userId: bob.id })).toEqual({ ok: true, data: undefined });
+    expect((await db.select({ appId: appGuests.appId }).from(appGuests)).map((row) => row.appId)).toEqual([other.id]);
+  });
 });
 
 describe("deleting a workspace", () => {

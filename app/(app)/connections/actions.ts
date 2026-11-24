@@ -78,12 +78,11 @@ export async function deleteConnectionAction(input: unknown) {
   return run(({ userId }) => getConnectionService().remove(userId, input));
 }
 
-/** Shares a sign-in with the whole team, or makes it personal again. Only whoever signed in can. */
-export async function setConnectionSharingAction(input: unknown) {
+/** Deletes the caller's own sign-in to a connection. Anyone signed in may, a viewer included. */
+export async function signOutOfConnectionAction(input: unknown) {
   return run(async ({ userId }) => {
-    const result = await getConnectionService().setSharing(userId, input);
-    const sharing = (input as { sharing?: unknown } | null)?.sharing;
-    if (result.ok) track(userId, "connection_sharing_changed", { sharing: sharing === "org" ? "org" : "personal" });
+    const result = await getConnectionService().signOut(userId, input);
+    if (result.ok) track(userId, "connection_signed_out", {});
     return result;
   });
 }

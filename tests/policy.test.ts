@@ -6,6 +6,7 @@ import {
   type AppAccess,
   type AppFacts,
   type ConnectionFacts,
+  type ConnectionKind,
   type Decision,
   type ThreadFacts,
   type WorkspaceFacts,
@@ -22,7 +23,11 @@ const outcome = (decision: Decision): Outcome => (decision.allowed ? "allowed" :
 
 const ws = (role: OrgRole | null): WorkspaceFacts => ({ kind: "workspace", role });
 const app = (access: AppAccess | null, role: OrgRole | null, guest = false): AppFacts => ({ kind: "app", access, role, guest });
-const conn = (role: OrgRole | null, own: boolean, sharing: "org" | "personal"): ConnectionFacts => ({ kind: "connection", role, own, sharing });
+const conn = (
+  role: OrgRole | null,
+  connection: ConnectionKind,
+  { own = false, signedIn = false, empty = false }: { own?: boolean; signedIn?: boolean; empty?: boolean } = {},
+): ConnectionFacts => ({ kind: "connection", role, own, signedIn, empty, connection });
 const thread = (own: boolean): ThreadFacts => ({ kind: "thread", own });
 
 const A = "allowed";
@@ -47,7 +52,6 @@ describe("workspace, members and invites", () => {
     ["guest.viewAll", (f) => decide("guest", "viewAll", f), { admin: A, editor: F, viewer: F, outsider: N }],
     ["app.create", (f) => decide("app", "create", f), { admin: A, editor: A, viewer: F, outsider: N }],
     ["connection.create", (f) => decide("connection", "create", f), { admin: A, editor: A, viewer: F, outsider: N }],
-    ["connection.signInAsSelf", (f) => decide("connection", "signInAsSelf", f), { admin: A, editor: A, viewer: A, outsider: N }],
     ["sampleData.create", (f) => decide("sampleData", "create", f), { admin: A, editor: A, viewer: F, outsider: N }],
     ["sampleData.delete", (f) => decide("sampleData", "delete", f), { admin: A, editor: A, viewer: F, outsider: N }],
   ];
@@ -137,45 +141,52 @@ describe("apps, sharing, guests, dashboards and chats", () => {
 });
 
 describe("connections", () => {
+  // Who is asking, about which kind: a key, a shared sign-in, or one that requires each member's own.
   const people = {
-    ownSharedEditor: conn("editor", true, "org"),
-    ownPersonalEditor: conn("editor", true, "personal"),
-    ownPersonalViewer: conn("viewer", true, "personal"),
-    ownSharedViewer: conn("viewer", true, "org"),
-    othersSharedEditor: conn("editor", false, "org"),
-    othersSharedViewer: conn("viewer", false, "org"),
-    othersPersonalEditor: conn("editor", false, "personal"),
-    outsider: conn(null, false, "org"),
+    keyEditor: conn("editor", "key"),
+    keyViewer: conn("viewer", "key"),
+    sharedHolderViewer: conn("viewer", "signInShared", { own: true, signedIn: true }),
+    sharedOtherEditor: conn("editor", "signInShared"),
+    sharedOtherAdmin: conn("admin", "signInShared"),
+    sharedEmptyEditor: conn("editor", "signInShared", { empty: true }),
+    eachAdderViewer: conn("viewer", "signInEach", { own: true, signedIn: true }),
+    eachSignedInViewer: conn("viewer", "signInEach", { signedIn: true }),
+    eachNotSignedInEditor: conn("editor", "signInEach"),
+    eachOtherAdmin: conn("admin", "signInEach"),
+    outsider: conn(null, "key"),
   };
   type Row = Record<keyof typeof people, Outcome>;
-  const visible: Row = {
-    ownSharedEditor: A, ownPersonalEditor: A, ownPersonalViewer: A, ownSharedViewer: A,
-    othersSharedEditor: A, othersSharedViewer: A, othersPersonalEditor: N, outsider: N,
+  const everyMember: Row = {
+    keyEditor: A, keyViewer: A, sharedHolderViewer: A, sharedOtherEditor: A, sharedOtherAdmin: A, sharedEmptyEditor: A,
+    eachAdderViewer: A, eachSignedInViewer: A, eachNotSignedInEditor: A, eachOtherAdmin: A, outsider: N,
   };
+  // A key: any editor or admin. A shared sign-in: whoever holds it, or an admin. One that requires sign-in: whoever added it, or an admin.
   const managers: Row = {
-    ownSharedEditor: A, ownPersonalEditor: A, ownPersonalViewer: F, ownSharedViewer: F,
-    othersSharedEditor: A, othersSharedViewer: F, othersPersonalEditor: N, outsider: N,
-  };
-  const owners: Row = {
-    ownSharedEditor: A, ownPersonalEditor: A, ownPersonalViewer: A, ownSharedViewer: A,
-    othersSharedEditor: F, othersSharedViewer: F, othersPersonalEditor: N, outsider: N,
+    keyEditor: A, keyViewer: F, sharedHolderViewer: A, sharedOtherEditor: F, sharedOtherAdmin: A, sharedEmptyEditor: F,
+    eachAdderViewer: A, eachSignedInViewer: F, eachNotSignedInEditor: F, eachOtherAdmin: A, outsider: N,
   };
 
   const table: Array<[string, (f: ConnectionFacts) => Decision, Row]> = [
-    ["connection.view", (f) => decide("connection", "view", f), visible],
-    ["connection.use", (f) => decide("connection", "use", f), visible],
+    ["connection.view", (f) => decide("connection", "view", f), everyMember],
+    ["connection.use", (f) => decide("connection", "use", f), everyMember],
     ["connection.update", (f) => decide("connection", "update", f), managers],
     ["connection.delete", (f) => decide("connection", "delete", f), managers],
     [
-      "connection.share",
-      (f) => decide("connection", "share", f),
+      "connection.signIn",
+      (f) => decide("connection", "signIn", f),
       {
-        ownSharedEditor: A, ownPersonalEditor: A, ownPersonalViewer: F, ownSharedViewer: F,
-        othersSharedEditor: F, othersSharedViewer: F, othersPersonalEditor: N, outsider: N,
+        keyEditor: F, keyViewer: F, sharedHolderViewer: A, sharedOtherEditor: F, sharedOtherAdmin: A, sharedEmptyEditor: A,
+        eachAdderViewer: A, eachSignedInViewer: A, eachNotSignedInEditor: A, eachOtherAdmin: A, outsider: N,
       },
     ],
-    ["connection.stopSharing", (f) => decide("connection", "stopSharing", f), owners],
-    ["connection.signInAgain", (f) => decide("connection", "signInAgain", f), owners],
+    [
+      "connection.signOut",
+      (f) => decide("connection", "signOut", f),
+      {
+        keyEditor: F, keyViewer: F, sharedHolderViewer: A, sharedOtherEditor: F, sharedOtherAdmin: F, sharedEmptyEditor: F,
+        eachAdderViewer: A, eachSignedInViewer: A, eachNotSignedInEditor: F, eachOtherAdmin: F, outsider: N,
+      },
+    ],
   ];
 
   it.each(table)("%s", (_name, ask, expected) => {
@@ -227,18 +238,28 @@ describe("what a refused person is told", () => {
       { allowed: false, code: "forbidden", reason: "Only an editor or admin of this workspace can change its connections." },
     ],
     [
-      "a member sharing someone else's sign-in",
-      decide("connection", "stopSharing", conn("editor", false, "org")),
-      { allowed: false, code: "forbidden", reason: "Only the person who signed in can share or unshare this connection." },
+      "an editor deleting someone else's shared sign-in",
+      decide("connection", "delete", conn("editor", "signInShared")),
+      { allowed: false, code: "forbidden", reason: "Only whoever signed in to this connection, or an admin, can change it." },
     ],
     [
-      "a member signing in again as someone else",
-      decide("connection", "signInAgain", conn("admin", false, "org")),
-      { allowed: false, code: "forbidden", reason: "Only the person who signed in can sign in to this connection again." },
+      "an editor renaming a connection someone else added, that requires sign-in",
+      decide("connection", "update", conn("editor", "signInEach", { signedIn: true })),
+      { allowed: false, code: "forbidden", reason: "Only whoever added this connection, or an admin, can change it." },
     ],
     [
-      "someone else's personal sign-in",
-      decide("connection", "use", conn("admin", false, "personal")),
+      "an editor signing in to someone else's shared sign-in",
+      decide("connection", "signIn", conn("editor", "signInShared")),
+      { allowed: false, code: "forbidden", reason: "Only whoever signed in to this connection, or an admin, can sign in to it again." },
+    ],
+    [
+      "a viewer changing a key",
+      decide("connection", "update", conn("viewer", "key")),
+      { allowed: false, code: "forbidden", reason: "Only an editor or admin of this workspace can change its connections." },
+    ],
+    [
+      "someone outside the workspace",
+      decide("connection", "use", conn(null, "signInEach")),
       { allowed: false, code: "not_found", reason: "This connection doesn't exist or was deleted." },
     ],
   ])("%s", (_name, actual, expected) => {

@@ -23,10 +23,11 @@ export async function GET(request: NextRequest) {
   }
 
   const result = await finishMcpSignIn(userId, request.nextUrl.searchParams);
-  // A sign-in that failed may not say which workspace it was for: the one they were last in.
-  const orgId = (result.ok && result.data.orgId) || (await lastMember())?.orgId;
+  // Back where it started, however it ended. Only a callback that matches no sign-in of theirs
+  // doesn't say which workspace it was for: then the one they were last in.
+  const orgId = result.from ? result.from.orgId : (await lastMember())?.orgId;
   // A dashboard path was checked when it was stored.
-  const path = result.ok && result.data.returnTo ? result.data.returnTo : orgId ? workspacePath(orgId, "connections") : "/apps";
+  const path = result.from?.returnTo ?? (orgId ? workspacePath(orgId, "connections") : "/apps");
   // The public app origin: behind the gateway, the request's own origin may be an internal one.
   const back = new URL(path, config().appOrigin);
   if (result.ok) back.searchParams.set("signed_in", result.data.id);

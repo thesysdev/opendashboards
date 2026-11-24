@@ -84,9 +84,9 @@ function fromSource(source: ConnectionSource, tool: SourceTool<Record<string, un
         appId: context.appId,
       });
       if (!connection) {
-        // A teammate's personal sign-in: this person's queries run as themselves, so they sign in too.
-        const theirs = await getConnectionService().signInNeeded(context.userId, connectionId);
-        if (theirs) throw new ToolError("sign_in_required", `Sign in to ${theirs.name} to see this. It uses a personal sign-in.`);
+        // Not signed in, nobody signed in, or a guest on a sign-in they don't have: said so they can act on it.
+        const closed = await getConnectionService().whyClosed(context.userId, connectionId, { appId: context.appId });
+        if (closed) throw new ToolError(closed.code, closed.message);
         throw new ToolError("connection_not_found", `No ${source.label} connection with id ${connectionId}.`);
       }
 
@@ -101,13 +101,13 @@ function fromSource(source: ConnectionSource, tool: SourceTool<Record<string, un
             // detail) in the server log, where it can be diagnosed.
             if (known.status === "unavailable") logError(`tools.${tool.name}`, error);
             if (known.error.code === "reauth_required") {
-              // Someone else's sign-in, shared with the workspace: only they can sign in again.
+              // Someone else's sign-in, shared with the workspace: they or an admin sign in again.
               const owner = await getConnectionService().signInOwner(context.userId, connection.id);
               if (owner) {
                 throw new ToolError(
                   "reauth_required",
                   owner.email
-                    ? `${owner.email}'s sign-in to ${owner.name} expired. Ask them to sign in again.`
+                    ? `${owner.email}'s sign-in to ${owner.name} expired. Ask them, or an admin, to sign in again.`
                     : `The sign-in to ${owner.name} expired. Ask whoever shared this app with you.`,
                 );
               }
@@ -119,12 +119,11 @@ function fromSource(source: ConnectionSource, tool: SourceTool<Record<string, un
         }
       });
 
-      // Inferred from use. A failure to record shouldn't fail the query. Not when a teammate's sign-in
-      // opened as this person's own: the app already lists the connection its dashboards name.
-      if (connection.id === connectionId) {
-        const recorded = await getAppService().recordConnectionUse(context.userId, context.appId, connection.id);
-        if (!recorded.ok && recorded.error.code !== "not_found") logError("tools.recordConnectionUse", recorded.error);
-      }
+      // Inferred from use. A failure to record shouldn't fail the query, except a refusal the agent
+      // must act on: a connection that requires sign-in on an app with guests.
+      const recorded = await getAppService().recordConnectionUse(context.userId, context.appId, connection.id);
+      if (!recorded.ok && recorded.error.code === "guests_cant_sign_in") throw new ToolError(recorded.error.code, recorded.error.message);
+      if (!recorded.ok && recorded.error.code !== "not_found") logError("tools.recordConnectionUse", recorded.error);
       return result;
     },
   };
@@ -140,7 +139,7 @@ const listConnections: Tool = {
   callers: ["agent"],
   async run(_args, context) {
     const connections = await getConnectionService().list({ userId: context.userId, orgId: context.orgId });
-    return connections.map(({ id, name, type, source, detail, status, demo }) => ({
+    return connections.map(({ id, name, type, source, detail, status, demo, kind, signInStatus }) => ({
       id,
       name,
       type,
@@ -148,6 +147,8 @@ const listConnections: Tool = {
       detail,
       status,
       ...(demo ? { demo: true, about: demo.description } : {}),
+      // Each person signs in to it themselves: a guest can never see its data.
+      ...(kind === "signInEach" ? { requires_sign_in: true, signed_in: signInStatus === "signedIn" } : {}),
     }));
   },
 };

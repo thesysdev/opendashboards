@@ -1,4 +1,4 @@
-import { and, asc, count, desc, eq, inArray, ne, or, sql } from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 
 import type { Database } from "@/lib/db";
 import {
@@ -6,6 +6,7 @@ import {
   appGuests,
   appMembers,
   apps,
+  connectionSignIns,
   dashboards,
   dataConnections,
   orgMembers,
@@ -20,7 +21,8 @@ import type { ConnectionType } from "@/lib/sources/catalog";
 import { track } from "@/lib/analytics";
 import { logError } from "@/lib/log";
 import { accessFor, appAccess, appFacts, appsOpenTo, asApp, roleIn, workspaceFacts, type AppAccess, type Scope } from "@/lib/orgs/access";
-import { can, decide, refusal, type AppFacts } from "@/lib/orgs/policy";
+import { can, decide, refusal, type AppFacts, type ConnectionFacts, type ConnectionKind } from "@/lib/orgs/policy";
+import { connectionKind, isSignIn } from "@/lib/connections/kind";
 
 import { fail, fromValidation, internalError, notFound, ok, type AppResult } from "./errors";
 import {
@@ -108,28 +110,26 @@ export type AppDetail = {
   dashboards: { id: string; title: string; description: string | null; artifactId: string; position: number }[];
   connections: (AppConnectionBadge & {
     type: ConnectionType;
+    /** For a sign-in, that of the sign-in it runs with for the caller (none signed in reads as invalid). */
     status: ConnectionStatus;
     signIn: "oauth" | null;
     sharing: ConnectionSharing;
-    /** Whether the caller added it (for a sign-in: whether it's theirs). */
-    mine: boolean;
+    kind: ConnectionKind;
     /**
-     * Someone else's personal sign-in, and the caller has none of their own
-     * to that server: its dashboards stay empty for them until they sign in.
+     * For a sign-in, the one it runs with for the caller: a shared one's, or
+     * their own of one that requires sign-in. Null for a key.
      */
-    needsSignIn: boolean;
+    signInStatus: "signedIn" | "expired" | "none" | null;
+    /** Whether that sign-in is the caller's own. */
+    signedInByMe: boolean;
     /**
-     * Someone else's personal sign-in that runs as the caller's own sign-in
-     * to the same server, which has expired: the id of the caller's own, for
-     * them to sign in to again. Null otherwise.
+     * Whom a shared sign-in runs as, by email, when it isn't the caller: who
+     * to ask when it expires. Null for a guest, who isn't told who is in the
+     * workspace.
      */
-    expiredOwnSignIn: string | null;
-    /**
-     * Whose it is, when it's a teammate's: who to ask when a sign-in shared
-     * with the workspace expires. Null for the caller's own, and for a guest,
-     * who isn't told who is in the workspace.
-     */
-    ownerEmail: string | null;
+    signedInAs: string | null;
+    /** Whether the caller may sign in to it (the policy's connection.signIn). */
+    canSignIn: boolean;
   })[];
 };
 
@@ -151,9 +151,8 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
   /** The apps of an org this member can open: their own, the ones shared with the team, and the ones shared with them by name. */
   const visibleTo = appsOpenTo;
 
-  /** The connections of an org this member can query: the org's, and their own sign-ins. */
-  const usableBy = ({ userId, orgId }: Scope) =>
-    and(eq(dataConnections.orgId, orgId), or(eq(dataConnections.sharing, "org"), eq(dataConnections.userId, userId)));
+  /** The connections of an org: every member may build on any of them (one that requires sign-in, once signed in). */
+  const usableBy = ({ orgId }: Scope) => eq(dataConnections.orgId, orgId);
 
   async function connectionBadges(appIds: string[]) {
     if (!appIds.length) return [];
@@ -166,6 +165,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         status: dataConnections.status,
         config: dataConnections.config,
         sharing: dataConnections.sharing,
+        demoDataset: dataConnections.demoDataset,
         ownerId: dataConnections.userId,
       })
       .from(appConnections)
@@ -296,33 +296,44 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         .innerJoin(orgMembers, and(eq(orgMembers.orgId, grant.orgId), eq(orgMembers.userId, appMembers.userId)))
         .where(eq(appMembers.appId, app.id));
       const badges = await connectionBadges([app.id]);
-      // The servers the caller has signed in to themselves, shared with the workspace or not: a teammate's
-      // personal sign-in to the same server runs as theirs. One that has expired is theirs to renew.
-      const others = badges.filter((badge) => badge.sharing === "personal" && badge.ownerId !== userId);
-      const ownSignIns = others.length
+      // The sign-ins these connections run with for the caller: a shared one's, whoever holds it, and their own.
+      const signInRows = badges.length
         ? await db
-            .select({ id: dataConnections.id, config: dataConnections.config, status: dataConnections.status })
-            .from(dataConnections)
-            .where(and(eq(dataConnections.orgId, grant.orgId), eq(dataConnections.userId, userId)))
-            .orderBy(asc(dataConnections.createdAt))
+            .select({ connectionId: connectionSignIns.connectionId, userId: connectionSignIns.userId, status: connectionSignIns.status, email: users.email })
+            .from(connectionSignIns)
+            .leftJoin(users, eq(users.id, connectionSignIns.userId))
+            .where(
+              inArray(
+                connectionSignIns.connectionId,
+                badges.map((badge) => badge.id),
+              ),
+            )
+            .orderBy(asc(connectionSignIns.createdAt))
         : [];
-      const signedInTo = new Map<string | null, { id: string; expired: boolean }>();
-      for (const row of ownSignIns) {
-        const server = serverOf(row.config);
-        if (server && !signedInTo.has(server)) signedInTo.set(server, { id: row.id, expired: row.status === "invalid" });
-      }
-      const expiredOwn = (sharing: string, ownerId: string, config: unknown) => {
-        if (sharing !== "personal" || ownerId === userId) return null;
-        const own = signedInTo.get(serverOf(config));
-        return own?.expired ? own.id : null;
-      };
-      const otherOwners = grant.guest ? [] : [...new Set(badges.map((badge) => badge.ownerId).filter((id) => id !== userId))];
-      const ownerEmails = new Map(
-        otherOwners.length
-          ? (await db.select({ id: users.id, email: users.email }).from(users).where(inArray(users.id, otherOwners))).map((row) => [row.id, row.email])
-          : [],
-      );
       const { pendingConnectionIds: _ids, ...rest } = app;
+      const describe = (badge: (typeof badges)[number]) => {
+        const kind = connectionKind(badge);
+        const signIn =
+          kind === "key"
+            ? null
+            : (signInRows.find((row) => row.connectionId === badge.id && (kind === "signInShared" || row.userId === userId)) ?? null);
+        const facts: ConnectionFacts = {
+          kind: "connection",
+          role: grant.facts.role,
+          own: badge.ownerId === userId,
+          signedIn: signIn?.userId === userId,
+          empty: kind === "signInShared" && !signIn,
+          connection: kind,
+        };
+        return {
+          kind,
+          status: kind === "key" ? badge.status : (signIn?.status ?? ("invalid" as const)),
+          signInStatus: kind === "key" ? null : !signIn ? ("none" as const) : signIn.status === "invalid" ? ("expired" as const) : ("signedIn" as const),
+          signedInByMe: facts.signedIn,
+          signedInAs: grant.guest || facts.signedIn ? null : (signIn?.email ?? null),
+          canSignIn: can("connection", "signIn", facts),
+        };
+      };
       return {
         ...rest,
         orgId: grant.orgId,
@@ -335,18 +346,14 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         teammateCount,
         pendingConnections,
         dashboards: appDashboards,
-        connections: badges.map(({ id, name, type, status, config, sharing, ownerId }) => ({
-          id,
-          name,
-          type,
-          status,
-          sharing,
-          mine: ownerId === userId,
-          ownerEmail: ownerEmails.get(ownerId) ?? null,
-          needsSignIn: sharing === "personal" && ownerId !== userId && !signedInTo.has(serverOf(config)),
-          expiredOwnSignIn: expiredOwn(sharing, ownerId, config),
+        connections: badges.map((badge) => ({
+          id: badge.id,
+          name: badge.name,
+          type: badge.type,
+          sharing: badge.sharing,
+          ...describe(badge),
           // Signed in with OAuth: when it's invalid, the fix is signing in again.
-          signIn: config && typeof config === "object" && "oauth" in config && config.oauth ? ("oauth" as const) : null,
+          signIn: isSignIn(badge.config) ? ("oauth" as const) : null,
         })),
       };
     },
@@ -571,14 +578,14 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         const adding = decide("guest", "create", grant.facts);
         if (!adding.allowed) return refusal(adding);
 
-        const personal = (await connectionBadges([id])).filter((connection) => connection.sharing === "personal");
-        if (personal.length) {
-          const names = personal.map((connection) => connection.name).join(", ");
+        const eachSignsIn = (await connectionBadges([id])).filter((connection) => connectionKind(connection) === "signInEach");
+        if (eachSignsIn.length) {
+          const names = eachSignsIn.map((connection) => connection.name).join(", ");
           return fail({
             code: "validation",
             field: "email",
             // A connection can't be taken off an app (a known limitation), so the way out is a new app without it.
-            message: `This app uses ${names} with a personal sign-in, which a guest can't query. Share ${names} with the workspace first, or make a new app without it and share that one.`,
+            message: `This app uses ${names}, which everyone signs in to with their own account, so a guest could never see its data. Make a new app without it and share that one.`,
           });
         }
         // A teammate is shared with by name, with the access that goes with it: never as a guest.
@@ -710,11 +717,27 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         if (!adding.allowed) return refusal(adding);
         const grant = app;
         const [connection] = await db
-          .select({ id: dataConnections.id })
+          .select({ id: dataConnections.id, name: dataConnections.name, config: dataConnections.config, sharing: dataConnections.sharing, demoDataset: dataConnections.demoDataset })
           .from(dataConnections)
           .where(and(eq(dataConnections.id, connectionId), usableBy({ userId, orgId: grant.orgId })))
           .limit(1);
         if (!connection) return notFound();
+
+        // The reverse of addGuest's rule: guests could never see data that needs each person's own sign-in.
+        if (connectionKind(connection) === "signInEach") {
+          const [{ guests }] = await db.select({ guests: count() }).from(appGuests).where(eq(appGuests.appId, appId));
+          const [already] = await db
+            .select({ id: appConnections.connectionId })
+            .from(appConnections)
+            .where(and(eq(appConnections.appId, appId), eq(appConnections.connectionId, connectionId)))
+            .limit(1);
+          if (guests > 0 && !already) {
+            return fail({
+              code: "guests_cant_sign_in",
+              message: `${connection.name} needs everyone to sign in with their own account, and this app has guests, who never can. Use a connection shared with the workspace, or make a new app for it.`,
+            });
+          }
+        }
 
         await db.insert(appConnections).values({ appId, connectionId }).onConflictDoNothing();
         return ok(undefined);
@@ -725,12 +748,6 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
 }
 
 export type AppService = ReturnType<typeof createAppService>;
-
-/** Which server a stored connection points at: for telling two sign-ins to the same place apart from two different ones. */
-export function serverOf(config: unknown): string | null {
-  const url = config && typeof config === "object" && "url" in config ? (config as { url?: unknown }).url : null;
-  return typeof url === "string" ? url : null;
-}
 
 /**
  * A new app's name: its data sources and a number, "Retail sales: App 2",

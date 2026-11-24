@@ -34,6 +34,8 @@ async function WorkspaceSettings({ params }: { params: Params }) {
   // Everyone let in from outside, on any app here: for admins to oversee.
   const guests = can("guest", "viewAll", workspace) ? await getAppService().workspaceGuests(member) : [];
   const admins = org.members.filter((entry) => entry.role === "admin").length;
+  // A guest from before they joined: marked, since removing them from the workspace ends it.
+  const memberEmails = new Set(org.members.flatMap((entry) => (entry.email ? [entry.email] : [])));
   return (
     <>
       <PageHeader
@@ -70,7 +72,14 @@ async function WorkspaceSettings({ params }: { params: Params }) {
               <MemberRow
                 key={entry.userId}
                 orgId={org.id}
-                member={{ userId: entry.userId, email: entry.email, role: entry.role, you: entry.you, appCount: entry.appCount }}
+                member={{
+                  userId: entry.userId,
+                  email: entry.email,
+                  role: entry.role,
+                  you: entry.you,
+                  appCount: entry.appCount,
+                  guestAppCount: entry.guestAppCount,
+                }}
                 // Changing their role and removing them.
                 canManage={can("member", "update", workspace) && can("member", "delete", workspace)}
                 // A workspace always keeps an admin: the last one can't be demoted.
@@ -95,7 +104,13 @@ async function WorkspaceSettings({ params }: { params: Params }) {
             {guests.map((guest) => (
               <GuestRow
                 key={`${guest.appId}:${guest.email}`}
-                guest={{ appId: guest.appId, appName: guest.appName, email: guest.email, invitedBy: guest.invitedBy }}
+                guest={{
+                  appId: guest.appId,
+                  appName: guest.appName,
+                  email: guest.email,
+                  invitedBy: guest.invitedBy,
+                  alsoMember: memberEmails.has(guest.email),
+                }}
               />
             ))}
           </ul>
