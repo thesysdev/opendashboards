@@ -137,8 +137,11 @@ export type AppDetail = {
  * The data access layer for apps. An app belongs to an org and has an owner.
  * Who may see or change it is decided by lib/orgs/access, from the database:
  * an app the caller can't open looks exactly like a missing one.
+ *
+ * Timestamps come from the database's clock, as inserts' defaults do: the one
+ * clock every server shares, so "most recently updated first" holds.
  */
-export function createAppService({ db, now = () => new Date() }: { db: Database; now?: () => Date }) {
+export function createAppService({ db }: { db: Database }) {
   async function guard<T>(operation: string, fn: () => Promise<AppResult<T>>): Promise<AppResult<T>> {
     try {
       return await fn();
@@ -389,9 +392,6 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
           .select({ name: apps.name })
           .from(apps)
           .where(and(eq(apps.orgId, scope.orgId), eq(apps.userId, scope.userId)));
-        // Stamped from the same clock as renames and sharing changes, not the database's,
-        // so "most recently updated first" holds even when the two clocks disagree.
-        const createdAt = now();
         const [app] = await db
           .insert(apps)
           .values({
@@ -400,8 +400,6 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
             name: appName(sources, taken.map((row) => row.name)),
             pendingPrompt: prompt,
             pendingConnectionIds: connectionIds,
-            createdAt,
-            updatedAt: createdAt,
           })
           .returning({ id: apps.id });
         // The sources picked for it are the app's from the start: they show on it, and the agent is told about them.
@@ -418,7 +416,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         if (!renaming.allowed) return refusal(renaming);
         const updated = await db
           .update(apps)
-          .set({ name: parsed.data.name, updatedAt: now() })
+          .set({ name: parsed.data.name, updatedAt: sql`now()` })
           .where(eq(apps.id, parsed.data.id))
           .returning({ id: apps.id });
         return updated.length ? ok(undefined) : notFound();
@@ -436,7 +434,7 @@ export function createAppService({ db, now = () => new Date() }: { db: Database;
         if (!parsed.success) return notFound();
         const sharing = decide("appSharing", "update", (await appFacts(db, userId, parsed.data.id))?.facts ?? null);
         if (!sharing.allowed) return refusal(sharing);
-        await db.update(apps).set({ teamAccess: parsed.data.teamAccess, updatedAt: now() }).where(eq(apps.id, parsed.data.id));
+        await db.update(apps).set({ teamAccess: parsed.data.teamAccess, updatedAt: sql`now()` }).where(eq(apps.id, parsed.data.id));
         return ok(undefined);
       });
     },
