@@ -34,6 +34,8 @@ export type PendingWorkspace = { name: string };
 
 /** Statuses that keep a plan: past_due is a failed payment Stripe is still retrying. */
 const LIVE = new Set<string>(["active", "trialing", "past_due"]);
+// The shared Stripe account's other webhook consumers use this to identify our objects.
+const STRIPE_PRODUCT = "opendashboards";
 
 /** An executor for the new-workspace callback: the database, or the transaction billing is in. */
 type Tx = Parameters<Parameters<Database["transaction"]>[0]>[0];
@@ -76,8 +78,14 @@ export function createBilling(deps: {
   /** The workspace's Stripe customer, created the first time it's needed. */
   async function customerFor(orgId: string, userId: string): Promise<string> {
     const existing = await rowOf(orgId);
-    if (existing) return existing.stripeCustomerId;
-    const customer = await stripe.customers.create({ metadata: { org_id: orgId } }, { idempotencyKey: `customer:${orgId}` });
+    if (existing) {
+      await stripe.customers.update(existing.stripeCustomerId, { metadata: { product: STRIPE_PRODUCT } });
+      return existing.stripeCustomerId;
+    }
+    const customer = await stripe.customers.create(
+      { metadata: { product: STRIPE_PRODUCT, org_id: orgId } },
+      { idempotencyKey: `customer:${orgId}` },
+    );
     await db.insert(orgBilling).values({ orgId, stripeCustomerId: customer.id, createdBy: userId }).onConflictDoNothing();
     return (await rowOf(orgId))!.stripeCustomerId;
   }
@@ -86,23 +94,24 @@ export function createBilling(deps: {
    * Reads a subscription back from Stripe and saves it on its workspace. Safe
    * to repeat and order-free: whatever Stripe says now wins.
    */
-  async function sync(subscriptionId: string, orgIdHint?: string): Promise<void> {
+  async function sync(subscriptionId: string): Promise<boolean> {
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    const product = subscription.metadata?.product;
+    if (product && product !== STRIPE_PRODUCT) return false;
     const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
-    const [byCustomer] = await db.select().from(orgBilling).where(eq(orgBilling.stripeCustomerId, customerId)).limit(1);
-    const orgId = byCustomer?.orgId ?? orgIdHint ?? subscription.metadata?.org_id;
-    if (!orgId) return;
-    const current = byCustomer ?? (await rowOf(orgId));
+    // A local customer link also identifies subscriptions created before tagging.
+    // New workspaces get this link when their Checkout completes.
+    const [current] = await db.select().from(orgBilling).where(eq(orgBilling.stripeCustomerId, customerId)).limit(1);
+    if (!current) return false;
     const isLive = LIVE.has(subscription.status);
     // An older subscription ending never undoes a newer one.
-    if (current?.stripeSubscriptionId && current.stripeSubscriptionId !== subscription.id && !isLive) return;
+    if (current.stripeSubscriptionId && current.stripeSubscriptionId !== subscription.id && !isLive) return true;
 
     const item = subscription.items.data[0];
     const priced = item ? planOfPrice(item.price.id) : null;
     const periodEnd = (item as { current_period_end?: number } | undefined)?.current_period_end ??
       (subscription as unknown as { current_period_end?: number }).current_period_end;
     const values = {
-      stripeCustomerId: customerId,
       stripeSubscriptionId: subscription.id,
       plan: isLive && priced ? priced.plan.id : null,
       interval: priced?.interval ?? null,
@@ -112,10 +121,8 @@ export function createBilling(deps: {
       cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end || subscription.cancel_at),
       updatedAt: new Date(),
     };
-    await db
-      .insert(orgBilling)
-      .values({ orgId, createdBy: subscription.metadata?.user_id ?? "stripe", ...values })
-      .onConflictDoUpdate({ target: orgBilling.orgId, set: values });
+    await db.update(orgBilling).set(values).where(eq(orgBilling.stripeCustomerId, customerId));
+    return true;
   }
 
   /**
@@ -129,6 +136,11 @@ export function createBilling(deps: {
     const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id;
     if (!customerId || !subscriptionId) return null;
     let orgId: string | null = session.metadata?.org_id || null;
+    const product = session.metadata?.product;
+    if (product !== STRIPE_PRODUCT) {
+      // Legacy sessions are safe to finish if the customer is already linked.
+      if (product || !orgId || (await rowOf(orgId))?.stripeCustomerId !== customerId) return null;
+    }
     if (!orgId) {
       const userId = session.metadata?.user_id;
       const name = session.metadata?.workspace_name;
@@ -144,8 +156,7 @@ export function createBilling(deps: {
       });
       await stripe.customers.update(customerId, { metadata: { org_id: orgId } });
     }
-    await sync(subscriptionId, orgId);
-    return orgId;
+    return (await sync(subscriptionId)) ? orgId : null;
   }
 
   async function portalSession(
@@ -212,14 +223,17 @@ export function createBilling(deps: {
     }): Promise<{ url: string }> {
       const plan = planById(input.planId);
       if (!plan?.stripe) throw new Error(`Plan ${input.planId} can't be bought`);
-      const customer = input.orgId ? await customerFor(input.orgId, input.userId) : undefined;
-      const metadata: Record<string, string> = { user_id: input.userId };
+      // Set ownership before Checkout can emit events about the customer's payment method.
+      const customer = input.orgId
+        ? await customerFor(input.orgId, input.userId)
+        : (await stripe.customers.create({ metadata: { product: STRIPE_PRODUCT } })).id;
+      const metadata: Record<string, string> = { product: STRIPE_PRODUCT, user_id: input.userId };
       if (input.orgId) metadata.org_id = input.orgId;
       if (input.pending) metadata.workspace_name = input.pending.name;
       const session = await stripe.checkout.sessions.create({
         mode: "subscription",
         customer,
-        customer_update: customer ? { address: "auto", name: "auto" } : undefined,
+        customer_update: { address: "auto", name: "auto" },
         line_items: [
           {
             price: input.interval === "year" ? plan.stripe.annual : plan.stripe.monthly,
@@ -290,19 +304,21 @@ export function createBilling(deps: {
       const object = event.data.object as unknown as Record<string, unknown>;
       switch (event.type) {
         case "checkout.session.completed":
-          await completeSession(await stripe.checkout.sessions.retrieve(object.id as string));
+          if (!(await completeSession(await stripe.checkout.sessions.retrieve(object.id as string)))) return;
           break;
         case "customer.subscription.created":
         case "customer.subscription.updated":
         case "customer.subscription.deleted":
-          await sync(object.id as string);
+          if (!(await sync(object.id as string))) return;
           break;
         case "invoice.paid":
         case "invoice.payment_failed": {
           const subscriptionId = invoiceSubscription(object);
-          if (subscriptionId) await sync(subscriptionId);
+          if (!subscriptionId || !(await sync(subscriptionId))) return;
           break;
         }
+        default:
+          return;
       }
       // Recorded once handled: an event that failed half way is handled again when Stripe retries it.
       await db.insert(stripeEvents).values({ id: event.id, type: event.type }).onConflictDoNothing();

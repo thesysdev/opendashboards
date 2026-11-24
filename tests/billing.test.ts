@@ -1,6 +1,6 @@
 import { sql } from "drizzle-orm";
 import Stripe from "stripe";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createBilling, type BillingPlan } from "@/lib/billing";
 import { createDatabase } from "@/lib/db";
@@ -12,6 +12,7 @@ const { db, pool } = createDatabase(TEST_DATABASE_URL);
 
 const SECRET = "whsec_test";
 const ORG = "11111111-1111-4111-8111-111111111111";
+const NEW_ORG = "22222222-2222-4222-8222-222222222222";
 const prices = (id: string) => ({ monthly: `price_${id}_m`, annual: `price_${id}_y`, portal: { month: "bpc_m", year: "bpc_y" } });
 const PLANS: BillingPlan[] = [
   { id: "free", name: "Free", perSeat: false, stripe: null },
@@ -22,11 +23,16 @@ const PLANS: BillingPlan[] = [
 /** Stripe's subscriptions as the fake returns them, by id. Webhook signatures are Stripe's own code. */
 const subscriptions = new Map<string, unknown>();
 const real = new Stripe("sk_test_unused");
+const createCustomer = vi.fn();
+const updateCustomer = vi.fn();
+const createCheckout = vi.fn();
+const retrieveCheckout = vi.fn();
+const createWorkspace = vi.fn<Parameters<typeof createBilling>[0]["createWorkspace"]>();
 const stripe = {
   webhooks: real.webhooks,
   subscriptions: { retrieve: async (id: string) => subscriptions.get(id) },
-  customers: { update: async () => ({}) },
-  checkout: { sessions: { retrieve: async () => ({}) } },
+  customers: { create: createCustomer, update: updateCustomer },
+  checkout: { sessions: { create: createCheckout, retrieve: retrieveCheckout } },
 } as unknown as Stripe;
 
 const billing = createBilling({
@@ -36,16 +42,14 @@ const billing = createBilling({
   freePlan: "free",
   webhookSecret: SECRET,
   origin: "http://localhost:3100",
-  createWorkspace: async () => {
-    throw new Error("not in these tests");
-  },
+  createWorkspace,
 });
 
-function subscription(id: string, { status = "active", price = "price_team_m", quantity = 3 } = {}) {
+function subscription(id: string, { status = "active", price = "price_team_m", quantity = 3, customer = "cus_1" } = {}) {
   subscriptions.set(id, {
     id,
     status,
-    customer: "cus_1",
+    customer,
     metadata: { org_id: ORG },
     cancel_at_period_end: false,
     items: { data: [{ id: `si_${id}`, price: { id: price }, quantity, current_period_end: 1_800_000_000 }] },
@@ -53,12 +57,13 @@ function subscription(id: string, { status = "active", price = "price_team_m", q
 }
 
 /** Sends a signed webhook event, as Stripe would. */
-async function deliver(eventId: string, type: string, object: { id: string }) {
+async function deliver(eventId: string, type: string, object: { id: string } & Record<string, unknown>) {
   const payload = JSON.stringify({ id: eventId, object: "event", type, data: { object } });
   await billing.handleWebhook(payload, real.webhooks.generateTestHeaderString({ payload, secret: SECRET }));
 }
 
 beforeEach(async () => {
+  vi.resetAllMocks();
   subscriptions.clear();
   await db.execute(sql`TRUNCATE ${orgs}, ${users}, ${stripeEvents} CASCADE`);
   await db.insert(orgs).values({ id: ORG, name: "Acme", createdBy: "alice" });
@@ -86,7 +91,7 @@ describe("webhooks", () => {
 
   it("keeps the plan while a failed payment is retried, and moves to Free when the subscription ends", async () => {
     subscription("sub_1", { status: "past_due" });
-    await deliver("evt_1", "invoice.payment_failed", { id: "in_1", parent: { subscription_details: { subscription: "sub_1" } } } as never);
+    await deliver("evt_1", "invoice.payment_failed", { id: "in_1", parent: { subscription_details: { subscription: "sub_1" } } });
     expect(await billing.planOf(ORG)).toBe("team");
     expect((await billing.subscription(ORG))?.paymentFailed).toBe(true);
 
@@ -110,5 +115,89 @@ describe("webhooks", () => {
     subscription("sub_old", { status: "canceled" });
     await deliver("evt_2", "customer.subscription.deleted", { id: "sub_old" });
     expect(await billing.planOf(ORG)).toBe("team");
+  });
+
+  it("ignores another product's subscription and invoice even when its org metadata matches", async () => {
+    subscription("sub_foreign", { customer: "cus_foreign" });
+    await deliver("evt_sub", "customer.subscription.updated", { id: "sub_foreign" });
+    await deliver("evt_invoice", "invoice.paid", { id: "in_foreign", subscription: "sub_foreign" });
+
+    expect(await billing.planOf(ORG)).toBe("free");
+    expect(await db.select().from(stripeEvents)).toEqual([]);
+  });
+
+  it("ignores a foreign Checkout without creating or updating a workspace", async () => {
+    retrieveCheckout.mockResolvedValue({
+      ...completedCheckout,
+      metadata: { user_id: "alice", workspace_name: "Foreign" },
+    });
+
+    await deliver("evt_checkout", "checkout.session.completed", { id: "cs_new" });
+    expect(await billing.completeCheckout("cs_new", "alice")).toBeNull();
+    expect(createWorkspace).not.toHaveBeenCalled();
+    expect(updateCustomer).not.toHaveBeenCalled();
+    expect(await db.select().from(stripeEvents)).toEqual([]);
+  });
+
+  it("links and syncs a tagged paid workspace once Checkout has completed", async () => {
+    subscription("sub_new", { customer: "cus_new" });
+    retrieveCheckout.mockResolvedValue({
+      ...completedCheckout,
+      metadata: { product: "opendashboards", user_id: "alice", workspace_name: "New" },
+    });
+    createWorkspace.mockImplementationOnce(async (tx, { userId, pending }) => {
+      await tx.insert(orgs).values({ id: NEW_ORG, name: pending.name, createdBy: userId });
+      return NEW_ORG;
+    });
+
+    await deliver("evt_sub", "customer.subscription.created", { id: "sub_new" });
+    await deliver("evt_checkout", "checkout.session.completed", { id: "cs_new" });
+    expect(await billing.completeCheckout("cs_new", "alice")).toBe(NEW_ORG);
+    expect(createWorkspace).toHaveBeenCalledTimes(1);
+    expect(await billing.planOf(NEW_ORG)).toBe("team");
+  });
+});
+
+const completedCheckout = {
+  id: "cs_new",
+  mode: "subscription",
+  status: "complete",
+  customer: "cus_new",
+  subscription: "sub_new",
+};
+
+describe("Checkout ownership", () => {
+  it.each([ORG, null])("tags the customer, session, and subscription with orgId %s", async (orgId) => {
+    if (orgId) await db.delete(orgBilling);
+    createCustomer.mockResolvedValue({ id: "cus_new" });
+    createCheckout.mockResolvedValue({ url: "https://checkout.stripe.com/test" });
+
+    await billing.startCheckout({
+      orgId, planId: "team", interval: "month", seats: 2, minSeats: 1,
+      userId: "alice", pending: orgId ? undefined : { name: "New" }, cancelPath: "/apps",
+    });
+
+    expect(createCustomer.mock.calls[0]?.[0]).toEqual({
+      metadata: { product: "opendashboards", ...(orgId ? { org_id: orgId } : {}) },
+    });
+    const metadata = {
+      product: "opendashboards", user_id: "alice", ...(orgId ? { org_id: orgId } : { workspace_name: "New" }),
+    };
+    expect(createCheckout).toHaveBeenCalledWith(expect.objectContaining({
+      customer: "cus_new", metadata, subscription_data: { metadata },
+    }));
+  });
+
+  it("tags a reused customer before creating a Checkout session", async () => {
+    createCheckout.mockResolvedValue({ url: "https://checkout.stripe.com/test" });
+
+    await billing.startCheckout({
+      orgId: ORG, planId: "team", interval: "month", seats: 2, minSeats: 1,
+      userId: "alice", cancelPath: "/apps",
+    });
+
+    expect(createCustomer).not.toHaveBeenCalled();
+    expect(updateCustomer).toHaveBeenCalledWith("cus_1", { metadata: { product: "opendashboards" } });
+    expect(updateCustomer.mock.invocationCallOrder[0]).toBeLessThan(createCheckout.mock.invocationCallOrder[0]);
   });
 });
