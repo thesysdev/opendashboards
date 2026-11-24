@@ -72,11 +72,19 @@ export function createAgUiTranslator(emit: (event: BaseEvent) => void) {
     message(message: ChatCompletionMessageParam) {
       if (message.role !== "tool") return;
       const content = typeof message.content === "string" ? message.content : message.content.map((p) => p.text).join("");
+      this.result(message.tool_call_id, content);
+    },
+
+    /**
+     * A tool call's result. A call can send one before the loop has its own
+     * (a dashboard that has started building); the chat replaces it with the next.
+     */
+    result(toolCallId: string, content: string) {
       const error = toolError(content);
       emit({
         type: EventType.TOOL_CALL_RESULT,
         messageId: crypto.randomUUID(),
-        toolCallId: message.tool_call_id,
+        toolCallId,
         content,
         role: "tool",
         ...(error ? { isError: true, error } : {}),
