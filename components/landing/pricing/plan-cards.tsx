@@ -89,6 +89,8 @@ function BillingSwitch({ value, onChange }: { value: Billing; onChange: (value: 
 function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
   const price = billing === "annual" ? plan.annual : plan.monthly;
   const free = plan.monthly === 0;
+  const per =
+    price === null ? "Priced with you" : free ? "Free forever" : plan.unit === "editor" ? "per editor / month" : "per month";
 
   return (
     <article
@@ -113,11 +115,9 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
       {/* The price, then what it's for, on its own line so the four cards line up in a
           row whatever the widths. The switch above says how it's billed. */}
       <p className="mt-6 font-(family-name:--font-display) text-[2.5rem] leading-none font-semibold tracking-[-0.02em]">
-        ${price}
+        {price === null ? "Custom" : `$${price}`}
       </p>
-      <p className="mt-2 text-sm leading-5 whitespace-nowrap text-neutral-950/60">
-        {free ? "Free forever" : plan.unit === "editor" ? "per editor / month" : "per month"}
-      </p>
+      <p className="mt-2 text-sm leading-5 whitespace-nowrap text-neutral-950/60">{per}</p>
 
       <div className="mt-6 [&>*]:w-full">
         <BevelButton

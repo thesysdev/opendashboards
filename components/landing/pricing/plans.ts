@@ -1,14 +1,19 @@
 import { LINKS } from "../links";
 
-/** Monthly prices in USD. Annual billing is 20% off, shown per month. */
+/**
+ * A plan on the pricing page. Prices are monthly, in USD; annual billing is
+ * 20% off, shown per month. Enterprise has no list price: it's agreed with
+ * sales, and nothing in the product knows about it yet.
+ */
 export type Plan = {
-  id: "free" | "standard" | "team" | "business";
+  id: "free" | "standard" | "team" | "enterprise";
   name: string;
   tagline: string;
-  monthly: number;
-  annual: number;
-  /** What the price is for: the whole plan, or each editor. */
-  unit: "plan" | "editor";
+  /** null: a custom price, agreed with sales. */
+  monthly: number | null;
+  annual: number | null;
+  /** What the price is for: the whole plan, each editor, or whatever is agreed. */
+  unit: "plan" | "editor" | "custom";
   /** The plan below this one, whose features this plan also has; the list then shows only what's added. */
   includes?: string;
   highlights: string[];
@@ -56,21 +61,21 @@ export const PLANS: Plan[] = [
       "More AI usage per editor",
       "Free viewers",
       "Shared connections",
-      "Roles and team access",
+      "Roles and general access",
     ],
     cta: TALK_TO_US,
     featured: true,
   },
   {
-    id: "business",
-    name: "Business",
-    tagline: "For heavy use, with no limits on what you connect or build.",
-    monthly: 99,
-    annual: 79,
-    unit: "editor",
+    id: "enterprise",
+    name: "Enterprise",
+    tagline: "For organizations that need higher limits or their own deployment.",
+    monthly: null,
+    annual: null,
+    unit: "custom",
     includes: "Team",
-    highlights: ["Unlimited data connections", "Unlimited apps", "Highest AI usage"],
-    cta: TALK_TO_US,
+    highlights: ["Custom limits on everything", "Private deployment"],
+    cta: { label: "Contact sales", href: LINKS.sales, external: true },
   },
 ];
 
@@ -91,27 +96,27 @@ export const COMPARISON: { title: string; rows: ComparisonRow[] }[] = [
       {
         label: "Editors",
         hint: "People who chat, build apps or manage connections",
-        values: { free: "1", standard: "1", team: "Unlimited", business: "Unlimited" },
+        values: { free: "1", standard: "1", team: "Unlimited", enterprise: "Unlimited" },
       },
       {
         label: "Data connections",
         hint: "Each database, property, site or MCP server",
-        values: { free: "3", standard: "10", team: "25", business: "Unlimited" },
+        values: { free: "3", standard: "10", team: "25", enterprise: "Custom" },
       },
       {
         label: "Apps",
         hint: "Deleting an app frees its place",
-        values: { free: "5", standard: "25", team: "100", business: "Unlimited" },
+        values: { free: "5", standard: "25", team: "100", enterprise: "Custom" },
       },
       {
         label: "AI usage",
         hint: "Chatting with the agent that builds and edits",
-        values: { free: "Limited", standard: "More", team: "More than Standard", business: "Highest" },
+        values: { free: "Limited", standard: "More", team: "More than Standard", enterprise: "Custom" },
       },
       {
         label: "Data sources",
         hint: "Databases, warehouses, analytics tools and any MCP server",
-        values: { free: "All", standard: "All", team: "All", business: "All" },
+        values: { free: "All", standard: "All", team: "All", enterprise: "All" },
       },
     ],
   },
@@ -121,27 +126,37 @@ export const COMPARISON: { title: string; rows: ComparisonRow[] }[] = [
       {
         label: "Guests",
         hint: "Share an app with anyone by email, view only",
-        values: { free: "Unlimited", standard: "Unlimited", team: "Unlimited", business: "Unlimited" },
+        values: { free: "Unlimited", standard: "Unlimited", team: "Unlimited", enterprise: "Unlimited" },
       },
       {
         label: "Viewers",
-        hint: "Teammates who see the team's apps",
-        values: { free: false, standard: false, team: "Unlimited", business: "Unlimited" },
+        hint: "Members who see the workspace's apps",
+        values: { free: false, standard: false, team: "Unlimited", enterprise: "Unlimited" },
       },
     ],
   },
   {
-    title: "Teams",
+    title: "Workspace",
     rows: [
       {
         label: "Shared connections",
-        hint: "Connect once, and the whole team uses it",
-        values: { free: false, standard: false, team: true, business: true },
+        hint: "Connect once, and the whole workspace uses it",
+        values: { free: false, standard: false, team: true, enterprise: true },
       },
       {
-        label: "Roles and team access",
-        hint: "Admins, editors and viewers; share an app with the whole team",
-        values: { free: false, standard: false, team: true, business: true },
+        label: "Roles and general access",
+        hint: "Admins, editors and viewers; share an app with the whole workspace",
+        values: { free: false, standard: false, team: true, enterprise: true },
+      },
+    ],
+  },
+  {
+    title: "Deployment",
+    rows: [
+      {
+        label: "Private deployment",
+        hint: "Your own OpenDashboards, run apart from everyone else's",
+        values: { free: false, standard: false, team: false, enterprise: true },
       },
     ],
   },
