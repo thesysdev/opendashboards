@@ -71,10 +71,3 @@ export const SOURCE_OPTIONS: SourceOption[] = CATALOGS.flatMap(({ type, label, b
       })
     : []),
 ]);
-
-/**
- * Whether a source connects by signing in to the source itself (Google Ads,
- * Meta Ads), rather than to a server at a URL (an MCP server) or with a key.
- * Who runs that sign-in is the server's business, not the form's.
- */
-export const signsInToSource = (type: string): boolean => CATALOGS.find((catalog) => catalog.type === type)?.signsIn === true;

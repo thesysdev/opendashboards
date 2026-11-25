@@ -44,7 +44,7 @@ async function Home({ params }: { params: Params }) {
   // A viewer only opens what's shared with them: no composer, and nothing to set up.
   if (!can("app", "create", asWorkspace(member.role))) return <SharedApps apps={apps} />;
   if (!apps.length) {
-    const [demos, sources] = await Promise.all([connectionService.listDemoDatasets(member), connectionService.offeredSources(member)]);
+    const [demos, sources] = await Promise.all([connectionService.listDemoDatasets(member), connectionService.sourceOptions(member)]);
     return (
       <Onboarding
         connections={connections.map(({ id, name, shortSource, tile, demo }) => ({

@@ -46,7 +46,7 @@ async function ConnectionsContent({ params }: { params: Params }) {
     service.list(member),
     service.listDemoDatasets(member),
     getOrgService().get(member.userId, member.orgId),
-    service.offeredSources(member),
+    service.sourceOptions(member),
   ]);
   // Who serves whom only matters once someone else is here (or is about to be): alone, there's nobody to share with.
   const shared = (org?.members.length ?? 1) + (org?.invites.length ?? 0) > 1;

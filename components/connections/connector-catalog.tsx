@@ -31,7 +31,8 @@ export function ConnectorCatalog({
 }) {
   const [query, setQuery] = useState("");
   const offered = new Set(sources.map((source) => source.key));
-  const isOffered = (entry: CatalogEntry) => offered.has(entry.option);
+  // A known MCP server connects through the MCP source.
+  const isOffered = (entry: CatalogEntry) => offered.has(entry.open.kind === "mcp" ? ANY_MCP_SERVER.key : entry.key);
   const shown = (entries: CatalogEntry[]) => entries.filter(isOffered);
   const [selected, setSelected] = useState<CatalogEntry | null>(null);
   const [open, setOpen] = useState(false);

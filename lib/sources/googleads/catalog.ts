@@ -14,6 +14,5 @@ export const googleAdsCatalog: SourceCatalog<GoogleAdsConfig, "googleads"> = {
   blurb: "Campaigns, spend, clicks and conversions",
   tile: "GD",
   configSchema: googleAdsConfigSchema,
-  signsIn: true,
   describe: () => ({ source: "Google Ads", shortSource: "Google Ads", detail: "Signed in with Google", tile: "GD" }),
 };

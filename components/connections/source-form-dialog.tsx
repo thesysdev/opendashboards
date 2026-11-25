@@ -11,7 +11,6 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { connectionNameSchema } from "@/lib/connections/schemas";
-import { signsInToSource } from "@/lib/sources/catalog";
 import { MCP_SERVICES, type McpAuth, type McpServiceKey } from "@/lib/sources/mcp/services";
 
 import { CertificateCheckField } from "./certificate-check-field";
@@ -91,10 +90,10 @@ export function SourceFormDialog(props: Props) {
     setPasteNote("Filled in the fields below. Check them, then test.");
   }
 
-  /** What this form signs in to: the platform itself (Google Ads), a known MCP server, or an MCP server by its URL. */
+  /** What this form signs in to: an MCP server (a known one, or by its URL), or any other source's own platform (Google Ads). */
   function signInRequest() {
     const common = { orgId, name: values.name ?? "", sharing };
-    if (signsInToSource(type)) return { ...common, kind: "source", source: type };
+    if (type !== "mcp") return { ...common, kind: "source", source: type };
     if (service) return { ...common, kind: "service", service };
     return { ...common, kind: "url", url: values.url ?? "" };
   }

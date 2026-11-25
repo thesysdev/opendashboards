@@ -279,6 +279,15 @@ describe("signing in through Composio", () => {
     expect(await startComposioSignIn(workspaceOf("alice"), { name: "Meta", source: "metaads" }, deps)).toMatchObject({ ok: true, data: { existing: null } });
   });
 
+  it("refuses a source it doesn't sign in to, before asking Composio", async () => {
+    const before = composio.calls.length;
+    expect(await startComposioSignIn(workspaceOf("alice"), { name: "DB", source: "postgres", sharing: "org" }, deps)).toMatchObject({
+      ok: false,
+      error: { code: "validation" },
+    });
+    expect(composio.calls).toHaveLength(before);
+  });
+
   it("comes back to a path that carries the state, whatever Composio appends", async () => {
     await start();
     const link = composio.calls.findLast((call) => call.path.endsWith("/connected_accounts/link"))?.body as { callback_url: string };

@@ -39,12 +39,6 @@ export interface SourceCatalog<
   /** The settings that aren't secret, stored in data_connections.config. */
   configSchema: z.ZodType<Config>;
   describe(config: Config): SourceDescription;
-  /**
-   * People connect it by signing in to the platform itself (Google Ads), not
-   * to a server at a URL and not with a key. Who runs that sign-in is the
-   * server's business: the source's `signInProvider`.
-   */
-  signsIn?: true;
 }
 
 /** Something a successful check found that doesn't stop the connection working. */
@@ -135,8 +129,6 @@ export interface ConnectionSource<Config extends Record<string, unknown> = Recor
    * connections to it are refused.
    */
   available?(): boolean;
-  /** Who runs the sign-in of a source that `signsIn`: how a new connection to it starts. Server only. */
-  signInProvider?: "composio";
   /** Turns this source's failures into a user-facing error and the status to record. */
   toError(error: unknown): { error: SourceError; status: Exclude<ConnectionStatus, "ok"> } | null;
   // Each tool has its own argument type; the runner validates them with the tool's schema.

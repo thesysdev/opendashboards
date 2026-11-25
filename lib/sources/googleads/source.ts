@@ -170,7 +170,6 @@ export const googleAdsSource: ConnectionSource<GoogleAdsConfig> = {
     await checkAccount("googleads", readComposioCredential(credential), googleAdsDeps.composio, signal);
     return [];
   },
-  signInProvider: "composio",
   available: () => isConfigured(googleAdsCatalog.type),
   release: (credential) => releaseAccount(credential, googleAdsDeps.composio),
   toError: (error) => composioToError(googleAdsCatalog, error),

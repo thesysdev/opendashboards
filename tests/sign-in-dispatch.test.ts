@@ -20,7 +20,6 @@ vi.mock("@/lib/connections", () => ({
 }));
 
 import { startSignIn } from "@/lib/connections/sign-in";
-import { ALL_SOURCES } from "@/lib/sources";
 
 const scope = { userId: "user-1", orgId: "org-1" };
 const connectionId = "00000000-0000-4000-8000-000000000001";
@@ -51,17 +50,9 @@ describe("starting a sign-in", () => {
     expect(started.calls[0][1]).toEqual({ connectionId, returnTo: "/w/x" });
   });
 
-  it("refuses a request that doesn't say what it's for, or a source that doesn't sign in", async () => {
+  it("refuses a request that doesn't say what it's for", async () => {
     expect(await startSignIn(scope, { name: "Ads", source: "googleads", sharing: "personal" })).toMatchObject({ ok: false, error: { code: "validation" } });
     expect(await startSignIn(scope, { kind: "nonsense" })).toMatchObject({ ok: false, error: { code: "validation" } });
-    expect(await startSignIn(scope, { kind: "source", name: "DB", source: "postgres", sharing: "org" })).toMatchObject({ ok: false, error: { code: "validation" } });
     expect(started.calls).toEqual([]);
-  });
-});
-
-describe("sources that sign in", () => {
-  it("say so on their catalog exactly when the server knows who runs their sign-in", () => {
-    for (const source of ALL_SOURCES) expect([source.type, source.signsIn === true]).toEqual([source.type, source.signInProvider !== undefined]);
-    expect(ALL_SOURCES.filter((source) => source.signsIn).map((source) => source.type)).toEqual(["googleads", "metaads"]);
   });
 });

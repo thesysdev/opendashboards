@@ -10,8 +10,8 @@ import { createStaticFlags } from "@/lib/flags/static";
 import { FLAGS } from "@/lib/flags/types";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 import { COMPOSIO_SIGN_IN } from "@/lib/sources/composio/catalog";
-import { hiddenSources } from "@/lib/sources/flags";
-import { notOfferedSources } from "@/lib/sources/offered";
+import { CONNECTION_TYPES } from "@/lib/sources/catalog";
+import { availableSources } from "@/lib/sources/available";
 import { mcpSource } from "@/lib/sources/mcp/source";
 import type { ConnectionSource } from "@/lib/sources/types";
 
@@ -46,14 +46,9 @@ describe("flag providers", () => {
     // Tests, like local development, have no PostHog key.
     expect(getFlags().provider).toBe("static");
   });
-
-  it("hides Google Ads and Meta Ads while their flag is off", async () => {
-    expect(await hiddenSources(scope, createStaticFlags())).toEqual([]);
-    expect(await hiddenSources(scope, createStaticFlags([FLAGS.adsSources]))).toEqual(["googleads", "metaads"]);
-  });
 });
 
-describe("which sources are offered", () => {
+describe("which sources are available", () => {
   const composio = { COMPOSIO_API_KEY: "key", COMPOSIO_GOOGLEADS_AUTH_CONFIG_ID: "ac_g", COMPOSIO_METAADS_AUTH_CONFIG_ID: "ac_m" };
   const withEnv = async (env: Record<string, string>, run: () => Promise<void>) => {
     for (const name of Object.keys(composio)) vi.stubEnv(name, env[name] ?? "");
@@ -64,27 +59,30 @@ describe("which sources are offered", () => {
     }
   };
 
+  const missing = async (flags = createStaticFlags()) => {
+    const available = await availableSources(scope, flags);
+    return CONNECTION_TYPES.filter((type) => !available.includes(type));
+  };
+
   it("leaves out a source this deployment isn't set up for", async () => {
-    await withEnv({}, async () => expect(await notOfferedSources(scope, createStaticFlags())).toEqual(["googleads", "metaads"]));
+    await withEnv({}, async () => expect(await missing()).toEqual(["googleads", "metaads"]));
     // An auth config for one toolkit sets up only that one.
-    await withEnv({ COMPOSIO_API_KEY: "key", COMPOSIO_METAADS_AUTH_CONFIG_ID: "ac_m" }, async () =>
-      expect(await notOfferedSources(scope, createStaticFlags())).toEqual(["googleads"]),
-    );
-    await withEnv(composio, async () => expect(await notOfferedSources(scope, createStaticFlags())).toEqual([]));
+    await withEnv({ COMPOSIO_API_KEY: "key", COMPOSIO_METAADS_AUTH_CONFIG_ID: "ac_m" }, async () => expect(await missing()).toEqual(["googleads"]));
+    await withEnv(composio, async () => expect(await missing()).toEqual([]));
   });
 
-  it("and, once it's set up, one whose flag is off", async () => {
-    await withEnv(composio, async () => expect(await notOfferedSources(scope, createStaticFlags([FLAGS.adsSources]))).toEqual(["googleads", "metaads"]));
+  it("and, once it's set up, one whose flag is off for this person", async () => {
+    await withEnv(composio, async () => expect(await missing(createStaticFlags([FLAGS.adsSources]))).toEqual(["googleads", "metaads"]));
   });
 });
 
-describe("sources not on offer", () => {
+describe("sources that aren't available", () => {
   const { db, pool } = createDatabase(TEST_DATABASE_URL);
   const service = createConnectionService({
     db,
     secrets: () => plaintextSecretBox,
     sources: () => ({ ...mcpSource, test: async () => [] }) as unknown as ConnectionSource,
-    notOffered: async () => ["googleads", "mcp"],
+    availableSources: async () => CONNECTION_TYPES.filter((type) => type !== "googleads" && type !== "mcp"),
   });
   const alice = workspaceOf("alice");
   const signIn = (connectionId: string | null) => ({
@@ -104,7 +102,7 @@ describe("sources not on offer", () => {
   afterAll(() => pool.end());
 
   it("aren't offered", async () => {
-    const offered = (await service.offeredSources(alice)).map((option) => option.type);
+    const offered = (await service.sourceOptions(alice)).map((option) => option.type);
     expect(offered).not.toContain("googleads");
     expect(offered).not.toContain("mcp");
     expect(offered).toContain("metaads");
