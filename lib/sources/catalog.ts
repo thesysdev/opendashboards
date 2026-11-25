@@ -2,6 +2,7 @@ import { z } from "zod";
 
 import { bigqueryCatalog, bigqueryConfigSchema } from "./bigquery/catalog";
 import { clickhouseCatalog, clickhouseConfigSchema } from "./clickhouse/catalog";
+import { isComposioToolkit } from "./composio/catalog";
 import { ga4Catalog, ga4ConfigSchema } from "./ga4/catalog";
 import { googleAdsCatalog, googleAdsConfigSchema } from "./googleads/catalog";
 import { mcpCatalog, mcpStoredConfigSchema } from "./mcp/catalog";
@@ -71,3 +72,10 @@ export const SOURCE_OPTIONS: SourceOption[] = CATALOGS.flatMap(({ type, label, b
       })
     : []),
 ]);
+
+/**
+ * Whether a source connects by signing in to the source itself (Google Ads,
+ * Meta Ads), rather than to a server at a URL (an MCP server) or with a key.
+ * Who runs that sign-in is the source's business, not the form's.
+ */
+export const signsInToSource = (type: string): boolean => isComposioToolkit(type);

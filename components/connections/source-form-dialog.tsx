@@ -11,7 +11,7 @@ import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/c
 import { Input } from "@/components/ui/input";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { connectionNameSchema } from "@/lib/connections/schemas";
-import { isComposioToolkit } from "@/lib/sources/composio/catalog";
+import { signsInToSource } from "@/lib/sources/catalog";
 import { MCP_SERVICES, type McpAuth, type McpServiceKey } from "@/lib/sources/mcp/services";
 
 import { CertificateCheckField } from "./certificate-check-field";
@@ -96,7 +96,7 @@ export function SourceFormDialog(props: Props) {
     startTransition(async () => {
       const name = values.name ?? "";
       const result = await startSignInAction(
-        isComposioToolkit(type)
+        signsInToSource(type)
           ? { orgId, name, source: type, sharing }
           : service
             ? { orgId, name, service, sharing }

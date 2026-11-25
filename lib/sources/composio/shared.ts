@@ -92,7 +92,7 @@ export function composioToError(toolkit: ComposioToolkit, error: unknown): { err
     case "not_configured":
       return unavailable("not_configured", `${label} isn't set up on this OpenDashboards yet. Ask the team that runs it.`);
     case "project_rejected":
-      return unavailable("composio_rejected", `OpenDashboards couldn't reach ${label} on its side. Try again later.`);
+      return unavailable("provider_rejected", `OpenDashboards couldn't reach ${label} on its side. Try again later.`);
     case "reauth_required":
       return {
         status: "invalid",

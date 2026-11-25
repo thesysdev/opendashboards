@@ -17,9 +17,9 @@ const MESSAGES: Record<string, string> = {
   host_blocked: "The server's sign-in points to an address OpenDashboards won't connect to.",
   not_found: "That connection no longer exists.",
   not_available: "This source isn't available in this workspace yet.",
-  // Google Ads and Meta Ads, through Composio.
+  // Sources that sign in to the platform itself (Google Ads, Meta Ads).
   not_configured: "This source isn't set up on OpenDashboards yet.",
-  composio_rejected: "OpenDashboards couldn't finish the sign-in on its side. Try again later.",
+  provider_rejected: "OpenDashboards couldn't finish the sign-in on its side. Try again later.",
   ads_unavailable: "Couldn't reach the ad platform to finish the sign-in. Try again.",
   ads_unexpected: "The ad platform sent an unexpected response. Try again.",
   timeout: "The sign-in took too long to finish. Try again.",

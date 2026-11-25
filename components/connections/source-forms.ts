@@ -83,10 +83,10 @@ const CREATE_SERVICE_ACCOUNT = [
 ];
 
 /**
- * A source that connects only by signing in through Composio: a name, then
- * the platform's own sign-in page. There's no key to paste.
+ * A source that connects only by signing in: a name, then the platform's own
+ * sign-in page. There's no key to paste.
  */
-function composioSignInForm(input: { label: string; description: string; placeholder: string; server: string; config: z.ZodType }): FormSpec {
+function signInOnlyForm(input: { label: string; description: string; placeholder: string; server: string; config: z.ZodType }): FormSpec {
   return {
     title: `Connect ${input.label}`,
     description: input.description,
@@ -250,14 +250,14 @@ GRANT SELECT ON your_db.* TO dashboards_reader;`,
     secretNoun: "keys",
     schemas: { config: searchConsoleConfigSchema, credential: serviceAccountKeySchema },
   },
-  googleads: composioSignInForm({
+  googleads: signInOnlyForm({
     label: "Google Ads",
     description: "OpenDashboards reads your Google Ads campaigns and performance, read-only, to build dashboards. You sign in with Google.",
     placeholder: "Google Ads",
     server: "Google",
     config: googleAdsConfigSchema,
   }),
-  metaads: composioSignInForm({
+  metaads: signInOnlyForm({
     label: "Meta Ads",
     description: "OpenDashboards reads your Facebook and Instagram ad performance, read-only, to build dashboards. You sign in with Facebook.",
     placeholder: "Meta Ads",

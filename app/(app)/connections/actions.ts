@@ -38,10 +38,10 @@ async function runIn<T>(input: unknown, call: (member: Member, fields: unknown) 
 }
 
 /**
- * Starts a sign-in (new, or again for an existing connection): an MCP
- * server's OAuth, or Composio's for Google Ads and Meta Ads. Returns the
- * sign-in page to send the browser to; the connection is saved when it comes
- * back to /api/mcp/oauth/callback or /api/composio/callback.
+ * Starts a sign-in (new, or again for an existing connection): to an MCP
+ * server, or to a source such as Google Ads (lib/connections/sign-in.ts picks
+ * how). Returns the sign-in page to send the browser to; the connection is
+ * saved when the browser comes back to that sign-in's callback.
  */
 export async function startSignInAction(input: unknown) {
   const { orgId, fields } = inWorkspace(input);
