@@ -16,6 +16,7 @@ import { asWorkspace } from "@/lib/orgs/access";
 import { can } from "@/lib/orgs/policy";
 import { getSecretMode } from "@/lib/secrets";
 import { SOURCE_OPTIONS } from "@/lib/sources/catalog";
+import { hiddenSources } from "@/lib/sources/flags";
 
 export const metadata: Metadata = { title: "Apps" };
 
@@ -45,7 +46,7 @@ async function Home({ params }: { params: Params }) {
   // A viewer only opens what's shared with them: no composer, and nothing to set up.
   if (!can("app", "create", asWorkspace(member.role))) return <SharedApps apps={apps} />;
   if (!apps.length) {
-    const demos = await connectionService.listDemoDatasets(member);
+    const [demos, hidden] = await Promise.all([connectionService.listDemoDatasets(member), hiddenSources(member)]);
     return (
       <Onboarding
         connections={connections.map(({ id, name, shortSource, tile, demo }) => ({
@@ -55,7 +56,7 @@ async function Home({ params }: { params: Params }) {
           tile,
           demo: demo?.key ?? null,
         }))}
-        sources={SOURCE_OPTIONS}
+        sources={SOURCE_OPTIONS.filter((option) => !hidden.includes(option.type))}
         demos={demos.map(({ key, name, description, prompts, connectionId }) => ({
           key,
           name,

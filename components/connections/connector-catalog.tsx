@@ -16,13 +16,23 @@ import { SourceTile } from "./source-tile";
  * Every source and known MCP server, by what people build dashboards about.
  * Picking one opens its connect dialog. `sampleData` is a tile that adds the
  * sample dataset, for someone who has connections but hasn't added it.
+ * `hidden`: source types not offered here (still rolling out).
  */
-export function ConnectorCatalog({ secretMode, sampleData }: { secretMode: SecretMode; sampleData?: React.ReactNode }) {
+export function ConnectorCatalog({
+  secretMode,
+  sampleData,
+  hidden = [],
+}: {
+  secretMode: SecretMode;
+  sampleData?: React.ReactNode;
+  hidden?: string[];
+}) {
   const [query, setQuery] = useState("");
+  const shown = (entries: CatalogEntry[]) => entries.filter((entry) => entry.open.kind !== "source" || !hidden.includes(entry.open.source.type));
   const [selected, setSelected] = useState<CatalogEntry | null>(null);
   const [open, setOpen] = useState(false);
   const searching = query.trim().length > 0;
-  const results = searching ? searchCatalog(query) : [];
+  const results = searching ? shown(searchCatalog(query)) : [];
 
   // A new connection: paused while the workspace is over its plan or at its connection limit.
   const viewOnly = useViewOnly();
@@ -68,9 +78,9 @@ export function ConnectorCatalog({ secretMode, sampleData }: { secretMode: Secre
               </ul>
             </section>
           )}
-          <Group label="Popular" entries={POPULAR} onPick={pick} disabled={paused} />
+          <Group label="Popular" entries={shown(POPULAR)} onPick={pick} disabled={paused} />
           {CATALOG_CATEGORIES.map((category) => (
-            <Group key={category.key} label={category.label} entries={category.entries} onPick={pick} disabled={paused} />
+            <Group key={category.key} label={category.label} entries={shown(category.entries)} onPick={pick} disabled={paused} />
           ))}
         </>
       )}

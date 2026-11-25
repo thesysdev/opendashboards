@@ -54,3 +54,19 @@ export function identifyWorkspace(orgId: string, createdAt: Date = new Date()): 
   client.groupIdentify({ groupType: ORG_GROUP, groupKey: orgId, properties: { created: createdAt.toISOString() } });
   waitUntil(client.flush().catch(() => {}));
 }
+
+/**
+ * Whether a PostHog feature flag is on for this user in this workspace (the
+ * workspace group). Off our production deployment it's always on; there, a
+ * flag PostHog doesn't answer for is off.
+ */
+export async function isFlagEnabled(flag: string, userId: string, orgId: string): Promise<boolean> {
+  const client = posthog();
+  if (!client) return true;
+  try {
+    const flags = await client.evaluateFlags(userId, { groups: { [ORG_GROUP]: orgId }, flagKeys: [flag] });
+    return flags.isEnabled(flag);
+  } catch {
+    return false;
+  }
+}
