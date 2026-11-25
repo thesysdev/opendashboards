@@ -42,7 +42,8 @@ export function getOpenUI(): OpenUIClient {
 export function getDashboards(): Dashboard<ToolContext> {
   dashboards ??= getOpenUI().defineDashboard<ToolContext>({
     library: spec as unknown as DashboardOptions<ToolContext>["library"],
-    model: config().openui.model,
+    model: config().openui.dashboardModel,
+    reasoningEffort: config().openui.dashboardReasoningEffort,
     promptOptions,
     tools: dataTools(),
   });
