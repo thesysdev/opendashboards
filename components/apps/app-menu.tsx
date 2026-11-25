@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import { deleteAppAction } from "@/app/(app)/apps/actions";
 import { useRenameApp } from "@/components/apps/app-workspace";
+import { useViewOnly } from "@/components/billing/workspace-plan";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -30,6 +31,7 @@ type App = { id: string; name: string; dashboardCount: number };
 export function AppMenu({ app, canDelete = true }: { app: App; canDelete?: boolean }) {
   const [deleting, setDeleting] = useState(false);
   const rename = useRenameApp();
+  const viewOnly = useViewOnly();
   // Rename starts once the menu has closed: while open, it holds focus and
   // would pull it straight back out of the name being edited.
   const renameOnClose = useRef(false);
@@ -52,7 +54,7 @@ export function AppMenu({ app, canDelete = true }: { app: App; canDelete?: boole
             rename();
           }}
         >
-          <DropdownMenuItem onSelect={() => (renameOnClose.current = true)}>
+          <DropdownMenuItem disabled={viewOnly} onSelect={() => (renameOnClose.current = true)}>
             <PencilIcon aria-hidden />
             Rename
           </DropdownMenuItem>

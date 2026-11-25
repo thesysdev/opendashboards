@@ -14,6 +14,7 @@ const STATUS: Record<AppErrorCode, number> = {
   forbidden: 403,
   thread_conflict: 409,
   guests_cant_sign_in: 409,
+  plan_limit: 402,
   internal: 500,
 };
 

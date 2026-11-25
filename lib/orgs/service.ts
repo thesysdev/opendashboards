@@ -16,6 +16,7 @@ import {
   users,
   type OrgRole,
 } from "@/lib/db/schema";
+import { OPEN_GATE, type Gate } from "@/lib/entitlements";
 import { logError } from "@/lib/log";
 
 import { roleIn, workspaceFacts } from "./access";
@@ -97,7 +98,7 @@ export type Arrival = {
  * asks them to create one before anything else. Every change checks the
  * caller's own role in the database first.
  */
-export function createOrgService({ db }: { db: Database }) {
+export function createOrgService({ db, gate = OPEN_GATE }: { db: Database; gate?: Gate }) {
   async function guard<T>(operation: string, fn: () => Promise<OrgResult<T>>): Promise<OrgResult<T>> {
     try {
       return await fn();
@@ -434,21 +435,32 @@ export function createOrgService({ db }: { db: Database }) {
         if (!adding.ok) return adding;
 
         const known = await db.select({ id: users.id }).from(users).where(eq(users.email, email));
-        if (!known.length) {
-          await db
-            .insert(orgInvites)
-            .values({ orgId, email, role, invitedBy: userId })
-            // Inviting the same email again only changes the role: who invited them first, and when, stay.
-            .onConflictDoUpdate({ target: [orgInvites.orgId, orgInvites.email], set: { role } });
-          return ok({ status: "invited" as const });
-        }
-        const added = await db
-          .insert(orgMembers)
-          .values(known.map((user) => ({ orgId, userId: user.id, role, addedBy: userId })))
-          .onConflictDoNothing()
-          .returning({ userId: orgMembers.userId });
-        if (!added.length) return fail({ code: "conflict", field: "email", message: `${email} is already a member.` });
-        return ok({ status: "added" as const });
+        return db.transaction(async (tx) => {
+          // An invite to this email that already holds a seat keeps it: re-inviting as an editor takes no new one.
+          const [already] = await tx
+            .select({ role: orgInvites.role })
+            .from(orgInvites)
+            .where(and(eq(orgInvites.orgId, orgId), eq(orgInvites.email, email)))
+            .limit(1);
+          const holdsSeat = already !== undefined && already.role !== "viewer";
+          const refused = role === "viewer" ? await gate(tx, orgId, "addViewer") : holdsSeat ? null : await gate(tx, orgId, "addEditor");
+          if (refused) return fail({ ...refused, field: "role" });
+          if (!known.length) {
+            await tx
+              .insert(orgInvites)
+              .values({ orgId, email, role, invitedBy: userId })
+              // Inviting the same email again only changes the role: who invited them first, and when, stay.
+              .onConflictDoUpdate({ target: [orgInvites.orgId, orgInvites.email], set: { role } });
+            return ok({ status: "invited" as const });
+          }
+          const added = await tx
+            .insert(orgMembers)
+            .values(known.map((user) => ({ orgId, userId: user.id, role, addedBy: userId })))
+            .onConflictDoNothing()
+            .returning({ userId: orgMembers.userId });
+          if (!added.length) return fail({ code: "conflict", field: "email", message: `${email} is already a member.` });
+          return ok({ status: "added" as const });
+        });
       });
     },
 
@@ -476,8 +488,14 @@ export function createOrgService({ db }: { db: Database }) {
         if (current === "admin" && role !== "admin" && (await adminCount(orgId)) <= 1) {
           return fail({ code: "conflict", message: "A workspace needs at least one admin. Make someone else an admin first." });
         }
-        await db.update(orgMembers).set({ role }).where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, memberId)));
-        return ok(undefined);
+        if (current === role) return ok(undefined);
+        return db.transaction(async (tx) => {
+          // Admin and editor share a seat: only a viewer moving up takes one, and only becoming a viewer needs the role.
+          const refused = role === "viewer" ? await gate(tx, orgId, "addViewer") : current === "viewer" ? await gate(tx, orgId, "addEditor") : null;
+          if (refused) return fail(refused);
+          await tx.update(orgMembers).set({ role }).where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, memberId)));
+          return ok(undefined);
+        });
       });
     },
 

@@ -1,4 +1,8 @@
-const FAQS = [
+import { LINKS } from "./links";
+
+export type FaqItem = { question: string; answer: string[] };
+
+const FAQS: FaqItem[] = [
   {
     question: "How is it different from Claude Dashboards?",
     answer: [
@@ -32,6 +36,13 @@ const FAQS = [
     ],
   },
   {
+    question: "Who can open a shared dashboard?",
+    answer: [
+      "Dashboards follow the access set on their app. You can give your workspace view or edit access and invite guests to view the app.",
+      "Guest access is available when the app uses shared connections.",
+    ],
+  },
+  {
     question: "Can I use it without hosting anything?",
     answer: ["Yes. Use the hosted version at opendashboards.com, or self-host the app in your own environment."],
   },
@@ -45,12 +56,13 @@ const FAQS = [
 ];
 
 /**
- * Frequently asked questions: the title and a Discord note on the left (sticky
+ * Frequently asked questions: the title and a Talk to sales link on the left (sticky
  * on desktop), the questions on the right. Built on <details>, so every answer
  * is in the markup for crawlers and it works without JavaScript. The items
  * share a name, so opening one closes the others; the first starts open.
+ * The landing page's questions unless the page passes its own.
  */
-export function Faq() {
+export function Faq({ items = FAQS }: { items?: FaqItem[] }) {
   return (
     <section
       aria-labelledby="faq-title"
@@ -67,21 +79,20 @@ export function Faq() {
         <p className="text-base leading-[1.55] text-pretty text-neutral-950/60 min-[56.3125rem]:max-w-[26ch]">
           Have another question?
           <br />
-          Join our{" "}
           <a
-            href="https://discord.com/invite/Pbv5PsqUSv"
+            href={LINKS.sales}
             target="_blank"
             rel="noopener noreferrer"
             className="border-b border-current text-neutral-950 hover:opacity-70"
           >
-            Discord
+            Talk to sales
           </a>
           .
         </p>
       </div>
 
       <div className="flex flex-col gap-3">
-        {FAQS.map(({ question, answer }, index) => (
+        {items.map(({ question, answer }, index) => (
           <details
             key={question}
             name="faq"

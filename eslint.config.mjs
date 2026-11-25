@@ -26,6 +26,33 @@ const eslintConfig = defineConfig([
       ],
     },
   },
+  // Enforcement and billing never know about each other: lib/plans is the only code that joins them.
+  {
+    files: ["lib/entitlements/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            { group: ["@/lib/billing*", "@/lib/plans*", "stripe", "@/config", "@/config/*"], message: "Enforcement knows entitlements only: no plans, billing or Stripe." },
+          ],
+        },
+      ],
+    },
+  },
+  {
+    files: ["lib/billing/**"],
+    rules: {
+      "no-restricted-imports": [
+        "error",
+        {
+          patterns: [
+            { group: ["@/lib/entitlements*", "@/lib/plans*", "@/lib/orgs*"], message: "Billing knows plan ids and seats only: no entitlements, plans or members." },
+          ],
+        },
+      ],
+    },
+  },
   // Override default ignores of eslint-config-next.
   globalIgnores([
     // Default ignores of eslint-config-next:

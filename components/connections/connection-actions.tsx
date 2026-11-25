@@ -46,6 +46,7 @@ import { PostHogFormDialog, type SecretMode } from "./connection-form-dialog";
 import { PostgresFormDialog } from "./postgres-form-dialog";
 import { SourceFormDialog } from "./source-form-dialog";
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
+import { useViewOnly } from "@/components/billing/workspace-plan";
 
 type Connection = {
   id: string;
@@ -75,6 +76,7 @@ export function ConnectionActions({
 }) {
   const orgId = useWorkspaceId();
   const [dialog, setDialog] = useState<OpenDialog>(null);
+  const viewOnly = useViewOnly();
   const [testing, startTest] = useTransition();
   const signsIn = connection.kind !== "key";
 
@@ -141,7 +143,7 @@ export function ConnectionActions({
           )}
           {actions.manage && (
             <>
-              <DropdownMenuItem onSelect={() => setDialog("rename")}>
+              <DropdownMenuItem disabled={viewOnly} onSelect={() => setDialog("rename")}>
                 <PencilIcon aria-hidden />
                 Rename
               </DropdownMenuItem>

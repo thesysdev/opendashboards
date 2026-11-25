@@ -3,6 +3,7 @@ import { cloudIdentity } from "@/lib/dashboards/cloud";
 import { getDb } from "@/lib/db";
 import { HttpError, route } from "@/lib/http";
 import { appAccess } from "@/lib/orgs/access";
+import { getGate } from "@/lib/plans";
 
 type Ctx = { params: Promise<{ appId: string }> };
 
@@ -16,5 +17,6 @@ export const POST = route<Ctx>(async (_request, user, { params }) => {
   const { appId } = await params;
   const grant = await appAccess(getDb(), user.id, appId);
   if (!grant) throw new HttpError(404, "App not found");
-  return Response.json(await getOpenUI().createFrontendToken(cloudIdentity(user.id, grant)));
+  const viewOnly = (await getGate()(getDb(), grant.orgId, "editDashboard")) !== null;
+  return Response.json(await getOpenUI().createFrontendToken(cloudIdentity(user.id, grant, { viewOnly })));
 });
