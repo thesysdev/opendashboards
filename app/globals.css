@@ -1,6 +1,7 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 @import "shadcn/tailwind.css";
+/* transitions.dev UI generation: the dashboard build skeleton (components/apps/dashboard-skeleton.tsx). */
 
 @custom-variant dark (&:is(.dark *));
 
@@ -184,4 +185,45 @@
   background: var(--color-neutral-50);
   border-right: 1px solid var(--color-border);
   box-shadow: 0 10px 30px rgb(0 0 0 / 0.12);
+}
+
+
+/* The build feed: whatever is running shimmers, a light band passing over its words. A mask, so
+   the label (ink) and the name (grey) keep their own colours under it. */
+@keyframes feed-shimmer {
+  from { mask-position: 100% 0; }
+  to { mask-position: 0% 0; }
+}
+.feed-shimmer {
+  mask-image: linear-gradient(100deg, #000 38%, rgb(0 0 0 / 0.35) 50%, #000 62%);
+  mask-size: 300% 100%;
+  animation: feed-shimmer 2s linear infinite;
+}
+
+/* The build skeleton (dashboard-skeleton.tsx): outlines traced on in dots, insides faded in. */
+@keyframes sketch-trace {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+@keyframes sketch-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+.sketch-trace {
+  stroke-dashoffset: 1;
+  animation: sketch-trace 1.6s cubic-bezier(0.65, 0, 0.35, 1) both;
+}
+.sketch-in {
+  opacity: 0;
+  animation: sketch-in 0.7s ease-out both;
+}
+.dot-line {
+  background-image: radial-gradient(circle, currentColor 0.75px, transparent 1.15px);
+  background-size: 5px 3px;
+  background-repeat: repeat-x;
+}
+@media (prefers-reduced-motion: reduce) {
+  .feed-shimmer { animation: none; mask-image: none; }
+  .sketch-trace { animation: none; stroke-dashoffset: 0; }
+  .sketch-in { animation: none; opacity: 1; }
 }

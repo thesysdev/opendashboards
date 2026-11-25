@@ -12,11 +12,13 @@ import { OpenSidebarButton } from "@/components/shell/sidebar";
 import { Button } from "@/components/ui/button";
 import { appPath, dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/apps/paths";
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
+import { referenceOf } from "@/lib/dashboards/reference";
+import { LAB_ENABLED, labFetch } from "@/lib/lab/controller";
 import { cn } from "@/lib/utils";
 
 import { NewDashboard } from "./live-dashboard";
 
-type Dashboard = { id: string; title: string };
+type Dashboard = { id: string; artifactId: string; title: string; description: string | null };
 
 const BuildPanelContext = createContext<{ open: boolean; setOpen: (open: boolean) => void } | null>(null);
 
@@ -40,16 +42,55 @@ export function useSetBuildRunning() {
 
 /**
  * A dashboard the Build chat is creating, shown in place of the page it started
- * on (`at`) until the app opens it: pending while the call runs, then streaming
- * from Cloud's `response`.
+ * on (`at`): pending while the call runs, then streaming from Cloud's `response`.
+ * Once the app has a page for it the address moves there, and this same view
+ * stays on screen as that page, so nothing is redrawn mid-build.
  */
-export type Creating = { at: string; response?: string };
+export type Creating = {
+  at: string;
+  /** The create_dashboard call making it. */
+  callId: string;
+  /** Its title and description, from the call's arguments: shown above it, as its own page shows them. */
+  title?: string;
+  description?: string;
+  response?: string;
+};
 
 type DashboardResponses = {
   responses: Readonly<Record<string, string>>;
   publish: (artifactId: string, response: string) => void;
   setCreating: Dispatch<SetStateAction<Creating | null>>;
 };
+
+/**
+ * A reload of one dashboard's live data, asked for from its card in the chat:
+ * underway, or just done. It never builds anything. `hold` is how tall the
+ * dashboard was, kept while it reloads so the page doesn't scroll.
+ */
+export type DashboardRefresh = { artifactId: string; state: "running" | "done"; by?: string; hold?: number };
+
+type DashboardsOnScreen = {
+  appId: string;
+  dashboards: readonly Dashboard[];
+  /** What the dashboard area shows: a dashboard, by its artifact id, or one still being created, by its call. */
+  onScreen: { artifactId: string | null; callId: string | null };
+  /** Refreshes so far, per dashboard: a new number remounts its renderer, which runs its queries again. */
+  revs: Readonly<Record<string, number>>;
+  refresh: DashboardRefresh | null;
+  /** Loads a dashboard's live data again. `by` is the card that asked, which shows the progress. */
+  refreshDashboard: (artifactId: string, by?: string) => void;
+  /** The dashboard says its reload's queries are back. */
+  onRefreshed: (artifactId: string) => void;
+};
+
+const DashboardsOnScreenContext = createContext<DashboardsOnScreen | null>(null);
+
+/** Which dashboard is on screen, the app's dashboards, and reloading one's data: for the chat's cards and the dashboard itself. */
+export function useDashboardsOnScreen() {
+  const context = use(DashboardsOnScreenContext);
+  if (!context) throw new Error("useDashboardsOnScreen must be used inside AppWorkspace");
+  return context;
+}
 
 const DashboardResponsesContext = createContext<DashboardResponses | null>(null);
 
@@ -207,18 +248,60 @@ export function AppWorkspace({
   const dashboardResponses = useMemo(() => ({ responses, publish, setCreating }), [responses, publish]);
   const [renaming, setRenaming] = useState(false);
   const startRename = useCallback(() => setRenaming(true), []);
-  // Moving to another page, or to the new dashboard once it opens, hands back to the page.
   const pathname = usePathname();
-  // Leaving the page once the response is in means the app opened the new dashboard
-  // (or you moved on): it's done, so going back shows that page again.
-  if (creating?.response && creating.at !== pathname) setCreating(null);
-  const showCreating = creating !== null && creating.at === pathname;
+  const orgId = useWorkspaceId();
+  // The dashboard being created, once the app has recorded it: it has a page of its own now.
+  const createdId = referenceOf(creating?.response)?.id ?? null;
+  const created = createdId ? dashboards.find((dashboard) => dashboard.artifactId === createdId) : undefined;
+  const createdPath = created ? dashboardPath(orgId, appId, created.id) : null;
+  // The new dashboard stays on screen where it started and on its own page: the address
+  // changes under it, and the view isn't swapped for the page's, which would redraw it
+  // mid-build. Moving anywhere else once the response is in hands back to the pages.
+  const onCreating = creating !== null && (creating.at === pathname || createdPath === pathname);
+  if (creating?.response && !onCreating) setCreating(null);
+  // Once the address is the new dashboard's, that's where it lives: the page it started on is itself again.
+  else if (creating && createdPath === pathname && creating.at !== createdPath) setCreating({ ...creating, at: createdPath });
+  const showCreating = creating !== null && onCreating;
+
+  // What the dashboard area shows: the one being created, or the page's (the app's first on its home).
+  const { dashboardId } = parseAppPath(pathname);
+  const pageArtifactId = (dashboardId ? dashboards.find((dashboard) => dashboard.id === dashboardId) : dashboards[0])?.artifactId ?? null;
+  const onScreenArtifactId = showCreating ? createdId : pageArtifactId;
+  const onScreenCallId = showCreating ? creating.callId : null;
+  const onScreen = useMemo(() => ({ artifactId: onScreenArtifactId, callId: onScreenCallId }), [onScreenArtifactId, onScreenCallId]);
+
+  const [revs, setRevs] = useState<Record<string, number>>({});
+  const [refresh, setRefresh] = useState<DashboardRefresh | null>(null);
+  const refreshDashboard = useCallback((artifactId: string, by?: string) => {
+    // How tall the dashboard on screen is now: held while its renderer remounts, so the scroll position stays.
+    const hold = document.querySelector<HTMLElement>(`[data-dashboard-render="${CSS.escape(artifactId)}"]`)?.offsetHeight;
+    setRevs((current) => ({ ...current, [artifactId]: (current[artifactId] ?? 0) + 1 }));
+    setRefresh({ artifactId, state: "running", by, hold });
+  }, []);
+  const onRefreshed = useCallback(
+    (artifactId: string) =>
+      setRefresh((current) => (current?.artifactId === artifactId && current.state === "running" ? { ...current, state: "done" } : current)),
+    [],
+  );
+  // "Updated" shows for a moment, then the button is itself again. A reload nobody
+  // reports back on (its dashboard was left before it finished) is dropped.
+  useEffect(() => {
+    if (!refresh) return;
+    const timer = window.setTimeout(() => setRefresh(null), refresh.state === "done" ? 2400 : 30_000);
+    return () => window.clearTimeout(timer);
+  }, [refresh]);
+  const dashboardsOnScreen = useMemo(
+    () => ({ appId, dashboards, onScreen, revs, refresh, refreshDashboard, onRefreshed }),
+    [appId, dashboards, onScreen, revs, refresh, refreshDashboard, onRefreshed],
+  );
 
   return (
     // One Cloud connection for the workspace: the chat and the dashboard
     // share its token and artifact cache. The token is this app's own.
-    <OpenUICloudProvider token={frontendTokenPath(appId)}>
+    // `fetch` is only set by the build lab (development), which scripts a dashboard's stream.
+    <OpenUICloudProvider token={frontendTokenPath(appId)} fetch={LAB_ENABLED ? labFetch : undefined}>
     <DashboardResponsesContext value={dashboardResponses}>
+    <DashboardsOnScreenContext value={dashboardsOnScreen}>
     <BuildPanelContext value={buildPanel}>
     <BuildRunningContext value={buildRunningValue}>
     <RenameAppContext value={startRename}>
@@ -255,7 +338,21 @@ export function AppWorkspace({
 
           <MobileDashboardTabs appId={appId} dashboards={dashboards} />
           {notice}
-          {showCreating ? <NewDashboard response={creating.response} /> : children}
+          {showCreating ? (
+            <NewDashboard
+              // One view per create call, kept as the address moves to the new dashboard's page.
+              key={creating.callId}
+              appId={appId}
+              buildKey={creating.callId}
+              // A later edit's response, once there is one; until then the create's own.
+              response={(createdId && responses[createdId]) || creating.response}
+              dashboard={created}
+              title={creating.title}
+              description={creating.description}
+            />
+          ) : (
+            children
+          )}
         </div>
 
         <aside
@@ -294,6 +391,7 @@ export function AppWorkspace({
     </RenameAppContext>
     </BuildRunningContext>
     </BuildPanelContext>
+    </DashboardsOnScreenContext>
     </DashboardResponsesContext>
     </OpenUICloudProvider>
   );

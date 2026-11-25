@@ -8,6 +8,7 @@ import {
   type MarkDownRendererProps,
   ThemeProvider,
   ToolCallTimeline,
+  useArtifactStorage,
   useOpenuiCloudStorage,
   useThread,
   useThreadList,
@@ -26,8 +27,7 @@ import {
 } from "lucide-react";
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { parseMessage } from "@openuidev/lang-core";
-import { EventType, type StreamProtocolAdapter } from "@openuidev/react-headless";
+import { EventType, partialJSONParse, type StreamProtocolAdapter } from "@openuidev/react-headless";
 import remarkGfm from "remark-gfm";
 
 import "@openuidev/react-ui/styles/index.css";
@@ -47,15 +47,36 @@ import {
 import { dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/apps/paths";
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
 import { usePublishDashboardResponse, useSetBuildRunning, useSetCreatingDashboard } from "./app-workspace";
+import { DashboardBuildCard, isDashboardBuildTool } from "./build-card";
+import { BuildLab } from "./build-lab";
 import { scopeStorageToApp } from "@/lib/apps/thread-storage";
+import { reportCall } from "@/lib/dashboards/build-tracker";
+import { referenceOf } from "@/lib/dashboards/reference";
+import { lab, LAB_ENABLED } from "@/lib/lab/controller";
 import { cn } from "@/lib/utils";
 
 type Dashboard = { id: string; artifactId: string };
 
 /** The dashboard a create/edit response is for, read as Cloud writes it. */
-function artifactIdOf(response: string): string | null {
-  const id = parseMessage(response).attributes.artifact_id;
-  return typeof id === "string" ? id : null;
+const artifactIdOf = (response: string): string | null => referenceOf(response)?.id ?? null;
+
+/**
+ * The title and description a create_dashboard call names its dashboard with, read from its
+ * arguments while the model is still writing them. It writes them in order, so a value is
+ * whole once the next one has begun (or the arguments are complete JSON): never half a title.
+ */
+function namedIn(rawArguments: string): { title?: string; description?: string } {
+  let complete = false;
+  try {
+    JSON.parse(rawArguments);
+    complete = true;
+  } catch {}
+  const args = (partialJSONParse(rawArguments) ?? {}) as { title?: unknown; description?: unknown; prompt?: unknown };
+  if (typeof args !== "object") return {};
+  return {
+    title: typeof args.title === "string" && (complete || "description" in args) ? args.title : undefined,
+    description: typeof args.description === "string" && (complete || "prompt" in args) ? args.description : undefined,
+  };
 }
 
 /** GitHub-flavoured Markdown (tables, strikethrough), as react-ui's own text components enable it. */
@@ -83,12 +104,17 @@ export function BuildChat({
   // hasPendingPrompt off mid-send, and reopening a thread then would abort it.
   const [startedWithPrompt] = useState(hasPendingPrompt);
   const cloud = useOpenuiCloudStorage({ token: frontendTokenPath(appId) });
+  // The workspace's own connection to OpenUI Cloud for dashboards (this is above the chat's
+  // provider). The chat uses the same one, so a dashboard's card here and the dashboard
+  // itself follow one stream: a build step either of them sees is the same step.
+  const dashboardStorage = useArtifactStorage();
   // Set when this session starts a conversation of its own: there's then nothing to reopen.
   const startedThread = useRef(false);
   const storage = useMemo(() => {
     const scoped = scopeStorageToApp(cloud, appId);
     return {
       ...scoped,
+      artifact: dashboardStorage ?? scoped.artifact,
       thread: {
         ...scoped.thread,
         createThread: (firstMessage: Parameters<typeof scoped.thread.createThread>[0]) => {
@@ -97,7 +123,7 @@ export function BuildChat({
         },
       },
     };
-  }, [cloud, appId]);
+  }, [cloud, appId, dashboardStorage]);
   // The dashboard on screen: the one in the URL, or the app's first on its home.
   const pathname = usePathname();
   const { dashboardId } = parseAppPath(pathname);
@@ -116,8 +142,10 @@ export function BuildChat({
   const llm = useMemo<ChatLLM>(
     () => ({
       streamProtocol: withDashboardEvents(agUIAdapter(), startedListeners),
-      send: ({ threadId, messages, signal }) =>
-        fetch(`/api/apps/${encodeURIComponent(appId)}/chat`, {
+      send: ({ threadId, messages, signal }) => {
+        // Build lab (development only): a run it has laid out answers in place of the server.
+        if (LAB_ENABLED && lab.armed) return Promise.resolve(lab.chatResponse(signal));
+        return fetch(`/api/apps/${encodeURIComponent(appId)}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -128,7 +156,8 @@ export function BuildChat({
             messages: openAIMessageFormat.toApi(messages),
           }),
           signal,
-        }),
+        });
+      },
     }),
     [appId, startedListeners],
   );
@@ -155,6 +184,7 @@ export function BuildChat({
         />
         {/* A new app's first prompt starts its own conversation: nothing to reopen. */}
         {!startedWithPrompt && <ReopenLastThread appId={appId} startedThread={startedThread} />}
+        {LAB_ENABLED && <BuildLab viewingId={viewingId} fallbackId={dashboards[0]?.artifactId ?? null} />}
       </ChatProvider>
     </ThemeProvider>
   );
@@ -257,8 +287,21 @@ function ThreadMessages({ hasDashboards }: { hasDashboards: boolean }) {
     const el = scrollRef.current;
     if (el && pinned.current) el.scrollTop = el.scrollHeight;
   }, [messages, isRunning]);
+  // A dashboard's card grows without a new message, as its build reports each tool call: follow that too.
+  const contentRef = useRef<HTMLDivElement>(null);
+  const empty = !isLoading && messages.length === 0;
+  useEffect(() => {
+    const el = scrollRef.current;
+    const content = contentRef.current;
+    if (!el || !content) return;
+    const observer = new ResizeObserver(() => {
+      if (pinned.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [empty]);
 
-  if (!isLoading && messages.length === 0) {
+  if (empty) {
     return (
       <div className="flex min-h-0 flex-1 flex-col items-center justify-center gap-2 px-6 text-center">
         <SparklesIcon className="size-5 text-muted-foreground" aria-hidden />
@@ -281,7 +324,7 @@ function ThreadMessages({ hasDashboards }: { hasDashboards: boolean }) {
       }}
       className="relative min-h-0 flex-1 overflow-y-auto"
     >
-      <div className="flex flex-col gap-4 p-4">
+      <div ref={contentRef} className="flex flex-col gap-4 p-4">
         {groups.map((group) =>
           group.kind === "user" ? (
             <UserBubble key={group.message.id} message={group.message} />
@@ -324,6 +367,9 @@ function UserBubble({ message }: { message: Message }) {
  * One assistant turn, laid out like Agent Interface's InterleavedTurn: every
  * tool call and the prose between them in one timeline, then the answer.
  *
+ * A create_dashboard or edit_dashboard call isn't a row of the timeline: it gets
+ * a card of its own under it, which follows the build and opens the dashboard.
+ *
  * Unlike InterleavedTurn, which streams the answer early only for OpenUI
  * Lang, the Markdown answer streams too: while the turn runs, the latest
  * text shows as the answer as long as no tool call follows it. If one does,
@@ -347,7 +393,11 @@ function AssistantTurn({
     () => ({ ...active[0], toolCalls: active.flatMap((s) => s.toolCalls ?? []) }),
     [active],
   );
-  const activities = useToolActivities(merged, allMessages);
+  const allActivities = useToolActivities(merged, allMessages);
+  const activities = useMemo(() => allActivities.filter((activity) => !isDashboardBuildTool(activity.toolName)), [allActivities]);
+  const builds = useMemo(() => allActivities.filter((activity) => isDashboardBuildTool(activity.toolName)), [allActivities]);
+  // A dashboard is building: its card says so, and the timeline above it is done for now.
+  const building = live && builds.some((activity) => !activity.toolMessage);
   const streaming = (last.content?.length ?? 0) > 0 && (last.toolCalls?.length ?? 0) === 0;
   const answer = !live || streaming ? last : null;
   const answerStarted = !!answer && (answer.content?.length ?? 0) > 0;
@@ -376,15 +426,18 @@ function AssistantTurn({
 
   return (
     <div className="flex flex-col gap-3">
-      {(activities.length > 0 || (live && !answerStarted)) && (
+      {(activities.length > 0 || (live && !answerStarted && !building)) && (
         <ToolCallTimeline
           activities={activities}
           steps={steps}
-          isLast={live}
+          isLast={live && !building}
           forceDefault
-          awaitingResponse={live && !answerStarted}
+          awaitingResponse={live && !answerStarted && !building}
         />
       )}
+      {builds.map((activity) => (
+        <DashboardBuildCard key={activity.id} activity={activity} live={live} />
+      ))}
       {answer?.content && <MarkDownRenderer textMarkdown={answer.content} options={markdownOptions} className="text-sm" />}
     </div>
   );
@@ -522,15 +575,25 @@ function TurnEffects({
   // Create and edit calls whose dashboard has started building: it's open (a new one
   // has its page), though the call runs on until the build is saved or fails.
   const started = useRef(new Set<string>());
+  // What each create call names its dashboard, as far as its arguments say so far.
+  const named = useRef(new Map<string, { title?: string; description?: string }>());
   useEffect(() => {
     const onStarted = ({ toolCallId, tool, response }: DashboardStarted) => {
       started.current.add(toolCallId);
-      const artifactId = artifactIdOf(response);
-      if (!artifactId) return;
-      publish(artifactId, response);
+      const reference = referenceOf(response);
+      if (!reference) return;
+      // The build has its dashboard's id: its card and the dashboard follow its stream from here.
+      reportCall(toolCallId, { edit: tool === "edit_dashboard", artifactId: reference.id, version: reference.version });
+      publish(reference.id, response);
       if (tool === "create_dashboard") {
-        opening.current = artifactId;
-        setCreating((current) => ({ at: current?.at ?? pathname, response }));
+        opening.current = reference.id;
+        setCreating((current) => ({
+          ...named.current.get(toolCallId),
+          // Where this call's dashboard already shows, pending; else here.
+          at: current?.callId === toolCallId ? current.at : pathname,
+          callId: toolCallId,
+          response,
+        }));
         router.refresh(); // The server has recorded it; the sidebar picks it up.
       }
     };
@@ -549,7 +612,14 @@ function TurnEffects({
     const toolNames = new Map<string, string>();
     for (const message of turn) {
       if (message.role !== "assistant") continue;
-      for (const call of message.toolCalls ?? []) toolNames.set(call.id, call.function.name);
+      for (const call of message.toolCalls ?? []) {
+        toolNames.set(call.id, call.function.name);
+        if (call.function.name !== "create_dashboard") continue;
+        // What's been read stays read: a later, cut-off piece of the arguments doesn't take it back.
+        const before = named.current.get(call.id);
+        const now = namedIn(call.function.arguments);
+        named.current.set(call.id, { title: now.title ?? before?.title, description: now.description ?? before?.description });
+      }
     }
     const answered = new Set<string>();
     for (const message of turn) {
@@ -569,7 +639,13 @@ function TurnEffects({
       publish(artifactId, message.content);
       if (tool === "create_dashboard" && !wasStarted) {
         opening.current = artifactId;
-        setCreating((current) => ({ at: current?.at ?? pathname, response: message.content }));
+        const callId = message.toolCallId;
+        setCreating((current) => ({
+          ...named.current.get(callId),
+          at: current?.callId === callId ? current.at : pathname,
+          callId,
+          response: message.content,
+        }));
         router.refresh(); // The server has recorded it; the sidebar picks it up.
       }
     }
@@ -577,14 +653,16 @@ function TurnEffects({
     // running with no dashboard yet: pending on the page it started from. A second
     // one replaces a first that's started. Earlier turns don't count: a stopped one
     // never gets an answer.
-    const waiting = turn.some(
-      (message) =>
-        message.role === "assistant" &&
-        (message.toolCalls ?? []).some(
-          (call) => call.function.name === "create_dashboard" && !answered.has(call.id) && !started.current.has(call.id),
-        ),
-    );
-    if (waiting) setCreating((current) => (current && !current.response ? current : { at: pathname }));
+    const waiting = turn
+      .flatMap((message) => (message.role === "assistant" ? (message.toolCalls ?? []) : []))
+      .find((call) => call.function.name === "create_dashboard" && !answered.has(call.id) && !started.current.has(call.id));
+    // It shows once the call has named its dashboard, a moment after it starts: the new
+    // dashboard's frame (its title, its description, then the dashboard) is then on screen
+    // whole from the first paint, and nothing in it moves for the rest of the build.
+    const names = waiting ? named.current.get(waiting.id) : undefined;
+    if (waiting && names?.title !== undefined && names.description !== undefined) {
+      setCreating((current) => (current && !current.response ? current : { at: pathname, callId: waiting.id, ...names }));
+    }
   }, [isRunning, messages, pathname, publish, router, setCreating]);
 
   // A run that ends without a response, stopped or failed, leaves nothing pending.
@@ -597,7 +675,9 @@ function TurnEffects({
     const created = dashboards.find((dashboard) => dashboard.artifactId === opening.current);
     if (!created) return;
     opening.current = null;
-    if (parseAppPath(pathname).dashboardId !== created.id) router.push(dashboardPath(orgId, appId, created.id));
+    // The workspace keeps the dashboard it's building on screen as the address changes: the
+    // page isn't scrolled or refocused for it.
+    if (parseAppPath(pathname).dashboardId !== created.id) router.push(dashboardPath(orgId, appId, created.id), { scroll: false });
   }, [appId, orgId, dashboards, pathname, router]);
 
   // The workspace knows when a turn runs: a dashboard it creates may still be building.

@@ -117,7 +117,7 @@ async function AppView({ params, children }: { params: Params; children: React.R
           />
         )
       }
-      dashboards={app.dashboards.map(({ id, title }) => ({ id, title }))}
+      dashboards={app.dashboards.map(({ id, artifactId, title, description }) => ({ id, artifactId, title, description }))}
     >
       {children}
     </AppWorkspace>
