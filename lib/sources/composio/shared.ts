@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { ConnectionSource, OpenConnection, QueryResult, SourceError } from "../types";
 
 import { ComposioError, deleteAccount, getAccount, isRecord, runTool, type ComposioAccountRef, type ComposioDeps, type ComposioToolkit } from "./client";
-import type { ComposioSignInConfig } from "./catalog";
+import { COMPOSIO_TOOLKITS, type ComposioSignInConfig } from "./catalog";
 
 /**
  * What the sources that sign in through Composio share: the stored
@@ -29,6 +29,25 @@ export function writeComposioCredential(account: ComposioAccountRef): string {
 }
 
 /**
+ * What a sign-in started and not yet finished keeps (sealed) until the
+ * browser comes back: the Composio account it made, whose user that is, and
+ * where to go back to.
+ */
+const pendingSchema = z
+  .object({ toolkit: z.enum(COMPOSIO_TOOLKITS), composioUserId: z.string().min(1), connectedAccountId: z.string().min(1), returnTo: z.string().optional() })
+  .strict();
+
+export type PendingSignIn = z.infer<typeof pendingSchema>;
+
+export function readPendingSignIn(pending: string): PendingSignIn {
+  return pendingSchema.parse(JSON.parse(pending));
+}
+
+export function writePendingSignIn(pending: PendingSignIn): string {
+  return JSON.stringify(pendingSchema.parse(pending));
+}
+
+/**
  * The credential part of a Composio source. There's nothing to paste: these
  * connect only by signing in, so the form's credential check always refuses.
  */
@@ -47,6 +66,11 @@ export function composioCredential(label: string, purpose: string): ConnectionSo
 /** Deletes the connection's Composio account, with its ad platform tokens: the source's `release`. */
 export async function releaseAccount(credential: string, deps?: ComposioDeps): Promise<void> {
   await deleteAccount(readComposioCredential(credential).connectedAccountId, deps);
+}
+
+/** Deletes the Composio account of a sign-in never finished, with any tokens it got: the source's `releasePending`. */
+export async function releasePendingAccount(pending: string, deps?: ComposioDeps): Promise<void> {
+  await deleteAccount(readPendingSignIn(pending).connectedAccountId, deps);
 }
 
 /** Throws unless the account is this toolkit's, this Composio user's, and active now. */
@@ -81,12 +105,16 @@ export async function runAs(
   }
 }
 
-const LABELS: Record<ComposioToolkit, string> = { googleads: "Google Ads", metaads: "Meta Ads" };
-
-/** The user-facing error for a Composio failure of `toolkit`'s source. */
-export function composioToError(toolkit: ComposioToolkit, error: unknown): { error: SourceError; status: "invalid" | "unavailable" } | null {
-  if (!(error instanceof ComposioError) || (error.toolkit && error.toolkit !== toolkit)) return null;
-  const label = LABELS[error.toolkit ?? toolkit];
+/**
+ * The user-facing error for a Composio failure of one source (its type and
+ * catalog label). Only its own: an error that doesn't say which source it's
+ * from isn't claimed.
+ */
+export function composioToError(
+  { type, label }: { type: ComposioToolkit; label: string },
+  error: unknown,
+): { error: SourceError; status: "invalid" | "unavailable" } | null {
+  if (!(error instanceof ComposioError) || error.toolkit !== type) return null;
   const unavailable = (code: string, message: string) => ({ status: "unavailable" as const, error: { code, message } });
   switch (error.code) {
     case "not_configured":

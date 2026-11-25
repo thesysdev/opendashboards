@@ -10,22 +10,22 @@ import { track } from "@/lib/analytics";
 import { logError } from "@/lib/log";
 import type { Scope } from "@/lib/orgs/access";
 import { ComposioError, createSignInLink, deleteAccount, getAccount, type ComposioDeps, type ComposioToolkit } from "@/lib/sources/composio/client";
-import { COMPOSIO_SIGN_IN, COMPOSIO_TOOLKITS, isComposioToolkit } from "@/lib/sources/composio/catalog";
-import { writeComposioCredential } from "@/lib/sources/composio/shared";
+import { COMPOSIO_SIGN_IN, COMPOSIO_TOOLKITS, isComposioSignIn } from "@/lib/sources/composio/catalog";
+import { readPendingSignIn, writeComposioCredential, writePendingSignIn, type PendingSignIn } from "@/lib/sources/composio/shared";
 import { hashState } from "@/lib/sources/mcp/oauth";
 
 import { getConnectionService } from ".";
 import { fail, fromCheckError, fromValidation, internalError, notFound, ok, type Result } from "./errors";
-import { RETURN_PATH } from "./mcp-sign-in";
-import { connectionNameSchema } from "./schemas";
+import { connectionNameSchema, RETURN_PATH } from "./schemas";
 import type { ConnectionService } from "./service";
 
 /**
  * Signing in to Google Ads or Meta Ads through Composio: start (a Composio
  * account for this sign-in, and its hosted page, which runs the ad
  * platform's OAuth on Composio's approved app) and finish (the callback:
- * check it's this user's sign-in, that the account Composio made for it is
- * active and is the one we started, then test and save).
+ * check it's this user's sign-in and wait for the account Composio made for
+ * it to settle; saving it runs the source's own check that the account is
+ * this sign-in's and active).
  *
  * The callback's own query parameters are never trusted for which account it
  * was: that's known, sealed, from the start.
@@ -48,8 +48,6 @@ const startSchema = z.union([
   // Signing in again to a connection that exists.
   z.object({ connectionId: z.uuid(), returnTo: z.string().regex(RETURN_PATH).optional() }).strict(),
 ]);
-
-type Pending = { toolkit: ComposioToolkit; composioUserId: string; connectedAccountId: string; returnTo?: string };
 
 type Deps = { service?: ConnectionService; composio?: ComposioDeps; pollMs?: number };
 
@@ -74,7 +72,7 @@ export async function startComposioSignIn(
     ({ returnTo } = parsed.data);
     const found = await service.forSignIn(scope.userId, parsed.data.connectionId);
     if (!found.ok) return found;
-    if (!isComposioToolkit(found.data.config.type)) return notFound();
+    if (!isComposioSignIn(found.data.config)) return notFound();
     toolkit = found.data.config.type;
     ({ name, orgId } = found.data);
     connectionId = found.data.id;
@@ -94,10 +92,10 @@ export async function startComposioSignIn(
     // A Composio user per sign-in: one person's accounts can never answer for another's.
     const composioUserId = `od-${randomUUID()}`;
     const link = await createSignInLink(toolkit, { composioUserId, callbackUrl: composioCallbackUrl(state) }, deps.composio);
-    const pending: Pending = { toolkit, composioUserId, connectedAccountId: link.connectedAccountId, returnTo };
+    const pending = writePendingSignIn({ toolkit, composioUserId, connectedAccountId: link.connectedAccountId, returnTo });
     const saved = await service.startSignIn(
       { userId: scope.userId, orgId },
-      { stateHash: hashState(state), connectionId, name, config: { type: toolkit, ...COMPOSIO_SIGN_IN }, pending: JSON.stringify(pending), sharing: sharingOf },
+      { stateHash: hashState(state), connectionId, name, config: { type: toolkit, ...COMPOSIO_SIGN_IN }, pending, sharing: sharingOf },
     );
     if (!saved.ok) {
       discard(link.connectedAccountId, deps);
@@ -125,7 +123,7 @@ export async function finishComposioSignIn(
   if (!taken) {
     return { ...fail({ code: "oauth_expired", message: "This sign-in expired or was already used. Start it again from Data Connections." }), from: null };
   }
-  const pending = JSON.parse(taken.pending) as Pending;
+  const pending = readPendingSignIn(taken.pending);
   const back = pending.returnTo && RETURN_PATH.test(pending.returnTo) ? pending.returnTo : null;
   const from: StartedFrom = { orgId: taken.orgId, returnTo: back };
   const finished = (outcome: "done" | "denied" | "failed", errorCode: string | null = null) =>
@@ -138,9 +136,7 @@ export async function finishComposioSignIn(
   try {
     const status = await settledStatus(pending, deps);
     if (status !== "ACTIVE") {
-      // Not finished at the ad platform (left, expired) reads as denied; anything else went wrong.
-      const denied = ["INITIATED", "EXPIRED", "REVOKED", "INACTIVE"].includes(status);
-      finished(denied ? "denied" : "failed", SETTLED.includes(status) ? `account_${status.toLowerCase()}` : "account_other");
+      finished(NOT_ACTIVE[status] ?? "failed", status in NOT_ACTIVE ? `account_${status.toLowerCase()}` : "account_other");
       discard(pending.connectedAccountId, deps);
       return { ...fail({ code: "oauth_failed", message: "The sign-in didn't complete. Try again." }), from };
     }
@@ -167,23 +163,25 @@ export async function finishComposioSignIn(
 }
 
 /**
- * The account's status once the sign-in has settled: Composio may still be
- * finishing it when the browser arrives, so a not-yet-active account is
- * asked again a few times. Only the account this sign-in started, owned by
- * its own Composio user and of its toolkit, counts.
+ * An account that didn't come back active, for analytics: left or lapsed at
+ * the ad platform reads as denied, a failure as failed. Any other status is
+ * "account_other", and failed.
  */
-/** The account statuses reported to analytics as they are; any other is "account_other". */
-const SETTLED = ["INITIATED", "EXPIRED", "REVOKED", "INACTIVE", "FAILED", "MISMATCHED", "DISABLED"];
+const NOT_ACTIVE: Record<string, "denied" | "failed"> = { INITIATED: "denied", INACTIVE: "denied", EXPIRED: "denied", REVOKED: "denied", FAILED: "failed" };
 
-async function settledStatus(pending: Pending, deps: Deps): Promise<string> {
+/** Statuses Composio may still be moving on from when the browser arrives. */
+const SETTLING = ["INITIATED", "INACTIVE"];
+
+/**
+ * The account's status once the sign-in has settled: a not-yet-active
+ * account is asked again a few times. Whose account it is, and whether it's
+ * usable, is the source's check when the sign-in is saved (checkAccount).
+ */
+async function settledStatus(pending: PendingSignIn, deps: Deps): Promise<string> {
   const attempts = 5;
   for (let attempt = 0; ; attempt++) {
-    const account = await getAccount(pending.connectedAccountId, deps.composio, undefined, pending.toolkit);
-    // Fails closed: unless Composio says it's this sign-in's own user and toolkit, it isn't.
-    if (account.userId !== pending.composioUserId || account.toolkit !== pending.toolkit) return "MISMATCHED";
-    if (account.disabled) return "DISABLED";
-    const settled = ["ACTIVE", "FAILED", "EXPIRED", "REVOKED"].includes(account.status);
-    if (settled || attempt === attempts - 1) return account.status;
+    const { status } = await getAccount(pending.connectedAccountId, deps.composio, undefined, pending.toolkit);
+    if (!SETTLING.includes(status) || attempt === attempts - 1) return status;
     await new Promise((resolve) => setTimeout(resolve, deps.pollMs ?? 1_000));
   }
 }

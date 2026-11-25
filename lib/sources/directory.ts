@@ -15,18 +15,20 @@ export type CatalogEntry = {
   label: string;
   blurb: string;
   tile: string;
+  /** The source option this entry connects through (a known MCP server: the MCP source's). */
+  option: SourceOption["key"];
   open: { kind: "source"; source: Pick<SourceOption, "type" | "flavor"> } | { kind: "mcp"; service: McpServiceKey };
 };
 
 function source(key: string): CatalogEntry {
   const option = SOURCE_OPTIONS.find((candidate) => candidate.key === key);
   if (!option) throw new Error(`Unknown source: ${key}`);
-  return { key, label: option.label, blurb: option.blurb, tile: option.tile, open: { kind: "source", source: option } };
+  return { key, label: option.label, blurb: option.blurb, tile: option.tile, option: option.key, open: { kind: "source", source: option } };
 }
 
 function mcp(service: McpServiceKey): CatalogEntry {
   const { label, blurb, tile } = MCP_SERVICES[service];
-  return { key: `mcp:${service}`, label, blurb, tile, open: { kind: "mcp", service } };
+  return { key: `mcp:${service}`, label, blurb, tile, option: "mcp", open: { kind: "mcp", service } };
 }
 
 /** The generic MCP connector: any remote server, typed in. */

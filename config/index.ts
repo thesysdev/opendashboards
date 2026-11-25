@@ -80,7 +80,7 @@ export const secrets = {
    * in through. Not secret, but set per Composio project.
    */
   composioAuthConfig: (toolkit: "googleads" | "metaads") =>
-    toolkit === "googleads" ? process.env.COMPOSIO_GOOGLEADS_AUTH_CONFIG_ID : process.env.COMPOSIO_METAADS_AUTH_CONFIG_ID,
+    ({ googleads: process.env.COMPOSIO_GOOGLEADS_AUTH_CONFIG_ID, metaads: process.env.COMPOSIO_METAADS_AUTH_CONFIG_ID })[toolkit],
 };
 
 /**

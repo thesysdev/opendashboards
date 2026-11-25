@@ -39,6 +39,11 @@ export interface SourceCatalog<
   /** The settings that aren't secret, stored in data_connections.config. */
   configSchema: z.ZodType<Config>;
   describe(config: Config): SourceDescription;
+  /**
+   * Who runs the sign-in, for a source people connect by signing in to the
+   * platform itself (not to a server at a URL, and not with a key).
+   */
+  signIn?: "composio";
 }
 
 /** Something a successful check found that doesn't stop the connection working. */
@@ -121,6 +126,12 @@ export interface ConnectionSource<Config extends Record<string, unknown> = Recor
    * Best effort: a failure is logged, never shown.
    */
   release?(credential: string): Promise<void>;
+  /**
+   * The same for a sign-in started and never finished (abandoned, expired,
+   * or deleted with its member or workspace): `pending` is what the sign-in
+   * stored when it started. Optional, best effort, like `release`.
+   */
+  releasePending?(pending: string): Promise<void>;
   /** Turns this source's failures into a user-facing error and the status to record. */
   toError(error: unknown): { error: SourceError; status: Exclude<ConnectionStatus, "ok"> } | null;
   // Each tool has its own argument type; the runner validates them with the tool's schema.

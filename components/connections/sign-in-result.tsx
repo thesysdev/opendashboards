@@ -16,12 +16,11 @@ const MESSAGES: Record<string, string> = {
   credential_too_large: "The server's sign-in tokens are too large to store securely.",
   host_blocked: "The server's sign-in points to an address OpenDashboards won't connect to.",
   not_found: "That connection no longer exists.",
-  not_available: "This source isn't available in this workspace yet.",
   // Sources that sign in to the platform itself (Google Ads, Meta Ads).
   not_configured: "This source isn't set up on OpenDashboards yet.",
   provider_rejected: "OpenDashboards couldn't finish the sign-in on its side. Try again later.",
-  ads_unavailable: "Couldn't reach the ad platform to finish the sign-in. Try again.",
-  ads_unexpected: "The ad platform sent an unexpected response. Try again.",
+  ads_unavailable: "Couldn't reach the platform to finish the sign-in. Try again.",
+  ads_unexpected: "The platform sent an unexpected response. Try again.",
   timeout: "The sign-in took too long to finish. Try again.",
   rate_limited: "Too many requests right now. Try again in a minute.",
 };

@@ -18,3 +18,11 @@ export const composioSignInConfigSchema = z.object({ oauth: z.object({ provider:
 export type ComposioSignInConfig = z.infer<typeof composioSignInConfigSchema>;
 
 export const COMPOSIO_SIGN_IN: ComposioSignInConfig = { oauth: { provider: "composio" } };
+
+/**
+ * Whether a saved connection signs in through Composio: by what its own
+ * settings recorded when it was made, not by what its source uses today.
+ */
+export function isComposioSignIn(config: { type: string; oauth?: unknown }): config is { type: ComposioToolkit } & ComposioSignInConfig {
+  return isComposioToolkit(config.type) && composioSignInConfigSchema.safeParse({ oauth: config.oauth }).success;
+}

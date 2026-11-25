@@ -1,5 +1,5 @@
 import { and, eq, sql } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { finishComposioSignIn, startComposioSignIn } from "@/lib/connections/composio-sign-in";
 import { createConnectionService } from "@/lib/connections/service";
@@ -9,6 +9,8 @@ import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 import { ComposioError, createSignInLink, runTool, type ComposioDeps } from "@/lib/sources/composio/client";
 import { composioToError, flattenRows, readComposioCredential } from "@/lib/sources/composio/shared";
 import { gaqlSchema, googleAdsDeps, googleAdsSource, withLimit } from "@/lib/sources/googleads/source";
+import { googleAdsCatalog } from "@/lib/sources/googleads/catalog";
+import { metaAdsCatalog } from "@/lib/sources/metaads/catalog";
 import { metaAdsDeps, metaAdsSource } from "@/lib/sources/metaads/source";
 import type { ConnectionSource } from "@/lib/sources/types";
 
@@ -72,9 +74,9 @@ describe("the Composio client", () => {
 
   it("starts a sign-in on the auth config, for this Composio user, coming back to our callback", async () => {
     const { deps, calls } = fakeComposio(() => ({ status: 201, body: { redirect_url: "https://connect.composio.dev/link/abc", connected_account_id: "ca_9", link_token: "t", expires_at: "x" } }));
-    const link = await createSignInLink("metaads", { composioUserId: "od-1", callbackUrl: "https://app.example.com/api/composio/callback?state=s" }, deps);
+    const link = await createSignInLink("metaads", { composioUserId: "od-1", callbackUrl: "https://app.example.com/api/composio/callback/s" }, deps);
     expect(link).toEqual({ redirectUrl: "https://connect.composio.dev/link/abc", connectedAccountId: "ca_9" });
-    expect(calls[0]?.body).toEqual({ auth_config_id: "ac_test", user_id: "od-1", callback_url: "https://app.example.com/api/composio/callback?state=s" });
+    expect(calls[0]?.body).toEqual({ auth_config_id: "ac_test", user_id: "od-1", callback_url: "https://app.example.com/api/composio/callback/s" });
   });
 
   it("refuses a sign-in link that isn't https", async () => {
@@ -181,8 +183,10 @@ describe("rows", () => {
 describe("errors", () => {
   it("each source names itself, and a lost sign-in asks to sign in again", () => {
     const lost = new ComposioError("reauth_required", "expired", "metaads");
-    expect(composioToError("googleads", lost)).toBeNull();
-    expect(composioToError("metaads", lost)).toEqual({
+    expect(composioToError(googleAdsCatalog, lost)).toBeNull();
+    // An error that doesn't say which source it's from isn't claimed, rather than named after the wrong one.
+    expect(composioToError(googleAdsCatalog, new ComposioError("unavailable"))).toBeNull();
+    expect(composioToError(metaAdsCatalog, lost)).toEqual({
       status: "invalid",
       error: { code: "reauth_required", message: "The sign-in to Meta Ads expired or was revoked. Sign in again from Data Connections." },
     });
@@ -195,8 +199,8 @@ describe("signing in through Composio", () => {
   const service = createConnectionService({
     db,
     secrets: () => plaintextSecretBox,
-    // The account check is the sign-in's own, under test here; the source's test would ask Composio again.
-    sources: (type) => ({ ...(type === "metaads" ? metaAdsSource : googleAdsSource), test: async () => [] }) as unknown as ConnectionSource,
+    // The sources' own checks run against the fake Composio below: they decide whose account it is.
+    sources: (type) => (type === "metaads" ? metaAdsSource : googleAdsSource) as unknown as ConnectionSource,
   });
 
   let accountState: { status: string; user_id: string; toolkit: string } = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
@@ -323,5 +327,23 @@ describe("signing in through Composio", () => {
       accountState = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
     }
     expect(await db.select().from(dataConnections)).toEqual([]);
+    await vi.waitFor(() => expect(deleted).toContain("ca_new"));
+  });
+
+  it("lets go of the Composio account of a sign-in that expired before the browser came back", async () => {
+    await start();
+    await db.update(mcpOAuthSignIns).set({ expiresAt: new Date(Date.now() - 1_000) });
+    deleted = [];
+    // The next sign-in to start sweeps it, with its account.
+    await start("metaads");
+    await vi.waitFor(() => expect(deleted).toEqual(["ca_new"]));
+    expect(await db.select().from(mcpOAuthSignIns)).toHaveLength(1);
+  });
+
+  it("lets go of unfinished sign-ins deleted with a member, through the source", async () => {
+    await start();
+    const [row] = await db.select().from(mcpOAuthSignIns);
+    await service.releaseDeleted({ signIns: [], pending: [row!] });
+    expect(deleted).toEqual(["ca_new"]);
   });
 });

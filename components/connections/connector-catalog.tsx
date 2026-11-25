@@ -17,8 +17,8 @@ import { SourceTile } from "./source-tile";
  * Every source and known MCP server, by what people build dashboards about.
  * Picking one opens its connect dialog. `sampleData` is a tile that adds the
  * sample dataset, for someone who has connections but hasn't added it.
- * `sources`: the sources this person can add here; only those are shown (an
- * MCP server's entry, with the MCP source).
+ * `sources`: the sources this person can add here; an entry shows only when
+ * the source it connects through is one of them.
  */
 export function ConnectorCatalog({
   secretMode,
@@ -31,7 +31,7 @@ export function ConnectorCatalog({
 }) {
   const [query, setQuery] = useState("");
   const offered = new Set(sources.map((source) => source.key));
-  const isOffered = (entry: CatalogEntry) => offered.has(entry.open.kind === "source" ? entry.key : ANY_MCP_SERVER.key);
+  const isOffered = (entry: CatalogEntry) => offered.has(entry.option);
   const shown = (entries: CatalogEntry[]) => entries.filter(isOffered);
   const [selected, setSelected] = useState<CatalogEntry | null>(null);
   const [open, setOpen] = useState(false);
