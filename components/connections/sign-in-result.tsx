@@ -12,10 +12,18 @@ const MESSAGES: Record<string, string> = {
   plan_limit: "Your workspace has no connections left on its plan.",
   oauth_invalid: "The server's sign-in failed a safety check, so OpenDashboards didn't connect to it.",
   oauth_unsupported: "This server's OAuth sign-in isn't supported.",
-  reauth_required: "The server refused the sign-in. Try signing in again.",
+  reauth_required: "The sign-in was refused. Try signing in again.",
   credential_too_large: "The server's sign-in tokens are too large to store securely.",
   host_blocked: "The server's sign-in points to an address OpenDashboards won't connect to.",
   not_found: "That connection no longer exists.",
+  not_available: "This source isn't available in this workspace yet.",
+  // Google Ads and Meta Ads, through Composio.
+  not_configured: "This source isn't set up on OpenDashboards yet.",
+  composio_rejected: "OpenDashboards couldn't finish the sign-in on its side. Try again later.",
+  ads_unavailable: "Couldn't reach the ad platform to finish the sign-in. Try again.",
+  ads_unexpected: "The ad platform sent an unexpected response. Try again.",
+  timeout: "The sign-in took too long to finish. Try again.",
+  rate_limited: "Too many requests right now. Try again in a minute.",
 };
 
 /** After an OAuth sign-in comes back: says how it went, once, then tidies the URL. */

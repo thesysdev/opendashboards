@@ -2,6 +2,7 @@ import "server-only";
 
 import { randomBytes, randomUUID } from "node:crypto";
 
+import { waitUntil } from "@vercel/functions";
 import { z } from "zod";
 
 import { config as appConfig } from "@/config";
@@ -9,7 +10,7 @@ import { track } from "@/lib/analytics";
 import { logError } from "@/lib/log";
 import type { Scope } from "@/lib/orgs/access";
 import { ComposioError, createSignInLink, deleteAccount, getAccount, type ComposioDeps, type ComposioToolkit } from "@/lib/sources/composio/client";
-import { COMPOSIO_SIGN_IN } from "@/lib/sources/composio/catalog";
+import { COMPOSIO_SIGN_IN, COMPOSIO_TOOLKITS, isComposioToolkit } from "@/lib/sources/composio/catalog";
 import { writeComposioCredential } from "@/lib/sources/composio/shared";
 import { hashState } from "@/lib/sources/mcp/oauth";
 
@@ -30,10 +31,6 @@ import type { ConnectionService } from "./service";
  * was: that's known, sealed, from the start.
  */
 
-export const COMPOSIO_TYPES = ["googleads", "metaads"] as const satisfies readonly ComposioToolkit[];
-export type ComposioType = (typeof COMPOSIO_TYPES)[number];
-
-export const isComposioType = (type: string): type is ComposioType => (COMPOSIO_TYPES as readonly string[]).includes(type);
 
 /**
  * Where Composio sends the browser back. The state is a path segment, not a
@@ -47,12 +44,12 @@ const STATE = /^[A-Za-z0-9_-]{43}$/;
 const sharing = z.enum(["personal", "org"]).default("personal");
 
 const startSchema = z.union([
-  z.object({ name: connectionNameSchema, source: z.enum(COMPOSIO_TYPES), sharing }).strict(),
+  z.object({ name: connectionNameSchema, source: z.enum(COMPOSIO_TOOLKITS), sharing }).strict(),
   // Signing in again to a connection that exists.
   z.object({ connectionId: z.uuid(), returnTo: z.string().regex(RETURN_PATH).optional() }).strict(),
 ]);
 
-type Pending = { toolkit: ComposioType; composioUserId: string; connectedAccountId: string; returnTo?: string };
+type Pending = { toolkit: ComposioToolkit; composioUserId: string; connectedAccountId: string; returnTo?: string };
 
 type Deps = { service?: ConnectionService; composio?: ComposioDeps; pollMs?: number };
 
@@ -66,7 +63,7 @@ export async function startComposioSignIn(
   const parsed = startSchema.safeParse(input);
   if (!parsed.success) return fromValidation(parsed.error);
 
-  let toolkit: ComposioType;
+  let toolkit: ComposioToolkit;
   let name: string;
   let connectionId: string | null = null;
   let returnTo: string | undefined;
@@ -76,7 +73,7 @@ export async function startComposioSignIn(
     ({ returnTo } = parsed.data);
     const found = await service.forSignIn(scope.userId, parsed.data.connectionId);
     if (!found.ok) return found;
-    if (!isComposioType(found.data.config.type)) return notFound();
+    if (!isComposioToolkit(found.data.config.type)) return notFound();
     toolkit = found.data.config.type;
     ({ name, orgId } = found.data);
     connectionId = found.data.id;
@@ -95,7 +92,7 @@ export async function startComposioSignIn(
       { stateHash: hashState(state), connectionId, name, config: { type: toolkit, ...COMPOSIO_SIGN_IN }, pending: JSON.stringify(pending), sharing: sharingOf },
     );
     if (!saved.ok) {
-      void deleteAccount(link.connectedAccountId, deps.composio).catch(() => {});
+      discard(link.connectedAccountId, deps);
       return saved;
     }
     return ok({ authorizationUrl: link.redirectUrl, existing: null });
@@ -126,12 +123,17 @@ export async function finishComposioSignIn(
   const finished = (outcome: "done" | "denied" | "failed", errorCode: string | null = null) =>
     track(userId, "connection_sign_in_finished", { source_type: taken.config.type, outcome, error_code: errorCode, renewal: taken.connectionId !== null }, taken.orgId);
 
-  if (taken.config.type !== pending.toolkit) return { ...internalError(), from };
+  if (taken.config.type !== pending.toolkit) {
+    discard(pending.connectedAccountId, deps);
+    return { ...internalError(), from };
+  }
   try {
     const status = await settledStatus(pending, deps);
     if (status !== "ACTIVE") {
-      finished(status === "FAILED" ? "failed" : "denied", `account_${status.toLowerCase()}`);
-      void deleteAccount(pending.connectedAccountId, deps.composio).catch(() => {});
+      // Not finished at the ad platform (left, expired) reads as denied; anything else went wrong.
+      const denied = ["INITIATED", "EXPIRED", "REVOKED", "INACTIVE"].includes(status);
+      finished(denied ? "denied" : "failed", SETTLED.includes(status) ? `account_${status.toLowerCase()}` : "account_other");
+      discard(pending.connectedAccountId, deps);
       return { ...fail({ code: "oauth_failed", message: "The sign-in didn't complete. Try again." }), from };
     }
     const saved = await service.saveSignedIn(userId, {
@@ -144,11 +146,12 @@ export async function finishComposioSignIn(
     });
     finished(saved.ok ? "done" : "failed", saved.ok ? null : saved.error.code);
     if (!saved.ok) {
-      void deleteAccount(pending.connectedAccountId, deps.composio).catch(() => {});
+      discard(pending.connectedAccountId, deps);
       return { ...saved, from };
     }
     return { ...ok({ id: saved.data.id, orgId: taken.orgId, returnTo: back }), from };
   } catch (error) {
+    discard(pending.connectedAccountId, deps);
     const result = failure("finish", error);
     finished("failed", result.ok ? null : result.error.code);
     return { ...result, from };
@@ -161,6 +164,9 @@ export async function finishComposioSignIn(
  * asked again a few times. Only the account this sign-in started, owned by
  * its own Composio user and of its toolkit, counts.
  */
+/** The account statuses reported to analytics as they are; any other is "account_other". */
+const SETTLED = ["INITIATED", "EXPIRED", "REVOKED", "INACTIVE", "FAILED", "MISMATCHED", "DISABLED"];
+
 async function settledStatus(pending: Pending, deps: Deps): Promise<string> {
   const attempts = 5;
   for (let attempt = 0; ; attempt++) {
@@ -172,6 +178,15 @@ async function settledStatus(pending: Pending, deps: Deps): Promise<string> {
     if (settled || attempt === attempts - 1) return account.status;
     await new Promise((resolve) => setTimeout(resolve, deps.pollMs ?? 1_000));
   }
+}
+
+/**
+ * Deletes the Composio account of a sign-in that didn't become a connection,
+ * with whatever tokens it got. After the response, so the person isn't kept
+ * waiting, but kept alive until it's done. Best effort.
+ */
+function discard(connectedAccountId: string, deps: Deps): void {
+  waitUntil(deleteAccount(connectedAccountId, deps.composio).catch((error) => logError("composioSignIn.discard", error)));
 }
 
 function failure(step: string, error: unknown): Result<never> {

@@ -98,7 +98,23 @@ export type Arrival = {
  * asks them to create one before anything else. Every change checks the
  * caller's own role in the database first.
  */
-export function createOrgService({ db, gate = OPEN_GATE }: { db: Database; gate?: Gate }) {
+/** A sign-in deleted with a member or workspace, with its connection's type: for the source to let go of it. */
+export type DeletedSignIn = { type: ConnectionSignInType; signIn: typeof connectionSignIns.$inferSelect };
+type ConnectionSignInType = typeof dataConnections.$inferSelect.type;
+
+/**
+ * `release`: after sign-ins are deleted, lets their sources let go of what
+ * they held elsewhere (a Composio account, with its ad platform tokens).
+ */
+export function createOrgService({
+  db,
+  gate = OPEN_GATE,
+  release = async () => {},
+}: {
+  db: Database;
+  gate?: Gate;
+  release?: (deleted: DeletedSignIn[]) => Promise<void>;
+}) {
   async function guard<T>(operation: string, fn: () => Promise<OrgResult<T>>): Promise<OrgResult<T>> {
     try {
       return await fn();
@@ -137,18 +153,24 @@ export function createOrgService({ db, gate = OPEN_GATE }: { db: Database; gate?
    * signs in again; the connections themselves stay, as do the apps using them.
    */
   async function deleteSignIns(orgId: string, userId: string): Promise<void> {
-    await db.transaction(async (tx) => {
-      await tx
-        .delete(connectionSignIns)
-        .where(
-          and(
-            eq(connectionSignIns.userId, userId),
-            inArray(connectionSignIns.connectionId, tx.select({ id: dataConnections.id }).from(dataConnections).where(eq(dataConnections.orgId, orgId))),
-          ),
-        );
+    const deleted = await db.transaction(async (tx) => {
+      const theirs = await signInsIn(tx, orgId, userId);
+      if (theirs.length) await tx.delete(connectionSignIns).where(inArray(connectionSignIns.id, theirs.map(({ signIn }) => signIn.id)));
       await tx.delete(mcpOAuthSignIns).where(and(eq(mcpOAuthSignIns.orgId, orgId), eq(mcpOAuthSignIns.userId, userId)));
+      return theirs;
     });
+    await release(deleted);
   }
+
+  /** The sign-ins to a workspace's connections, with each connection's type; only `userId`'s, when given. */
+  function signInsIn(tx: Pick<Database, "select">, orgId: string, userId?: string): Promise<DeletedSignIn[]> {
+    return tx
+      .select({ type: dataConnections.type, signIn: connectionSignIns })
+      .from(connectionSignIns)
+      .innerJoin(dataConnections, eq(dataConnections.id, connectionSignIns.connectionId))
+      .where(and(eq(dataConnections.orgId, orgId), userId ? eq(connectionSignIns.userId, userId) : undefined));
+  }
+
 
   /**
    * Someone removed from a workspace loses access to it entirely: their
@@ -576,13 +598,17 @@ export function createOrgService({ db, gate = OPEN_GATE }: { db: Database; gate?
         const allowed = await deletable(userId, input);
         if (!allowed.ok) return allowed;
         const { orgId } = allowed.data;
-        await db.transaction(async (tx) => {
+        const deleted = await db.transaction(async (tx) => {
+          // Read before they go with their connections, so their sources can let go of them after.
+          const signIns = await signInsIn(tx, orgId);
           // Apps first: an app's use of a connection would otherwise block the connection's delete.
           await tx.delete(apps).where(eq(apps.orgId, orgId));
           await tx.delete(dataConnections).where(eq(dataConnections.orgId, orgId));
           // Members, invites and unfinished sign-ins go with the workspace.
           await tx.delete(orgs).where(eq(orgs.id, orgId));
+          return signIns;
         });
+        await release(deleted);
         return ok(undefined);
       });
     },

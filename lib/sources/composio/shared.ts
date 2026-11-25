@@ -5,7 +5,7 @@ import { z } from "zod";
 import type { ConnectionSource, OpenConnection, QueryResult, SourceError } from "../types";
 
 import { ComposioError, deleteAccount, getAccount, isRecord, runTool, type ComposioAccountRef, type ComposioDeps, type ComposioToolkit } from "./client";
-import { composioSignInConfigSchema, type ComposioSignInConfig } from "./catalog";
+import type { ComposioSignInConfig } from "./catalog";
 
 /**
  * What the sources that sign in through Composio share: the stored
@@ -110,9 +110,6 @@ export function composioToError(toolkit: ComposioToolkit, error: unknown): { err
       return unavailable("ads_unexpected", `${label} sent an unexpected response. Try again.`);
   }
 }
-
-/** Settings check shared by both sources: nothing but the sign-in marker. */
-export const composioConfigSchema = composioSignInConfigSchema;
 
 /**
  * Nested API rows as flat columns: { campaign: { name } } becomes

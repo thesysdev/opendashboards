@@ -21,6 +21,7 @@ import { track } from "@/lib/analytics";
 import { logError, logRejection, logWarning } from "@/lib/log";
 import { appAccess, appOpenTo, appsOpenTo, isUuid, roleIn, workspaceFacts, type Scope } from "@/lib/orgs/access";
 import { can, decide, refusal, type ConnectionFacts, type ConnectionKind } from "@/lib/orgs/policy";
+import type { DeletedSignIn } from "@/lib/orgs/service";
 import { OPEN_GATE, type Gate } from "@/lib/entitlements";
 import { count } from "@/lib/metrics";
 import type { SecretBox, SecretContext } from "@/lib/secrets";
@@ -846,6 +847,17 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         await releaseSignIns(found.row.type as ConnectionType, removed);
         return ok(undefined);
       });
+    },
+
+    /**
+     * After sign-ins were deleted elsewhere (a member leaving, a workspace
+     * deleted): lets each source let go of what they held. Best effort.
+     */
+    async releaseDeleted(deleted: DeletedSignIn[]): Promise<void> {
+      for (const { type, signIn } of deleted) {
+        keyCache.delete(signIn.id);
+        await releaseSignIns(type, [signIn]);
+      }
     },
 
     /**

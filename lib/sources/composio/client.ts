@@ -13,7 +13,9 @@ import { config, secrets } from "@/config";
  * this only runs the tool a source names.
  */
 
-export type ComposioToolkit = "googleads" | "metaads";
+import type { ComposioToolkit } from "./catalog";
+
+export type { ComposioToolkit };
 
 export type ComposioErrorCode =
   /** COMPOSIO_API_KEY or the toolkit's auth config isn't set on this deployment. */
@@ -53,12 +55,12 @@ function apiKey(deps: ComposioDeps, toolkit?: ComposioToolkit): string {
 
 async function request<T>(
   path: string,
-  init: { method: "GET" | "POST" | "DELETE"; body?: unknown; signal?: AbortSignal },
+  init: { method: "GET" | "POST" | "DELETE"; body?: unknown; signal?: AbortSignal; timeoutMs?: number },
   deps: ComposioDeps,
   toolkit?: ComposioToolkit,
 ): Promise<T> {
   const key = apiKey(deps, toolkit);
-  const timeout = AbortSignal.timeout(config().composio.requestTimeoutMs);
+  const timeout = AbortSignal.timeout(init.timeoutMs ?? config().composio.checkTimeoutMs);
   const signal = init.signal ? AbortSignal.any([init.signal, timeout]) : timeout;
   let response: Response;
   try {
@@ -76,7 +78,7 @@ async function request<T>(
     throw new ComposioError(timeout.aborted ? "timeout" : "unavailable", (error as Error)?.message, toolkit);
   }
   const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw classify(response.status, body, toolkit);
+  if (!response.ok) throw classify(response.status, body, path.startsWith("/connected_accounts/"), toolkit);
   return body as T;
 }
 
@@ -92,7 +94,8 @@ function messageOf(body: unknown): string {
 /** A connected account that can't be used any more reads as one: the user signs in again. */
 const ACCOUNT_GONE = /connected[ _]?account.*(not found|inactive|expired|revoked|failed|deleted|disabled|not active)|(expired|revoked|invalid).*(token|credential|grant)|reauth/i;
 
-function classify(status: number, body: unknown, toolkit?: ComposioToolkit): ComposioError {
+/** `account`: the request was about one connected account, so a 404 means it's gone (elsewhere, it's ours: a wrong tool or version). */
+function classify(status: number, body: unknown, account: boolean, toolkit?: ComposioToolkit): ComposioError {
   const message = messageOf(body).slice(0, 1_000);
   if (status === 401 || status === 403) {
     // A 401/403 about the connected account is the user's sign-in; about the key, it's ours.
@@ -100,7 +103,7 @@ function classify(status: number, body: unknown, toolkit?: ComposioToolkit): Com
       ? new ComposioError("reauth_required", message, toolkit)
       : new ComposioError("project_rejected", message || `HTTP ${status}`, toolkit);
   }
-  if (status === 404 || ACCOUNT_GONE.test(message)) return new ComposioError("reauth_required", message || "Account not found", toolkit);
+  if ((status === 404 && account) || ACCOUNT_GONE.test(message)) return new ComposioError("reauth_required", message || "Account not found", toolkit);
   if (status === 429) return new ComposioError("rate_limited", message, toolkit);
   if (status === 400 || status === 422) return new ComposioError("bad_request", message || `HTTP ${status}`, toolkit);
   if (status >= 500) return new ComposioError("unavailable", message || `HTTP ${status}`, toolkit);
@@ -201,6 +204,8 @@ export async function runTool(
       method: "POST",
       body: { connected_account_id: account.connectedAccountId, user_id: account.composioUserId, version: TOOLKIT_VERSION, arguments: args },
       signal,
+      // Meta builds large insight reports on demand.
+      timeoutMs: config().composio.queryTimeoutMs,
     },
     deps,
     toolkit,

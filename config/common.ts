@@ -38,7 +38,8 @@ export const common: CommonSettings = {
   composio: {
     apiUrl: "https://backend.composio.dev/api/v3.1",
     // Meta builds large insight reports on demand: allow it the dashboard interpreter's budget, less margin.
-    requestTimeoutMs: 50_000,
+    queryTimeoutMs: 50_000,
+    checkTimeoutMs: 15_000,
     maxRows: { agent: 200, dashboard: 10_000 },
   },
   // Demo data: the "Demo Data" Neon project, shared by several apps. Read-only

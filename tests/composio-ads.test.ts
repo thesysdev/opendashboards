@@ -60,6 +60,8 @@ describe("the Composio client", () => {
       [{ body: { successful: false, error: "RESOURCE_EXHAUSTED: too many requests", data: {} } }, "rate_limited"],
       [{ status: 401, body: { error: { message: "Invalid API key" } } }, "project_rejected"],
       [{ status: 404, body: { error: { message: "Connected account not found" } } }, "reauth_required"],
+      // A 404 on a tool run without account wording is a wrong tool or version, ours to fix: nobody is asked to sign in again.
+      [{ status: 404, body: { error: { message: "Tool not found" } } }, "unexpected"],
       [{ status: 503, body: {} }, "unavailable"],
     ];
     for (const [answer, code] of cases) {

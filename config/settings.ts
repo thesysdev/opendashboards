@@ -135,8 +135,10 @@ export type CommonSettings = {
   composio: {
     /** Composio's REST API (v3.1). Fixed: never from a user or a response. */
     apiUrl: string;
-    /** One Composio call (a tool run, an account lookup), end to end. */
-    requestTimeoutMs: number;
+    /** One tool run (a report), end to end. */
+    queryTimeoutMs: number;
+    /** Any other Composio call: an account lookup, a sign-in link, a delete. */
+    checkTimeoutMs: number;
     /** Rows a report may return. */
     maxRows: { agent: number; dashboard: number };
   };

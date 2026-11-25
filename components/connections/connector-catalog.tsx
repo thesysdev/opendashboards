@@ -4,6 +4,7 @@ import { SearchIcon } from "lucide-react";
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import type { ConnectionType } from "@/lib/sources/catalog";
 import { ANY_MCP_SERVER, CATALOG_CATEGORIES, POPULAR, searchCatalog, type CatalogEntry } from "@/lib/sources/directory";
 
 import { LimitPrompt, useAtLimit, useViewOnly } from "@/components/billing/workspace-plan";
@@ -25,7 +26,7 @@ export function ConnectorCatalog({
 }: {
   secretMode: SecretMode;
   sampleData?: React.ReactNode;
-  hidden?: string[];
+  hidden?: ConnectionType[];
 }) {
   const [query, setQuery] = useState("");
   const shown = (entries: CatalogEntry[]) => entries.filter((entry) => entry.open.kind !== "source" || !hidden.includes(entry.open.source.type));
