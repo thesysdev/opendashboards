@@ -90,20 +90,18 @@ export function ConnectorCatalog({
         </>
       )}
 
-      {isOffered(ANY_MCP_SERVER) && (
-        <button
-          type="button"
-          onClick={() => pick(ANY_MCP_SERVER)}
-          disabled={paused}
-          className="flex w-full items-center gap-3 rounded-xl border border-dashed p-3.5 text-left transition-colors hover:bg-neutral-50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
-        >
-          <SourceTile label={ANY_MCP_SERVER.tile} className="size-9" />
-          <span className="min-w-0">
-            <span className="block text-sm font-medium">Any MCP server</span>
-            <span className="block text-sm text-muted-foreground">Connect another remote server by its URL, with a sign-in or an API key.</span>
-          </span>
-        </button>
-      )}
+      <button
+        type="button"
+        onClick={() => pick(ANY_MCP_SERVER)}
+        disabled={paused}
+        className="flex w-full items-center gap-3 rounded-xl border border-dashed p-3.5 text-left transition-colors hover:bg-neutral-50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+      >
+        <SourceTile label={ANY_MCP_SERVER.tile} className="size-9" />
+        <span className="min-w-0">
+          <span className="block text-sm font-medium">Any MCP server</span>
+          <span className="block text-sm text-muted-foreground">Connect another remote server by its URL, with a sign-in or an API key.</span>
+        </span>
+      </button>
 
       {selected && (
         <ConnectDialog
