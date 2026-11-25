@@ -50,23 +50,20 @@ export function LiveDashboard({
 
 /**
  * The dashboard the Build chat is creating, before the app has a page for it. Without
- * a response the renderer is pending and shows its loader; with one it builds the
+ * a response the renderer is pending and shows nothing; with one it builds the
  * dashboard, until the app opens the dashboard's own page.
  */
 export function NewDashboard({ response }: { response?: string }) {
-  return <DashboardView response={response} fill />;
+  return <DashboardView response={response} />;
 }
 
-/** `fill`: the renderer takes the whole area, so the pending loader fills it, not just its minimum. */
 function DashboardView({
   id,
   response,
-  fill = false,
   children,
 }: {
   id?: string;
   response?: string;
-  fill?: boolean;
   children?: React.ReactNode;
 }) {
   // Where the loading capsule draws: over the bottom of the dashboard, outside the part that scrolls.
@@ -104,7 +101,6 @@ function DashboardView({
           id={id}
           response={response}
           preview={false}
-          className={cn(fill && "h-full")}
           library={library}
           interpreter={interpreter}
           onError={(errors) => {
@@ -114,8 +110,9 @@ function DashboardView({
           }}
         >
           <LiveArtifactRenderer.Chrome>
-            <LiveArtifactRenderer.Content className={cn(fill && "h-full")}>
-              <LiveArtifactRenderer.Pending />
+            <LiveArtifactRenderer.Content>
+              {/* No pending loader. */}
+              <LiveArtifactRenderer.Pending>{null}</LiveArtifactRenderer.Pending>
               {/* In place of the renderer's top-right pill, which sat on the filter bar. */}
               <LoadingCapsule container={overlay} />
               <LiveArtifactRenderer.Error />
@@ -131,7 +128,7 @@ function DashboardView({
 /**
  * A small capsule at the bottom centre while the dashboard generates or its data loads. It
  * waits a moment before showing, so a quick reload doesn't flash it, and fades out when done.
- * While pending, the renderer's loader says what's happening instead.
+ * It stays hidden while pending.
  */
 function LoadingCapsule({ container }: { container: HTMLElement | null }) {
   const { isLoading, isPending, isStreaming, error } = useArtifactRenderer();
