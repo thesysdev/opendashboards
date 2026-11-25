@@ -5,7 +5,7 @@ import { getDb } from "@/lib/db";
 import { getGate } from "@/lib/plans";
 import { getSecretBox } from "@/lib/secrets";
 import { sourceFor } from "@/lib/sources";
-import { hiddenSources } from "@/lib/sources/flags";
+import { notOfferedSources } from "@/lib/sources/offered";
 
 import { createConnectionService, type ConnectionService } from "./service";
 
@@ -22,7 +22,7 @@ export function getConnectionService(): ConnectionService {
     demo: { datasets: () => config().demoData.datasets, password: secrets.demoDataPassword },
     signInTtlMs: config().mcp.oauthSignInTtlMs,
     gate: getGate(),
-    notOffered: (scope) => hiddenSources(scope),
+    notOffered: (scope) => notOfferedSources(scope),
   });
   return service;
 }

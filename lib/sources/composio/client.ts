@@ -53,6 +53,11 @@ function apiKey(deps: ComposioDeps, toolkit?: ComposioToolkit): string {
   return key;
 }
 
+/** Whether this deployment can sign in to `toolkit` through Composio: the project key and that toolkit's auth config are set. */
+export function isConfigured(toolkit: ComposioToolkit): boolean {
+  return Boolean(secrets.composioApiKey() && secrets.composioAuthConfig(toolkit));
+}
+
 async function request<T>(
   path: string,
   init: { method: "GET" | "POST" | "DELETE"; body?: unknown; signal?: AbortSignal; timeoutMs?: number },

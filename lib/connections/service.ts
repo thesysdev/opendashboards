@@ -131,8 +131,9 @@ export type ConnectionServiceDeps = {
   /** The workspace's plan: whether it may add a connection or rename one. Everything allowed without. */
   gate?: Gate;
   /**
-   * Source types this person can't add in this workspace (still rolling out,
-   * behind a feature flag): lib/sources/flags in the app. Every type allowed without.
+   * Source types this person can't add in this workspace (not set up on this
+   * deployment, or still rolling out behind a feature flag): lib/sources/offered
+   * in the app. Every type allowed without.
    */
   notOffered?: (scope: Scope) => Promise<readonly ConnectionType[]>;
 };

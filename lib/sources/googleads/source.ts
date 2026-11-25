@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { config as appConfig } from "@/config";
 
-import { isRecord, type ComposioDeps } from "../composio/client";
+import { isConfigured, isRecord, type ComposioDeps } from "../composio/client";
 import { checkAccount, composioCredential, composioToError, flattenRows, readComposioCredential, releaseAccount, releasePendingAccount, runAs } from "../composio/shared";
 import type { ConnectionSource, OpenConnection, QueryResult, SourceTool } from "../types";
 
@@ -170,6 +170,7 @@ export const googleAdsSource: ConnectionSource<GoogleAdsConfig> = {
     await checkAccount("googleads", readComposioCredential(credential), googleAdsDeps.composio, signal);
     return [];
   },
+  available: () => isConfigured(googleAdsCatalog.type),
   release: (credential) => releaseAccount(credential, googleAdsDeps.composio),
   releasePending: (pending) => releasePendingAccount(pending, googleAdsDeps.composio),
   toError: (error) => composioToError(googleAdsCatalog, error),

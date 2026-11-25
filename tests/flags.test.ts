@@ -11,6 +11,7 @@ import { FLAGS } from "@/lib/flags/types";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 import { COMPOSIO_SIGN_IN } from "@/lib/sources/composio/catalog";
 import { hiddenSources } from "@/lib/sources/flags";
+import { notOfferedSources } from "@/lib/sources/offered";
 import { mcpSource } from "@/lib/sources/mcp/source";
 import type { ConnectionSource } from "@/lib/sources/types";
 
@@ -49,6 +50,31 @@ describe("flag providers", () => {
   it("hides Google Ads and Meta Ads while their flag is off", async () => {
     expect(await hiddenSources(scope, createStaticFlags())).toEqual([]);
     expect(await hiddenSources(scope, createStaticFlags([FLAGS.adsSources]))).toEqual(["googleads", "metaads"]);
+  });
+});
+
+describe("which sources are offered", () => {
+  const composio = { COMPOSIO_API_KEY: "key", COMPOSIO_GOOGLEADS_AUTH_CONFIG_ID: "ac_g", COMPOSIO_METAADS_AUTH_CONFIG_ID: "ac_m" };
+  const withEnv = async (env: Record<string, string>, run: () => Promise<void>) => {
+    for (const name of Object.keys(composio)) vi.stubEnv(name, env[name] ?? "");
+    try {
+      await run();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  };
+
+  it("leaves out a source this deployment isn't set up for", async () => {
+    await withEnv({}, async () => expect(await notOfferedSources(scope, createStaticFlags())).toEqual(["googleads", "metaads"]));
+    // An auth config for one toolkit sets up only that one.
+    await withEnv({ COMPOSIO_API_KEY: "key", COMPOSIO_METAADS_AUTH_CONFIG_ID: "ac_m" }, async () =>
+      expect(await notOfferedSources(scope, createStaticFlags())).toEqual(["googleads"]),
+    );
+    await withEnv(composio, async () => expect(await notOfferedSources(scope, createStaticFlags())).toEqual([]));
+  });
+
+  it("and, once it's set up, one whose flag is off", async () => {
+    await withEnv(composio, async () => expect(await notOfferedSources(scope, createStaticFlags([FLAGS.adsSources]))).toEqual(["googleads", "metaads"]));
   });
 });
 

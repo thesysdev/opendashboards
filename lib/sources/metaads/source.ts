@@ -4,7 +4,7 @@ import { z } from "zod";
 
 import { config as appConfig } from "@/config";
 
-import { ComposioError, isRecord, type ComposioDeps } from "../composio/client";
+import { ComposioError, isConfigured, isRecord, type ComposioDeps } from "../composio/client";
 import { checkAccount, composioCredential, composioToError, flattenRows, readComposioCredential, releaseAccount, releasePendingAccount, runAs } from "../composio/shared";
 import type { ConnectionSource, SourceTool } from "../types";
 
@@ -180,6 +180,7 @@ export const metaAdsSource: ConnectionSource<MetaAdsConfig> = {
     await checkAccount("metaads", readComposioCredential(credential), metaAdsDeps.composio, signal);
     return [];
   },
+  available: () => isConfigured(metaAdsCatalog.type),
   release: (credential) => releaseAccount(credential, metaAdsDeps.composio),
   releasePending: (pending) => releasePendingAccount(pending, metaAdsDeps.composio),
   toError: (error) => composioToError(metaAdsCatalog, error),

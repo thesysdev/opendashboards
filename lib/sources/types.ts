@@ -127,6 +127,12 @@ export interface ConnectionSource<Config extends Record<string, unknown> = Recor
    */
   release?(credential: string): Promise<void>;
   /**
+   * Whether this deployment is set up to connect the source: what it needs of
+   * its own is configured (Composio's key and auth config, for Google Ads).
+   * Optional: without it, always. A source that isn't isn't offered.
+   */
+  available?(): boolean;
+  /**
    * The same for a sign-in started and never finished (abandoned, expired,
    * or deleted with its member or workspace): `pending` is what the sign-in
    * stored when it started. Optional, best effort, like `release`.
