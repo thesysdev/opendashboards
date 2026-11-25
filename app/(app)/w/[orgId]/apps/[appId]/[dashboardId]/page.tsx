@@ -1,6 +1,5 @@
 import type { Metadata } from "next";
 import { notFound, redirect } from "next/navigation";
-import { Suspense } from "react";
 
 import { LiveDashboard } from "@/components/apps/live-dashboard";
 import { getCurrentUserApp, trackDashboardView } from "@/lib/apps";
@@ -8,6 +7,9 @@ import { can } from "@/lib/orgs/policy";
 import { appPath } from "@/lib/apps/paths";
 
 type Params = Promise<{ orgId: string; appId: string; dashboardId: string }>;
+
+// Moving here keeps the current page up until this one has its data, rather than showing it empty.
+export const instant = false;
 
 /** The tab shows the dashboard's title. */
 export async function generateMetadata({ params }: { params: Params }): Promise<Metadata> {
@@ -22,15 +24,7 @@ export async function generateMetadata({ params }: { params: Params }): Promise<
  * dashboard that's gone (deleted, by the user or the agent, or a stale link)
  * leads to the app's home rather than a 404 that would hide the Build panel.
  */
-export default function DashboardPage({ params }: { params: Params }) {
-  return (
-    <Suspense fallback={null}>
-      <Dashboard params={params} />
-    </Suspense>
-  );
-}
-
-async function Dashboard({ params }: { params: Params }) {
+export default async function DashboardPage({ params }: { params: Params }) {
   const { orgId, appId, dashboardId } = await params;
   const app = await getCurrentUserApp(appId);
   if (!app || app.orgId !== orgId) notFound();

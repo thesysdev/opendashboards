@@ -1,21 +1,15 @@
 import { notFound } from "next/navigation";
-import { Suspense } from "react";
 
 import { NoDashboards } from "@/components/apps/dashboard-views";
 import { LiveDashboard } from "@/components/apps/live-dashboard";
 import { getCurrentUserApp, trackDashboardView } from "@/lib/apps";
 import { can } from "@/lib/orgs/policy";
 
-/** An app's home: its first dashboard, or the empty state when it has none. */
-export default function AppHomePage({ params }: { params: Promise<{ orgId: string; appId: string }> }) {
-  return (
-    <Suspense fallback={null}>
-      <AppHome params={params} />
-    </Suspense>
-  );
-}
+// Moving here keeps the current page up until this one has its data, rather than showing it empty.
+export const instant = false;
 
-async function AppHome({ params }: { params: Promise<{ orgId: string; appId: string }> }) {
+/** An app's home: its first dashboard, or the empty state when it has none. */
+export default async function AppHomePage({ params }: { params: Promise<{ orgId: string; appId: string }> }) {
   const { orgId, appId } = await params;
   const app = await getCurrentUserApp(appId);
   if (!app || app.orgId !== orgId) notFound();

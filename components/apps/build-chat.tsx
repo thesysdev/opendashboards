@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/apps/paths";
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
-import { usePublishDashboardResponse, useSetBuildRunning, useSetCreatingDashboard } from "./app-workspace";
+import { usePublishDashboardResponse, useSetBuildRunning } from "./app-workspace";
 import { scopeStorageToApp } from "@/lib/apps/thread-storage";
 import { cn } from "@/lib/utils";
 
@@ -538,10 +538,8 @@ function TurnEffects({
 
   // Cloud's create/edit responses go to the dashboard they're for as they
   // arrive, so an open dashboard follows the edit; a new one opens to be watched.
-  // While a create call runs, the workspace shows the new dashboard pending.
   const messages = useThread((s) => s.messages);
   const publish = usePublishDashboardResponse();
-  const setCreating = useSetCreatingDashboard();
   const handled = useRef(new Set<string>());
   const opening = useRef<string | null>(null);
   // Create and edit calls whose dashboard has started building: it's open (a new one
@@ -555,7 +553,6 @@ function TurnEffects({
       publish(artifactId, response);
       if (tool === "create_dashboard") {
         opening.current = artifactId;
-        setCreating((current) => ({ at: current?.at ?? pathname, response }));
         router.refresh(); // The server has recorded it; the sidebar picks it up.
       }
     };
@@ -563,7 +560,7 @@ function TurnEffects({
     return () => {
       startedListeners.delete(onStarted);
     };
-  }, [startedListeners, pathname, publish, router, setCreating]);
+  }, [startedListeners, publish, router]);
   useEffect(() => {
     if (!isRunning) return;
     // Only this turn's messages, after the message that started it. The thread's
@@ -576,46 +573,22 @@ function TurnEffects({
       if (message.role !== "assistant") continue;
       for (const call of message.toolCalls ?? []) toolNames.set(call.id, call.function.name);
     }
-    const answered = new Set<string>();
     for (const message of turn) {
       if (message.role !== "tool") continue;
-      answered.add(message.toolCallId);
       if (handled.current.has(message.id)) continue;
       handled.current.add(message.id);
       const tool = toolNames.get(message.toolCallId);
       if (tool !== "create_dashboard" && tool !== "edit_dashboard") continue;
       const artifactId = artifactIdOf(message.content);
-      // Started earlier: it's open already, and the last response only updates it.
-      const wasStarted = started.current.has(message.toolCallId);
-      if (!artifactId) {
-        if (tool === "create_dashboard" && !wasStarted) setCreating(null); // It failed: nothing to show.
-        continue;
-      }
+      if (!artifactId) continue;
       publish(artifactId, message.content);
-      if (tool === "create_dashboard" && !wasStarted) {
+      // Started earlier: it's open already, and the last response only updates it.
+      if (tool === "create_dashboard" && !started.current.has(message.toolCallId)) {
         opening.current = artifactId;
-        setCreating((current) => ({ at: current?.at ?? pathname, response: message.content }));
         router.refresh(); // The server has recorded it; the sidebar picks it up.
       }
     }
-    // A create call in this turn that the model is still writing, or that's still
-    // running with no dashboard yet: pending on the page it started from. A second
-    // one replaces a first that's started. Earlier turns don't count: a stopped one
-    // never gets an answer.
-    const waiting = turn.some(
-      (message) =>
-        message.role === "assistant" &&
-        (message.toolCalls ?? []).some(
-          (call) => call.function.name === "create_dashboard" && !answered.has(call.id) && !started.current.has(call.id),
-        ),
-    );
-    if (waiting) setCreating((current) => (current && !current.response ? current : { at: pathname }));
-  }, [isRunning, messages, pathname, publish, router, setCreating]);
-
-  // A run that ends without a response, stopped or failed, leaves nothing pending.
-  useEffect(() => {
-    if (!isRunning) setCreating((current) => (current?.response ? current : null));
-  }, [isRunning, setCreating]);
+  }, [isRunning, messages, publish, router]);
 
   useEffect(() => {
     if (!opening.current) return;
