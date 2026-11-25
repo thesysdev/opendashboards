@@ -202,7 +202,7 @@ const createArgs = z.object({
     .min(1)
     .max(20_000)
     .describe(
-      "What the user wants to see and who it's for, and which connection and data to use. Leave the queries, date ranges and filters to the dashboard builder. " +
+      "What the user wants to see and who it's for, and the connection id and data to use. Leave the queries, date ranges and filters to the dashboard builder. " +
         "Leave out its title and description: OpenDashboards draws those above it.",
     ),
 });
