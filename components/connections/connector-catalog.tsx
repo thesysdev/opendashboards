@@ -17,19 +17,19 @@ import { SourceTile } from "./source-tile";
  * Every source and known MCP server, by what people build dashboards about.
  * Picking one opens its connect dialog. `sampleData` is a tile that adds the
  * sample dataset, for someone who has connections but hasn't added it.
- * `hidden`: source types not offered here (still rolling out).
+ * `offered`: the source types this person can add here; others aren't shown.
  */
 export function ConnectorCatalog({
   secretMode,
   sampleData,
-  hidden = [],
+  offered,
 }: {
   secretMode: SecretMode;
   sampleData?: React.ReactNode;
-  hidden?: ConnectionType[];
+  offered: ConnectionType[];
 }) {
   const [query, setQuery] = useState("");
-  const shown = (entries: CatalogEntry[]) => entries.filter((entry) => entry.open.kind !== "source" || !hidden.includes(entry.open.source.type));
+  const shown = (entries: CatalogEntry[]) => entries.filter((entry) => entry.open.kind !== "source" || offered.includes(entry.open.source.type));
   const [selected, setSelected] = useState<CatalogEntry | null>(null);
   const [open, setOpen] = useState(false);
   const searching = query.trim().length > 0;

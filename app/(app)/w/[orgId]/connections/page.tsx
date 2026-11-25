@@ -18,7 +18,6 @@ import { getOrgService, requireMemberOf } from "@/lib/orgs";
 import { asWorkspace } from "@/lib/orgs/access";
 import { can } from "@/lib/orgs/policy";
 import { getSecretMode } from "@/lib/secrets";
-import { hiddenSources } from "@/lib/sources/flags";
 import { cn } from "@/lib/utils";
 
 export const metadata: Metadata = { title: "Data Connections" };
@@ -43,11 +42,11 @@ export default function ConnectionsPage({ params }: { params: Params }) {
 async function ConnectionsContent({ params }: { params: Params }) {
   const member = await requireMemberOf((await params).orgId);
   const service = getConnectionService();
-  const [connections, demos, org, hidden] = await Promise.all([
+  const [connections, demos, org, sources] = await Promise.all([
     service.list(member),
     service.listDemoDatasets(member),
     getOrgService().get(member.userId, member.orgId),
-    hiddenSources(member),
+    service.offeredSources(member),
   ]);
   // Who serves whom only matters once someone else is here (or is about to be): alone, there's nobody to share with.
   const shared = (org?.members.length ?? 1) + (org?.invites.length ?? 0) > 1;
@@ -106,7 +105,7 @@ async function ConnectionsContent({ params }: { params: Params }) {
           )}
           <ConnectorCatalog
             secretMode={secretMode}
-            hidden={hidden}
+            offered={[...new Set(sources.map((source) => source.type))]}
             sampleData={
               sample &&
               connections.length > 0 && <SampleDataTile dataset={sample.key} name={sample.name} summary={sample.summary} />

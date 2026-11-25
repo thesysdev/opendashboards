@@ -4,7 +4,7 @@ import { ExternalLinkIcon, Loader2Icon, TriangleAlertIcon, UploadIcon } from "lu
 import { Fragment, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { createConnectionAction, replaceCredentialAction, startMcpSignInAction } from "@/app/(app)/connections/actions";
+import { createConnectionAction, replaceCredentialAction, startSignInAction } from "@/app/(app)/connections/actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -95,7 +95,7 @@ export function SourceFormDialog(props: Props) {
   function signIn() {
     startTransition(async () => {
       const name = values.name ?? "";
-      const result = await startMcpSignInAction(
+      const result = await startSignInAction(
         isComposioToolkit(type)
           ? { orgId, name, source: type, sharing }
           : service

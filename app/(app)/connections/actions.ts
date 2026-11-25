@@ -43,7 +43,7 @@ async function runIn<T>(input: unknown, call: (member: Member, fields: unknown) 
  * sign-in page to send the browser to; the connection is saved when it comes
  * back to /api/mcp/oauth/callback or /api/composio/callback.
  */
-export async function startMcpSignInAction(input: unknown) {
+export async function startSignInAction(input: unknown) {
   const { orgId, fields } = inWorkspace(input);
   const member = await memberOf(orgId);
   if (!member) return fail({ code: "not_found", message: "You aren't a member of this workspace any more. Reload the page." });
