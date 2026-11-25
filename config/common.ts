@@ -8,7 +8,7 @@ export const common: CommonSettings = {
     model: "anthropic/claude-sonnet-5.5",
     // Complete dashboards and the fastest edits in our comparison; a build makes several
     // model calls, so a low effort keeps each one short.
-    dashboardModel: "google/gemini-4-neon-free",
+    dashboardModel: "google/gemini-4-neon",
     dashboardReasoningEffort: "low",
     maxAgentRounds: 24,
   },
