@@ -121,16 +121,18 @@ export interface ConnectionSource<Config extends Record<string, unknown> = Recor
    */
   retest?(connection: OpenConnection<Config>): Promise<ConnectionWarning[]>;
   /**
-   * Lets go of what a credential holds elsewhere, once it's deleted here (signed
-   * out, replaced by a new sign-in, or its connection removed). Optional: only a
-   * source whose sign-ins live with another service (Composio) needs it.
+   * Lets go of what a credential holds elsewhere once its sign-in is deleted
+   * here: signed out, replaced by a new sign-in, its connection removed, its
+   * member gone from the workspace, or the workspace deleted. Optional: only a
+   * source whose sign-ins live with another service (e.g. Composio) needs it.
    * Best effort: a failure is logged, never shown.
    */
   release?(credential: string): Promise<void>;
   /**
-   * Whether this deployment is set up to connect the source: what it needs of
-   * its own is configured (Composio's key and auth config, for Google Ads).
-   * Optional: without it, always. A source that isn't isn't offered.
+   * Whether this deployment is set up to connect the source, e.g. Composio's
+   * key and the source's auth config are set. Optional: without it, the source
+   * is always available. One that isn't available isn't offered, and new
+   * connections to it are refused.
    */
   available?(): boolean;
   /** Who runs the sign-in of a source that `signsIn`: how a new connection to it starts. Server only. */
