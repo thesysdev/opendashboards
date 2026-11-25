@@ -101,7 +101,7 @@ export async function startMcpSignIn(
     ({ url, service: preset } = settings.data);
     ({ name, sharing: sharingOf } = parsed.data);
     // One connection per server that requires sign-in: everyone signs in to the same one.
-    const already = sharingOf === "personal" ? await service.signInConnectionTo(scope, url) : null;
+    const already = sharingOf === "personal" ? await service.signInConnectionTo(scope, { url }) : null;
     if (already) {
       connectionId = already.id;
       ({ name } = already);

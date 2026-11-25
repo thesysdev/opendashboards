@@ -115,7 +115,7 @@ export function SourceFormDialog(props: Props) {
       }
       // The workspace already has this server, with everyone signing in: this signs in to that one.
       if (result.data.existing) {
-        toast.info(`This server is already here as ${result.data.existing}. Signing you in to it.`);
+        toast.info(`This is already here as ${result.data.existing}. Signing you in to it.`);
         await new Promise((resolve) => setTimeout(resolve, 1500));
       }
       window.location.assign(result.data.authorizationUrl);

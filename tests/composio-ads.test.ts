@@ -252,6 +252,29 @@ describe("signing in through Composio", () => {
     expect(readComposioCredential(await plaintextSecretBox.open(signIn!.secret, { purpose: "", userId: "", connectionId: "" }))).toEqual({ composioUserId: accountState.user_id, connectedAccountId: "ca_new" });
   });
 
+  it("adding the same source again signs in to the workspace's connection, like an MCP server", async () => {
+    const first = await start();
+    const done = await finishComposioSignIn("alice", first.state, deps);
+    if (!done.ok) throw new Error(done.error.code);
+
+    accountState.user_id = "";
+    const again = await startComposioSignIn(workspaceOf("alice"), { name: "Ads again", source: "googleads" }, deps);
+    expect(again).toMatchObject({ ok: true, data: { existing: "Ads" } });
+    const link = composio.calls.findLast((call) => call.path.endsWith("/connected_accounts/link"))?.body as { callback_url: string };
+    const finished = await finishComposioSignIn("alice", stateOf(link.callback_url), deps);
+    expect(finished).toMatchObject({ ok: true, data: { id: done.data.id } });
+    expect(await db.select().from(dataConnections)).toHaveLength(1);
+
+    // A shared connection is its own: it isn't one each person signs in to.
+    accountState.user_id = "";
+    expect(await startComposioSignIn(workspaceOf("alice"), { name: "Team ads", source: "googleads", sharing: "org" }, deps)).toMatchObject({
+      ok: true,
+      data: { existing: null },
+    });
+    // Another source is another connection.
+    expect(await startComposioSignIn(workspaceOf("alice"), { name: "Meta", source: "metaads" }, deps)).toMatchObject({ ok: true, data: { existing: null } });
+  });
+
   it("comes back to a path that carries the state, whatever Composio appends", async () => {
     await start();
     const link = composio.calls.findLast((call) => call.path.endsWith("/connected_accounts/link"))?.body as { callback_url: string };

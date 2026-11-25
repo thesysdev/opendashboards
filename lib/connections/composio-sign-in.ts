@@ -66,6 +66,7 @@ export async function startComposioSignIn(
   let toolkit: ComposioToolkit;
   let name: string;
   let connectionId: string | null = null;
+  let existing: string | null = null;
   let returnTo: string | undefined;
   let sharingOf: "personal" | "org" = "personal";
   let orgId = scope.orgId;
@@ -79,6 +80,13 @@ export async function startComposioSignIn(
     connectionId = found.data.id;
   } else {
     ({ name, source: toolkit, sharing: sharingOf } = parsed.data);
+    // One connection per source that requires sign-in, like an MCP server: everyone signs in to the same one.
+    const already = sharingOf === "personal" ? await service.signInConnectionTo(scope, { type: toolkit }) : null;
+    if (already) {
+      connectionId = already.id;
+      ({ name } = already);
+      existing = already.name;
+    }
   }
 
   try {
@@ -95,7 +103,7 @@ export async function startComposioSignIn(
       discard(link.connectedAccountId, deps);
       return saved;
     }
-    return ok({ authorizationUrl: link.redirectUrl, existing: null });
+    return ok({ authorizationUrl: link.redirectUrl, existing });
   } catch (error) {
     return failure("start", error);
   }

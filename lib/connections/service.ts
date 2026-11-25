@@ -961,11 +961,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     },
 
     /**
-     * The workspace's connection that requires sign-in to this server, if it
-     * has one: a second one would only be the same server under another name,
-     * so signing in to it is what someone adding it again means.
+     * The workspace's connection that requires sign-in to this server (an MCP
+     * server's URL) or of this source (Google Ads, Meta Ads), if it has one: a
+     * second one would only be the same thing under another name, so signing
+     * in to it is what someone adding it again means.
      */
-    async signInConnectionTo(scope: Scope, url: string): Promise<{ id: string; name: string } | null> {
+    async signInConnectionTo(scope: Scope, target: { url: string } | { type: ConnectionType }): Promise<{ id: string; name: string } | null> {
       if (!(await roleIn(db, scope.userId, scope.orgId))) return null;
       const [row] = await db
         .select({ id: dataConnections.id, name: dataConnections.name })
@@ -975,7 +976,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             inWorkspace(scope),
             eq(dataConnections.sharing, "personal"),
             sql`${dataConnections.config} -> 'oauth' is not null`,
-            sql`${dataConnections.config} ->> 'url' = ${url}`,
+            "url" in target ? sql`${dataConnections.config} ->> 'url' = ${target.url}` : eq(dataConnections.type, target.type),
           ),
         )
         .orderBy(asc(dataConnections.createdAt))
