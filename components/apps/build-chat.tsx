@@ -528,17 +528,14 @@ function TurnEffects({
       const artifactId = artifactIdOf(response);
       if (!artifactId) return;
       publish(artifactId, response);
-      if (tool === "create_dashboard") {
-        opening.current = artifactId;
-        setCreating((current) => ({ at: current?.at ?? pathname, response }));
-        router.refresh(); // The server has recorded it; the sidebar picks it up.
-      }
+      // A new dashboard builds where the chat is; it opens its own page once it's saved.
+      if (tool === "create_dashboard") setCreating((current) => ({ at: current?.at ?? pathname, response }));
     };
     startedListeners.add(onStarted);
     return () => {
       startedListeners.delete(onStarted);
     };
-  }, [startedListeners, pathname, publish, router, setCreating]);
+  }, [startedListeners, pathname, publish, setCreating]);
   useEffect(() => {
     if (!isRunning) return;
     // Only this turn's messages, after the message that started it. The thread's
@@ -567,7 +564,7 @@ function TurnEffects({
         continue;
       }
       publish(artifactId, message.content);
-      if (tool === "create_dashboard" && !wasStarted) {
+      if (tool === "create_dashboard") {
         opening.current = artifactId;
         setCreating((current) => ({ at: current?.at ?? pathname, response: message.content }));
         router.refresh(); // The server has recorded it; the sidebar picks it up.
