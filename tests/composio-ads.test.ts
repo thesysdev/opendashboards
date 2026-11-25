@@ -2,6 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { finishComposioSignIn, startComposioSignIn } from "@/lib/connections/composio-sign-in";
+import { deleteSignIns } from "@/lib/connections/deleted-sign-ins";
 import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
 import { apps, connectionSignIns, dataConnections, mcpOAuthSignIns } from "@/lib/db/schema";
@@ -306,6 +307,25 @@ describe("signing in through Composio", () => {
       expect(deleted).toEqual(["ca_new"]);
       accountState = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
     }
+  });
+
+  it("lets go of the Composio account when a member leaving or a workspace deleted takes the sign-in", async () => {
+    const { state } = await start();
+    const finished = await finishComposioSignIn("alice", state, deps);
+    if (!finished.ok) throw new Error(finished.error.code);
+    composio.calls.length = 0;
+
+    // What lib/orgs does when Alice leaves: delete her sign-ins in its transaction, then hand them over.
+    const gone = await db.transaction((tx) => deleteSignIns(tx, { orgId: workspaceOf("alice").orgId, userId: "alice" }));
+    expect(gone.map(({ type, signIn }) => [type, signIn.connectionId])).toEqual([["googleads", finished.data.id]]);
+    await service.releaseDeleted(gone);
+
+    // Revoked at the platform, then deleted from Composio.
+    expect(composio.calls.map(({ method, path }) => `${method} ${path.replace("/api/v3.1", "")}`)).toEqual([
+      "POST /connected_accounts/ca_new/revoke",
+      "DELETE /connected_accounts/ca_new",
+    ]);
+    expect(await db.select().from(connectionSignIns)).toEqual([]);
   });
 
   it("can't be finished twice, or by someone else", async () => {
