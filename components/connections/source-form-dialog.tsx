@@ -97,10 +97,10 @@ export function SourceFormDialog(props: Props) {
       const name = values.name ?? "";
       const result = await startSignInAction(
         signsInToSource(type)
-          ? { orgId, name, source: type, sharing }
+          ? { orgId, kind: "source", name, source: type, sharing }
           : service
-            ? { orgId, name, service, sharing }
-            : { orgId, name, url: values.url ?? "", sharing },
+            ? { orgId, kind: "service", name, service, sharing }
+            : { orgId, kind: "url", name, url: values.url ?? "", sharing },
       );
       if (!result.ok) {
         // Each result replaces the last one's message: a stale error under a field would contradict it.

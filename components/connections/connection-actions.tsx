@@ -82,7 +82,7 @@ export function ConnectionActions({
 
   function signIn() {
     startTest(async () => {
-      const result = await startSignInAction({ orgId, connectionId: connection.id });
+      const result = await startSignInAction({ orgId, kind: "connection", connectionId: connection.id });
       if (result.ok) window.location.assign(result.data.authorizationUrl);
       else toast.error(result.error.message);
     });

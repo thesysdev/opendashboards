@@ -39,7 +39,7 @@ export function SignInAgainBanner({ problems }: { problems: SignInProblem[] }) {
 
   function signIn(connectionId: string) {
     startTransition(async () => {
-      const result = await startSignInAction({ orgId, connectionId, returnTo: pathname });
+      const result = await startSignInAction({ orgId, kind: "connection", connectionId, returnTo: pathname });
       if (result.ok) window.location.assign(result.data.authorizationUrl);
       else toast.error(result.error.message);
     });
