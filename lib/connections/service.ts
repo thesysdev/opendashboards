@@ -173,13 +173,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db } = deps;
   const gate = deps.gate ?? OPEN_GATE;
   const notOffered = deps.notOffered ?? (async () => []);
+  const now = deps.now ?? (() => new Date());
 
   /** Refuses adding a connection of a type that isn't offered to this person here. */
   async function refuseNotOffered(scope: Scope, type: ConnectionType): Promise<Result<never> | null> {
     if (!(await notOffered(scope)).includes(type)) return null;
     return fail({ code: "not_available", message: "This source isn't available in this workspace yet." });
   }
-  const now = deps.now ?? (() => new Date());
 
   /** Adds a connection row (and anything with it) only if the plan still allows one, under the plan's lock. */
   async function insertWithinPlan(orgId: string, insert: (tx: Parameters<Parameters<Database["transaction"]>[0]>[0]) => Promise<void>) {
@@ -594,13 +594,13 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       return summaries;
     },
 
-    /** Every demo dataset on offer, and whether the org has it installed. */
     /** The sources this person can add in this workspace, in catalog order. */
     async offeredSources(scope: Scope): Promise<SourceOption[]> {
       const hidden = await notOffered(scope);
       return SOURCE_OPTIONS.filter((option) => !hidden.includes(option.type));
     },
 
+    /** Every demo dataset on offer, and whether the org has it installed. */
     async listDemoDatasets(scope: Scope): Promise<DemoDatasetSummary[]> {
       const datasets = demoDatasets();
       if (!datasets.length) return [];
