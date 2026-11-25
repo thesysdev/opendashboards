@@ -3,7 +3,7 @@ import "server-only";
 import { z } from "zod";
 
 import type { Scope } from "@/lib/orgs/access";
-import { signInOf } from "@/lib/sources/catalog";
+import { signInProviderOf } from "@/lib/sources";
 
 import { getConnectionService } from ".";
 import { startComposioSignIn } from "./composio-sign-in";
@@ -25,7 +25,7 @@ const requestSchema = z.discriminatedUnion("kind", [
 
 type Started = Result<{ authorizationUrl: string; existing: string | null }>;
 
-/** Each way of signing in, by the provider a source's catalog or a saved connection's config names. */
+/** Each way of signing in, by the provider a source (its signInProvider) or a saved connection's config names. */
 const START = {
   composio: startComposioSignIn,
   mcp: startMcpSignIn,
@@ -42,7 +42,7 @@ function providerOf(config: object): Provider {
 
 /**
  * Starts whichever sign-in the request is for: a new connection signs in the
- * way its source does now (its catalog says), a known or typed-in MCP server
+ * way its source does now (its signInProvider), a known or typed-in MCP server
  * with its own OAuth, and a connection that exists the way it was made (its
  * own config says).
  */
@@ -52,7 +52,7 @@ export async function startSignIn(scope: Scope, input: unknown): Promise<Started
   const { kind, ...request } = parsed.data;
   switch (kind) {
     case "source": {
-      const provider = signInOf(parsed.data.source);
+      const provider = signInProviderOf(parsed.data.source);
       if (!provider) return fail({ code: "validation", message: "This source doesn't connect by signing in." });
       return START[provider](scope, request);
     }

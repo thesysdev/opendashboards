@@ -72,14 +72,9 @@ export const SOURCE_OPTIONS: SourceOption[] = CATALOGS.flatMap(({ type, label, b
     : []),
 ]);
 
-/** Who runs a source's sign-in, when people connect it by signing in to the platform itself (Google Ads, Meta Ads). */
-export function signInOf(type: string): SourceCatalog["signIn"] {
-  return CATALOGS.find((catalog) => catalog.type === type)?.signIn;
-}
-
 /**
  * Whether a source connects by signing in to the source itself (Google Ads,
  * Meta Ads), rather than to a server at a URL (an MCP server) or with a key.
- * Who runs that sign-in is the source's business, not the form's.
+ * Who runs that sign-in is the server's business, not the form's.
  */
-export const signsInToSource = (type: string): boolean => signInOf(type) !== undefined;
+export const signsInToSource = (type: string): boolean => CATALOGS.find((catalog) => catalog.type === type)?.signsIn === true;

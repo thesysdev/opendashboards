@@ -1,6 +1,6 @@
 import "server-only";
 
-import type { ConnectionType } from "./catalog";
+import { CONNECTION_TYPES, type ConnectionType } from "./catalog";
 import { bigquerySource } from "./bigquery/source";
 import { clickhouseSource } from "./clickhouse/source";
 import { ga4Source } from "./ga4/source";
@@ -35,3 +35,8 @@ export function sourceFor(type: ConnectionType): ConnectionSource {
 }
 
 export const ALL_SOURCES: readonly ConnectionSource[] = Object.values(SOURCES);
+
+/** Who runs the sign-in of a source that people connect by signing in to it; undefined for any other source, or no source. */
+export function signInProviderOf(type: string): ConnectionSource["signInProvider"] {
+  return (CONNECTION_TYPES as readonly string[]).includes(type) ? SOURCES[type as ConnectionType].signInProvider : undefined;
+}

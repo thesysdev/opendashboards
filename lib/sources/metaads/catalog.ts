@@ -15,6 +15,6 @@ export const metaAdsCatalog: SourceCatalog<MetaAdsConfig, "metaads"> = {
   blurb: "Facebook and Instagram ads: spend, reach and results",
   tile: "MA",
   configSchema: metaAdsConfigSchema,
-  signIn: "composio",
+  signsIn: true,
   describe: () => ({ source: "Meta Ads", shortSource: "Meta Ads", detail: "Signed in with Facebook", tile: "MA" }),
 };

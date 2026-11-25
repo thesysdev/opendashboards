@@ -180,6 +180,7 @@ export const metaAdsSource: ConnectionSource<MetaAdsConfig> = {
     await checkAccount("metaads", readComposioCredential(credential), metaAdsDeps.composio, signal);
     return [];
   },
+  signInProvider: "composio",
   available: () => isConfigured(metaAdsCatalog.type),
   release: (credential) => releaseAccount(credential, metaAdsDeps.composio),
   toError: (error) => composioToError(metaAdsCatalog, error),
