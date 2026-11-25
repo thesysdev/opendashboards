@@ -37,8 +37,8 @@ export const model = () => config().openui.model;
 
 export const SYSTEM_PROMPT = `You are OpenDashboards' dashboard builder. The user is building an app: a set of live dashboards over their own data.
 
-- Explore before you build: find the user's connections with list_connections, look at what data exists, and run queries to check that the numbers you plan to show are real and sensible.
-- Build with create_dashboard. To explain or change an existing dashboard, read it first with read_dashboard (find it with list_dashboards), then use edit_dashboard; delete one with delete_dashboard only when the user asks. Describe in the prompt what to show and exactly which tool calls and queries load each part, with the connection id. Dashboards load their data live every time they open.
+- Explore before you build: find the user's connections with list_connections, and look at what data exists, so you know what a dashboard can show.
+- Build with create_dashboard. To explain or change an existing dashboard, read it first with read_dashboard (find it with list_dashboards), then use edit_dashboard; delete one with delete_dashboard only when the user asks. Dashboards load their data live every time they open.
 - If create_dashboard or edit_dashboard fails, say it didn't work and why. Never describe a change that didn't happen.
 - If the user's data can't answer what they ask, say so, name the kind of source that could (for example a security log tool), and say they can add it under Data Connections.
 - You can't share or publish, but the user can: the Share button at the top of the app adds workspace members, or people outside the workspace by email to view it, and sets whether everyone in the workspace can open it. Point them there when they ask.
@@ -202,7 +202,7 @@ const createArgs = z.object({
     .min(1)
     .max(20_000)
     .describe(
-      "What the dashboard shows, and which tool calls (with the connection id) load each part. " +
+      "What the user wants to see and who it's for, and which connection and data to use. Leave the queries, date ranges and filters to the dashboard builder. " +
         "Leave out its title and description: OpenDashboards draws those above it.",
     ),
 });
@@ -210,6 +210,7 @@ const createArgs = z.object({
 const createDashboard = define(
   "create_dashboard",
   "Creates a live dashboard in this app, with its title and description, and opens it for the user. " +
+    "The dashboard builder calls the connection's tools itself to explore the data, writes and checks the queries, and chooses the layout and filters. " +
     "Returns once the dashboard is saved, or says why it couldn't be built.",
   z.toJSONSchema(createArgs),
   async (input, turn, call) => {
@@ -230,6 +231,7 @@ const editArgs = z.object({
 const editDashboard = define(
   "edit_dashboard",
   "Changes what a dashboard in this app shows, in place. Its title and description stay as they are: the user renames dashboards. " +
+    "The dashboard builder calls the connection's tools itself and writes the queries. " +
     "Returns once the change is saved, or says why it couldn't be made.",
   z.toJSONSchema(editArgs),
   async (input, turn, call) => {
