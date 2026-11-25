@@ -4,7 +4,7 @@ import { SearchIcon } from "lucide-react";
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
-import type { ConnectionType } from "@/lib/sources/catalog";
+import type { SourceOption } from "@/lib/sources/catalog";
 import { ANY_MCP_SERVER, CATALOG_CATEGORIES, POPULAR, searchCatalog, type CatalogEntry } from "@/lib/sources/directory";
 
 import { LimitPrompt, useAtLimit, useViewOnly } from "@/components/billing/workspace-plan";
@@ -17,19 +17,22 @@ import { SourceTile } from "./source-tile";
  * Every source and known MCP server, by what people build dashboards about.
  * Picking one opens its connect dialog. `sampleData` is a tile that adds the
  * sample dataset, for someone who has connections but hasn't added it.
- * `offered`: the source types this person can add here; others aren't shown.
+ * `sources`: the sources this person can add here; only those are shown (an
+ * MCP server's entry, with the MCP source).
  */
 export function ConnectorCatalog({
   secretMode,
   sampleData,
-  offered,
+  sources,
 }: {
   secretMode: SecretMode;
   sampleData?: React.ReactNode;
-  offered: ConnectionType[];
+  sources: SourceOption[];
 }) {
   const [query, setQuery] = useState("");
-  const shown = (entries: CatalogEntry[]) => entries.filter((entry) => entry.open.kind !== "source" || offered.includes(entry.open.source.type));
+  const offered = new Set(sources.map((source) => source.key));
+  const isOffered = (entry: CatalogEntry) => offered.has(entry.open.kind === "source" ? entry.key : ANY_MCP_SERVER.key);
+  const shown = (entries: CatalogEntry[]) => entries.filter(isOffered);
   const [selected, setSelected] = useState<CatalogEntry | null>(null);
   const [open, setOpen] = useState(false);
   const searching = query.trim().length > 0;
@@ -86,18 +89,20 @@ export function ConnectorCatalog({
         </>
       )}
 
-      <button
-        type="button"
-        onClick={() => pick(ANY_MCP_SERVER)}
-        disabled={paused}
-        className="flex w-full items-center gap-3 rounded-xl border border-dashed p-3.5 text-left transition-colors hover:bg-neutral-50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
-      >
-        <SourceTile label={ANY_MCP_SERVER.tile} className="size-9" />
-        <span className="min-w-0">
-          <span className="block text-sm font-medium">Any MCP server</span>
-          <span className="block text-sm text-muted-foreground">Connect another remote server by its URL, with a sign-in or an API key.</span>
-        </span>
-      </button>
+      {isOffered(ANY_MCP_SERVER) && (
+        <button
+          type="button"
+          onClick={() => pick(ANY_MCP_SERVER)}
+          disabled={paused}
+          className="flex w-full items-center gap-3 rounded-xl border border-dashed p-3.5 text-left transition-colors hover:bg-neutral-50 focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-none disabled:pointer-events-none disabled:opacity-50"
+        >
+          <SourceTile label={ANY_MCP_SERVER.tile} className="size-9" />
+          <span className="min-w-0">
+            <span className="block text-sm font-medium">Any MCP server</span>
+            <span className="block text-sm text-muted-foreground">Connect another remote server by its URL, with a sign-in or an API key.</span>
+          </span>
+        </button>
+      )}
 
       {selected && (
         <ConnectDialog

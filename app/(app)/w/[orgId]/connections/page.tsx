@@ -105,7 +105,7 @@ async function ConnectionsContent({ params }: { params: Params }) {
           )}
           <ConnectorCatalog
             secretMode={secretMode}
-            offered={[...new Set(sources.map((source) => source.type))]}
+            sources={sources}
             sampleData={
               sample &&
               connections.length > 0 && <SampleDataTile dataset={sample.key} name={sample.name} summary={sample.summary} />
