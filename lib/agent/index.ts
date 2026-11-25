@@ -203,6 +203,7 @@ const createArgs = z.object({
     .max(20_000)
     .describe(
       "What the user wants to see and who it's for, and the connection id and data to use. Leave the queries, date ranges and filters to the dashboard builder. " +
+        "The builder sees only this prompt and the connection's data, not other dashboards: to change an existing dashboard, use edit_dashboard instead; to reuse parts of one, describe them here. " +
         "Leave out its title and description: OpenDashboards draws those above it.",
     ),
 });
