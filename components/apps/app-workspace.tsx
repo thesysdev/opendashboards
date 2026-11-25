@@ -13,7 +13,6 @@ import { Button } from "@/components/ui/button";
 import { appPath, dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/apps/paths";
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
 import { referenceOf } from "@/lib/dashboards/reference";
-import { LAB_ENABLED, labFetch } from "@/lib/lab/controller";
 import { cn } from "@/lib/utils";
 
 import { NewDashboard } from "./live-dashboard";
@@ -298,8 +297,7 @@ export function AppWorkspace({
   return (
     // One Cloud connection for the workspace: the chat and the dashboard
     // share its token and artifact cache. The token is this app's own.
-    // `fetch` is only set by the build lab (development), which scripts a dashboard's stream.
-    <OpenUICloudProvider token={frontendTokenPath(appId)} fetch={LAB_ENABLED ? labFetch : undefined}>
+    <OpenUICloudProvider token={frontendTokenPath(appId)}>
     <DashboardResponsesContext value={dashboardResponses}>
     <DashboardsOnScreenContext value={dashboardsOnScreen}>
     <BuildPanelContext value={buildPanel}>

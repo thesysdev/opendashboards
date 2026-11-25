@@ -12,7 +12,6 @@ import { toolLogo } from "@/components/connections/tool-logo";
 import { reportStream, useBuild } from "@/lib/dashboards/build-tracker";
 import { referenceOf } from "@/lib/dashboards/reference";
 import { SIGN_IN_LOST_HEADER } from "@/lib/dashboards/sign-in-lost";
-import { lab, LAB_ENABLED } from "@/lib/lab/controller";
 import { cn } from "@/lib/utils";
 
 import { useDashboardResponse, useDashboardsOnScreen } from "./app-workspace";
@@ -158,8 +157,7 @@ function DashboardView({
       const response = await fetch("/api/interpreter", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        // The build lab (development) replays a real dashboard under another id: its data calls go to the real one.
-        body: JSON.stringify(LAB_ENABLED ? await lab.dataRequest(request) : request),
+        body: JSON.stringify(request),
       });
       if (response.headers.get(SIGN_IN_LOST_HEADER)) refreshOnce();
       const body = (await response.json().catch(() => null)) as { result?: unknown; error?: unknown } | null;

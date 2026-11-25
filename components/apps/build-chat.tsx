@@ -48,11 +48,9 @@ import { dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/apps/paths
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
 import { usePublishDashboardResponse, useSetBuildRunning, useSetCreatingDashboard } from "./app-workspace";
 import { DashboardBuildCard, isDashboardBuildTool } from "./build-card";
-import { BuildLab } from "./build-lab";
 import { scopeStorageToApp } from "@/lib/apps/thread-storage";
 import { reportCall } from "@/lib/dashboards/build-tracker";
 import { referenceOf } from "@/lib/dashboards/reference";
-import { lab, LAB_ENABLED } from "@/lib/lab/controller";
 import { cn } from "@/lib/utils";
 
 type Dashboard = { id: string; artifactId: string };
@@ -143,8 +141,6 @@ export function BuildChat({
     () => ({
       streamProtocol: withDashboardEvents(agUIAdapter(), startedListeners),
       send: ({ threadId, messages, signal }) => {
-        // Build lab (development only): a run it has laid out answers in place of the server.
-        if (LAB_ENABLED && lab.armed) return Promise.resolve(lab.chatResponse(signal));
         return fetch(`/api/apps/${encodeURIComponent(appId)}/chat`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -184,7 +180,6 @@ export function BuildChat({
         />
         {/* A new app's first prompt starts its own conversation: nothing to reopen. */}
         {!startedWithPrompt && <ReopenLastThread appId={appId} startedThread={startedThread} />}
-        {LAB_ENABLED && <BuildLab viewingId={viewingId} fallbackId={dashboards[0]?.artifactId ?? null} />}
       </ChatProvider>
     </ThemeProvider>
   );
