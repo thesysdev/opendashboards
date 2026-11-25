@@ -91,17 +91,18 @@ export function SourceFormDialog(props: Props) {
     setPasteNote("Filled in the fields below. Check them, then test.");
   }
 
+  /** What this form signs in to: the platform itself (Google Ads), a known MCP server, or an MCP server by its URL. */
+  function signInRequest() {
+    const common = { orgId, name: values.name ?? "", sharing };
+    if (signsInToSource(type)) return { ...common, kind: "source", source: type };
+    if (service) return { ...common, kind: "service", service };
+    return { ...common, kind: "url", url: values.url ?? "" };
+  }
+
   /** OAuth instead of a key: the server's own sign-in page, then back to Data Connections. */
   function signIn() {
     startTransition(async () => {
-      const name = values.name ?? "";
-      const result = await startSignInAction(
-        signsInToSource(type)
-          ? { orgId, kind: "source", name, source: type, sharing }
-          : service
-            ? { orgId, kind: "service", name, service, sharing }
-            : { orgId, kind: "url", name, url: values.url ?? "", sharing },
-      );
+      const result = await startSignInAction(signInRequest());
       if (!result.ok) {
         // Each result replaces the last one's message: a stale error under a field would contradict it.
         if (result.error.field && fields.some((field) => field.name === result.error.field)) {
