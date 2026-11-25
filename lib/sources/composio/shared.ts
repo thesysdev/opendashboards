@@ -68,10 +68,6 @@ export async function releaseAccount(credential: string, deps?: ComposioDeps): P
   await deleteAccount(readComposioCredential(credential).connectedAccountId, deps);
 }
 
-/** Deletes the Composio account of a sign-in never finished, with any tokens it got: the source's `releasePending`. */
-export async function releasePendingAccount(pending: string, deps?: ComposioDeps): Promise<void> {
-  await deleteAccount(readPendingSignIn(pending).connectedAccountId, deps);
-}
 
 /** Throws unless the account is this toolkit's, this Composio user's, and active now. */
 export async function checkAccount(toolkit: ComposioToolkit, account: ComposioAccountRef, deps?: ComposioDeps, signal?: AbortSignal): Promise<void> {

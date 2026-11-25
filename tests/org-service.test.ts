@@ -398,15 +398,8 @@ describe("deleting a workspace", () => {
 describe("letting go of deleted sign-ins", () => {
   /** A service that records what it's asked to release, and Acme with a Google Ads connection both Alice and Bob signed in to. */
   async function signedIn() {
-    const released: DeletedSignIns["signIns"] = [];
-    const pending: DeletedSignIns["pending"] = [];
-    const releasing = createOrgService({
-      db,
-      release: async (deleted) => {
-        released.push(...deleted.signIns);
-        pending.push(...deleted.pending);
-      },
-    });
+    const released: DeletedSignIns = [];
+    const releasing = createOrgService({ db, release: async (deleted) => void released.push(...deleted) });
     const orgId = await team();
     await service.ensureUser(bob);
     await service.invite(alice.id, { orgId, email: bob.email, role: "editor" });
@@ -447,21 +440,21 @@ describe("letting go of deleted sign-ins", () => {
       secret: { v: 1, provider: "plaintext", value: "{}" },
       expiresAt: new Date(Date.now() + 60_000),
     });
-    return { releasing, released, pending, orgId };
+    return { releasing, released, orgId };
   }
 
   it("releases a removed member's sign-ins, and only theirs", async () => {
-    const { releasing, released, pending, orgId } = await signedIn();
+    const { releasing, released, orgId } = await signedIn();
     expect(await releasing.removeMember(alice.id, { orgId, userId: bob.id })).toEqual({ ok: true, data: undefined });
     expect(released.map(({ type, signIn }) => [type, signIn.userId])).toEqual([["googleads", bob.id]]);
-    expect(pending.map((row) => row.stateHash)).toEqual(["bob-unfinished"]);
+    // Their unfinished sign-in goes too.
+    expect(await db.select().from(mcpOAuthSignIns)).toEqual([]);
     expect((await db.select().from(connectionSignIns)).map((row) => row.userId)).toEqual([alice.id]);
   });
 
   it("releases every sign-in in a deleted workspace", async () => {
-    const { releasing, released, pending, orgId } = await signedIn();
+    const { releasing, released, orgId } = await signedIn();
     expect(await releasing.remove(alice.id, { orgId, name: "Acme" })).toEqual({ ok: true, data: undefined });
     expect(released.map(({ signIn }) => signIn.userId).sort()).toEqual([alice.id, bob.id]);
-    expect(pending.map((row) => row.stateHash)).toEqual(["bob-unfinished"]);
   });
 });

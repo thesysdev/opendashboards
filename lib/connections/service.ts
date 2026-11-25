@@ -1,7 +1,5 @@
 import { randomUUID } from "node:crypto";
 
-import { waitUntil } from "@vercel/functions";
-
 import { and, asc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
 
 import type { DemoDataset } from "@/config";
@@ -235,20 +233,6 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         await source.release(await openCredential(signIn.secret, context(type, signIn.userId, signIn.connectionId)));
       } catch (error) {
         logError("connections.releaseSignIn", error);
-      }
-    }
-  }
-
-  /** The same for sign-ins started and not finished, once their rows are deleted. Best effort. */
-  async function releasePending(rows: DeletedSignIns["pending"]): Promise<void> {
-    for (const row of rows) {
-      const config = connectionConfigSchema.safeParse(row.config);
-      const source = config.success ? deps.sources(config.data.type) : null;
-      if (!source?.releasePending) continue;
-      try {
-        await source.releasePending(await deps.secrets().open(row.secret, signInContext(row.userId, row.stateHash)));
-      } catch (error) {
-        logError("connections.releasePending", error);
       }
     }
   }
@@ -892,12 +876,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
      * After sign-ins were deleted elsewhere (a member leaving, a workspace
      * deleted): lets each source let go of what they held. Best effort.
      */
-    async releaseDeleted({ signIns, pending }: DeletedSignIns): Promise<void> {
-      for (const { type, signIn } of signIns) {
+    async releaseDeleted(deleted: DeletedSignIns): Promise<void> {
+      for (const { type, signIn } of deleted) {
         keyCache.delete(signIn.id);
         await releaseSignIns(type, [signIn]);
       }
-      await releasePending(pending);
     },
 
     /**
@@ -1060,9 +1043,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         }
         const tooLarge = refuseIfTooLarge(sign.config.type, sign.pending, "create");
         if (tooLarge) return tooLarge;
-        // Old, abandoned sign-ins go first, with what they hold elsewhere (after the response).
-        const expired = await db.delete(mcpOAuthSignIns).where(lt(mcpOAuthSignIns.expiresAt, now())).returning();
-        if (expired.length) waitUntil(releasePending(expired));
+        // Old, abandoned sign-ins go first.
+        await db.delete(mcpOAuthSignIns).where(lt(mcpOAuthSignIns.expiresAt, now()));
         const secret = await deps.secrets().seal(sign.pending, signInContext(userId, sign.stateHash));
         await db.insert(mcpOAuthSignIns).values({
           stateHash: sign.stateHash,

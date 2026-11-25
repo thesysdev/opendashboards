@@ -329,21 +329,4 @@ describe("signing in through Composio", () => {
     expect(await db.select().from(dataConnections)).toEqual([]);
     await vi.waitFor(() => expect(deleted).toContain("ca_new"));
   });
-
-  it("lets go of the Composio account of a sign-in that expired before the browser came back", async () => {
-    await start();
-    await db.update(mcpOAuthSignIns).set({ expiresAt: new Date(Date.now() - 1_000) });
-    deleted = [];
-    // The next sign-in to start sweeps it, with its account.
-    await start("metaads");
-    await vi.waitFor(() => expect(deleted).toEqual(["ca_new"]));
-    expect(await db.select().from(mcpOAuthSignIns)).toHaveLength(1);
-  });
-
-  it("lets go of unfinished sign-ins deleted with a member, through the source", async () => {
-    await start();
-    const [row] = await db.select().from(mcpOAuthSignIns);
-    await service.releaseDeleted({ signIns: [], pending: [row!] });
-    expect(deleted).toEqual(["ca_new"]);
-  });
 });

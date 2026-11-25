@@ -132,12 +132,6 @@ export interface ConnectionSource<Config extends Record<string, unknown> = Recor
    * Optional: without it, always. A source that isn't isn't offered.
    */
   available?(): boolean;
-  /**
-   * The same for a sign-in started and never finished (abandoned, expired,
-   * or deleted with its member or workspace): `pending` is what the sign-in
-   * stored when it started. Optional, best effort, like `release`.
-   */
-  releasePending?(pending: string): Promise<void>;
   /** Turns this source's failures into a user-facing error and the status to record. */
   toError(error: unknown): { error: SourceError; status: Exclude<ConnectionStatus, "ok"> } | null;
   // Each tool has its own argument type; the runner validates them with the tool's schema.
