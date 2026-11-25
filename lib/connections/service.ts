@@ -223,7 +223,10 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 
   /**
    * After sign-ins are deleted: lets the source let go of what they held
-   * elsewhere (a Composio account, with its ad platform tokens). Best effort.
+   * elsewhere (a Composio account, with its ad platform tokens). Best effort,
+   * and only this part: the delete has already committed, so a failure at the
+   * other service is logged and the rest are still released, never turned
+   * into an error for a delete that worked.
    */
   async function releaseSignIns(type: ConnectionType, signIns: ConnectionSignInRow[]): Promise<void> {
     const source = deps.sources(type);
@@ -874,7 +877,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 
     /**
      * After sign-ins were deleted elsewhere (a member leaving, a workspace
-     * deleted): lets each source let go of what they held. Best effort.
+     * deleted): lets each source let go of what they held at another service.
+     * Best effort, like releaseSignIns: the deleting already happened.
      */
     async releaseDeleted(deleted: DeletedSignIns): Promise<void> {
       for (const { type, signIn } of deleted) {

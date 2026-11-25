@@ -119,7 +119,9 @@ export interface ConnectionSource<Config extends Record<string, unknown> = Recor
    * here: signed out, replaced by a new sign-in, its connection removed, its
    * member gone from the workspace, or the workspace deleted. Optional: only a
    * source whose sign-ins live with another service (e.g. Composio) needs it.
-   * Best effort: a failure is logged, never shown.
+   * Called only after the delete has committed, so best effort: a failure
+   * (that service down, say) is logged, never shown, and leaves what it held
+   * there. Deleting the rows themselves isn't best effort: that fails loudly.
    */
   release?(credential: string): Promise<void>;
   /**
