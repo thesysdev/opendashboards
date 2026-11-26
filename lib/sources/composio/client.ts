@@ -67,8 +67,6 @@ async function request<T>(
     body?: unknown;
     signal?: AbortSignal;
     timeoutMs?: number;
-    /** False: a failure's wording never makes it `reauth_required` (the caller asks the account instead). */
-    wording?: boolean;
   },
   deps: ComposioDeps,
   toolkit?: ComposioToolkit,
@@ -92,7 +90,7 @@ async function request<T>(
     throw new ComposioError(timeout.aborted ? "timeout" : "unavailable", (error as Error)?.message, toolkit);
   }
   const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw classify(response.status, body, path.startsWith("/connected_accounts/"), toolkit, init.wording ?? true);
+  if (!response.ok) throw classify(response.status, body, path.startsWith("/connected_accounts/"), toolkit);
   return body as T;
 }
 
@@ -116,31 +114,30 @@ function messageOf(body: unknown): string {
 }
 
 /**
- * Wording that says a connected account can't be used any more. Only a
- * fallback: Composio's errors carry no codes, so whether a failed tool run
- * means signing in again is decided by the account's status (`runTool`), and
- * this is read only when that can't be looked up. Includes Meta's expired
- * token (OAuthException 190): "Error validating access token: Session has
- * expired…".
+ * A failed tool run's message that says its connected account can't be used
+ * any more. Only a fallback: Composio's errors carry no codes, so whether a
+ * failed tool run means signing in again is decided by the account's status
+ * (`lostSignIn`), and this is read only when that can't be looked up.
+ * Includes Meta's expired token (OAuthException 190): "Error validating
+ * access token: Session has expired…".
  */
 const ACCOUNT_GONE =
   /connected[ _]?account.*(not found|inactive|expired|revoked|failed|deleted|disabled|not active)|(expired|revoked|invalid).*(token|credential|grant)|validating access token|session has expired|reauth/i;
 
 /**
- * `account`: the request was about one connected account, so a 404 means it's
- * gone (elsewhere, it's ours: a wrong tool or version). `wording`: whether the
- * message alone may say the sign-in is lost (see ACCOUNT_GONE).
+ * A failed request, by its HTTP status alone: its message never decides.
+ * 401/403 is our key (Composio's errors reference: "No valid API key
+ * provided", or a key without the permission). `account`: the request was
+ * about one connected account, so a 404 means it's gone (elsewhere, it's
+ * ours: a wrong tool or version). Whether a tool run's failure is a lost
+ * sign-in is `lostSignIn`'s to decide.
  */
-function classify(status: number, body: unknown, account: boolean, toolkit?: ComposioToolkit, wording = true): ComposioError {
+function classify(status: number, body: unknown, account: boolean, toolkit?: ComposioToolkit): ComposioError {
   const message = messageOf(body).slice(0, 1_000);
   const requestId = requestIdOf(body);
   const error = (code: ComposioErrorCode, detail: string) => new ComposioError(code, detail, toolkit, requestId);
-  const gone = wording && ACCOUNT_GONE.test(message);
-  if (status === 401 || status === 403) {
-    // A 401/403 about the connected account is the user's sign-in; about the key, it's ours.
-    return gone ? error("reauth_required", message) : error("project_rejected", message || `HTTP ${status}`);
-  }
-  if ((status === 404 && account) || gone) return error("reauth_required", message || "Account not found");
+  if (status === 401 || status === 403) return error("project_rejected", message || `HTTP ${status}`);
+  if (status === 404 && account) return error("reauth_required", message || "Account not found");
   if (status === 429) return error("rate_limited", message);
   if (status === 400 || status === 422) return error("bad_request", message || `HTTP ${status}`);
   if (status >= 500) return error("unavailable", message || `HTTP ${status}`);
@@ -183,18 +180,14 @@ export type ComposioAccount = {
   disabled: boolean;
 };
 
-/**
- * A connected account as Composio has it now. `wording`: false when only a
- * 404 may say the account is gone, not a failure's text (see ACCOUNT_GONE).
- */
+/** A connected account as Composio has it now. A 404 is `reauth_required`: the account is gone. */
 export async function getAccount(
   connectedAccountId: string,
   deps: ComposioDeps = {},
   signal?: AbortSignal,
   toolkit?: ComposioToolkit,
-  wording = true,
 ): Promise<ComposioAccount> {
-  const body = await request<Record<string, unknown>>(`/connected_accounts/${encodeURIComponent(connectedAccountId)}`, { method: "GET", signal, wording }, deps, toolkit);
+  const body = await request<Record<string, unknown>>(`/connected_accounts/${encodeURIComponent(connectedAccountId)}`, { method: "GET", signal }, deps, toolkit);
   const slug = isRecord(body?.toolkit) ? body.toolkit.slug : body?.toolkit_slug;
   return {
     id: typeof body?.id === "string" ? body.id : connectedAccountId,
@@ -252,7 +245,6 @@ export async function runTool(
         signal,
         // Meta builds large insight reports on demand.
         timeoutMs: config().composio.queryTimeoutMs,
-        wording: false,
       },
       deps,
       toolkit,
@@ -282,8 +274,8 @@ const SIGNED_OUT = new Set(["EXPIRED", "REVOKED", "INACTIVE"]);
  * What a failed tool run means, asked of the account itself (a GET, on the
  * short check timeout): expired, revoked, inactive, disabled or gone is a
  * lost sign-in; active means the failure is what it says (a bad query, say),
- * whatever its wording. Only when the account can't be looked up, or is in
- * some other state, does the wording decide (ACCOUNT_GONE).
+ * whatever its message says. Only when the account can't be looked up, or is
+ * in some other state, does the message decide (ACCOUNT_GONE).
  */
 async function lostSignIn(
   failure: ComposioError,
@@ -295,19 +287,19 @@ async function lostSignIn(
   const signedOut = (why: string) => new ComposioError("reauth_required", `${why}: ${failure.detail ?? failure.code}`, toolkit, failure.requestId);
   let found: ComposioAccount;
   try {
-    found = await getAccount(account.connectedAccountId, deps, signal, toolkit, false);
+    found = await getAccount(account.connectedAccountId, deps, signal, toolkit);
   } catch (lookup) {
     // A 404 on the account: it's gone.
     if (lookup instanceof ComposioError && lookup.code === "reauth_required") return signedOut("The account is gone");
-    return byWording(failure, toolkit);
+    return byMessage(failure, toolkit);
   }
   if (found.disabled || SIGNED_OUT.has(found.status)) return signedOut(`The account is ${found.disabled ? "disabled" : found.status.toLowerCase()}`);
   if (found.status === "ACTIVE") return failure;
-  return byWording(failure, toolkit);
+  return byMessage(failure, toolkit);
 }
 
-/** The fallback: the failure, unless its wording says the sign-in is lost. */
-function byWording(failure: ComposioError, toolkit: ComposioToolkit): ComposioError {
+/** The fallback: the failure, unless its message says the sign-in is lost. */
+function byMessage(failure: ComposioError, toolkit: ComposioToolkit): ComposioError {
   return ACCOUNT_GONE.test(failure.detail ?? "") ? new ComposioError("reauth_required", failure.detail, toolkit, failure.requestId) : failure;
 }
 

@@ -165,7 +165,7 @@ describe("a failed tool run asks the account whether the sign-in is lost", () =>
     }
   });
 
-  it("keeps a bad query on an active account a bad query, even when its wording sounds like a lost sign-in", async () => {
+  it("keeps a bad query on an active account a bad query, even when its message sounds like a lost sign-in", async () => {
     const { deps } = composioWith(
       { body: { successful: false, error: "Request contains an invalid argument: invalid page token", data: {} } },
       { body: { id: "ca_123", status: "ACTIVE", is_disabled: false } },
@@ -178,7 +178,7 @@ describe("a failed tool run asks the account whether the sign-in is lost", () =>
     expect(marked).toEqual([]);
   });
 
-  it("falls back to the wording when the account can't be looked up", async () => {
+  it("falls back to the message when the account can't be looked up", async () => {
     const lookupFails = { status: 503, body: {} };
     // Meta's expiry still reads as a lost sign-in…
     const meta = composioWith(metaExpired, lookupFails);
