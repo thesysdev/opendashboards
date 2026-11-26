@@ -50,6 +50,59 @@ describe("toMcpError", () => {
   });
 });
 
+describe("servers that don't answer as MCP", () => {
+  /** What the connection form would show for a server that always answers with this. */
+  async function shown(status: number, contentType: string, body: string) {
+    const { server, url } = await listen((_req, res) => {
+      res.writeHead(status, { "Content-Type": contentType });
+      res.end(body);
+    });
+    try {
+      const error = await listMcpTools({ url: `${url}/mcp`, headerName: "Authorization", credential: "" }, { testHooks: hooks }).catch((e: unknown) => e);
+      return { code: (error as McpError).code, ...mcpSource.toError(error) };
+    } finally {
+      await close(server);
+    }
+  }
+  const PAGE = "<!DOCTYPE html><html><body>Welcome to our site</body></html>";
+
+  it("says a web page is a web page, not what was in it", async () => {
+    const result = await shown(200, "text/html; charset=utf-8", PAGE);
+    expect(result.code).toBe("not_mcp");
+    expect(result.error?.message).toContain("it answered with a web page");
+    expect(result.error?.message).not.toContain("DOCTYPE");
+  });
+
+  it("leaves a 404 page's HTML out", async () => {
+    const result = await shown(404, "text/html", PAGE);
+    expect(result.error?.message).toContain("it answered HTTP 404");
+    expect(result.error?.message).not.toContain("DOCTYPE");
+  });
+
+  it("says JSON that isn't MCP is not MCP, without the parser's issues", async () => {
+    const result = await shown(200, "application/json", JSON.stringify({ hello: "world" }));
+    expect(result.code).toBe("not_mcp");
+    expect(result.error?.message).toContain("its reply was JSON, but not MCP");
+    expect(result.error?.message).not.toMatch(/invalid_union|"path"/);
+  });
+
+  it("says a broken JSON reply isn't JSON", async () => {
+    const result = await shown(200, "application/json", "{not json");
+    expect(result.error?.message).toContain("its reply wasn't JSON");
+  });
+
+  it("asks to wait, not to try again, when rate-limited", async () => {
+    const result = await shown(429, "text/plain", "slow down");
+    expect(result).toMatchObject({ code: "rate_limited", status: "unavailable" });
+    expect(result.error?.message).toMatch(/Wait a minute, then try once/);
+  });
+
+  it("still shows the server's own message for its errors", async () => {
+    const result = await shown(503, "text/plain", "maintenance until 5pm");
+    expect(result.error?.message).toContain("maintenance until 5pm");
+  });
+});
+
 describe("toCallResult", () => {
   it("keeps structured data and text, and drops what it won't fetch or show", () => {
     const result = toCallResult("mcp.example.com", {

@@ -128,6 +128,15 @@ export const postgresSource: ConnectionSource<PostgresConfig> = {
         return { status: "invalid", error: { code: "database_not_found", field: "database", message: "There's no database with this name on the server." } };
       case "permission_denied":
         return { status: "invalid", error: { code: "permission_denied", field: "user", message: "This user isn't allowed to connect to that database." } };
+      case "no_read_access":
+        return {
+          status: "invalid",
+          error: {
+            code: "no_read_access",
+            field: "user",
+            message: "This user can connect but can't read any tables, so dashboards would have no data. Give it read access to the tables you want to use, then test again.",
+          },
+        };
       case "host_blocked":
         return {
           status: "invalid",

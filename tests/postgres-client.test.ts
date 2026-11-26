@@ -1,6 +1,7 @@
+import pg from "pg";
 import { describe, expect, it } from "vitest";
 
-import { testPostgresConnection, type PostgresTarget } from "@/lib/sources/postgres/client";
+import { READ_ACCESS_SQL, testPostgresConnection, type PostgresTarget } from "@/lib/sources/postgres/client";
 import { isSupabaseDirectHost, parseConnectionString, postgresAddress, suggestConnectionName } from "@/lib/sources/postgres/catalog";
 import { PostgresError, toPostgresError } from "@/lib/sources/postgres/errors";
 import { BlockedAddressError, Ipv6OnlyHostError } from "@/lib/net/guarded-socket";
@@ -154,5 +155,40 @@ describe("testPostgresConnection", () => {
   it("refuses private and metadata addresses without connecting", async () => {
     expect(await code({ host: "10.0.0.5" })).toBe("host_blocked");
     expect(await code({ host: "169.254.169.254" })).toBe("host_blocked");
+  });
+});
+
+/**
+ * The read check against the local Postgres, as a role that can see a table
+ * but not read it. Everything runs in one transaction that's rolled back,
+ * the role included.
+ */
+describe("READ_ACCESS_SQL", () => {
+  type Row = { tables: string; readable: string };
+
+  async function asReader(setup: string): Promise<Row> {
+    const client = new pg.Client({ connectionString: TEST_DATABASE_URL });
+    await client.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(`CREATE ROLE od_read_check; CREATE SCHEMA "Sales"; CREATE TABLE "Sales".orders (id int); GRANT USAGE ON SCHEMA "Sales" TO od_read_check; ${setup}`);
+      await client.query("SET LOCAL ROLE od_read_check");
+      const result = await client.query<Row>(READ_ACCESS_SQL);
+      return result.rows[0];
+    } finally {
+      await client.query("ROLLBACK").catch(() => {});
+      await client.end();
+    }
+  }
+
+  it("finds no readable table", async () => {
+    const row = await asReader("");
+    expect(Number(row.tables)).toBeGreaterThan(0);
+    expect(Number(row.readable)).toBe(0);
+  });
+
+  it("counts a table it may read", async () => {
+    const row = await asReader('GRANT SELECT ON "Sales".orders TO od_read_check;');
+    expect(Number(row.readable)).toBeGreaterThan(0);
   });
 });
