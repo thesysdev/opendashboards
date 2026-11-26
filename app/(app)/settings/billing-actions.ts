@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 
+import { track } from "@/lib/analytics";
 import { getDb } from "@/lib/db";
 import { logError } from "@/lib/log";
 import { requireKnownUser } from "@/lib/orgs";
@@ -58,14 +59,24 @@ export async function upgradeAction(input: unknown): Promise<BillingResult> {
 export async function manageBillingAction(input: unknown): Promise<BillingResult> {
   const found = await managed(orgSchema, input);
   if ("error" in found) return found.error;
-  const { plans, input: data } = found;
-  return stripeCall("portal", async () => ({ ok: true, ...(await plans.billing.openPortal(data.orgId, `/w/${data.orgId}/settings#billing`)) }));
+  const { plans, user, input: data } = found;
+  return stripeCall("portal", async () => {
+    const { url } = await plans.billing.openPortal(data.orgId, `/w/${data.orgId}/settings#billing`);
+    track(user.id, "billing_portal_opened", { plan_id: await plans.billing.planOf(data.orgId) }, data.orgId);
+    return { ok: true, url };
+  });
 }
 
 /** Stripe's page to confirm a new seat count, never below the seats in use. */
 export async function changeSeatsAction(input: unknown): Promise<BillingResult> {
   const found = await managed(seatsSchema, input);
   if ("error" in found) return found.error;
-  const { plans, input: data } = found;
-  return stripeCall("seats", () => plans.changeSeats(data.orgId, data.seats));
+  const { plans, user, input: data } = found;
+  return stripeCall("seats", async () => {
+    const from = await plans.billing.seatsOf(data.orgId);
+    const result = await plans.changeSeats(data.orgId, data.seats);
+    // Only Stripe's confirm page so far: seats_changed is recorded when Stripe says it's done.
+    if (result.ok) track(user.id, "seats_change_started", { from_seats: from, to_seats: data.seats }, data.orgId);
+    return result;
+  });
 }

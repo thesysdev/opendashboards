@@ -56,6 +56,8 @@ export async function createOrgAction(input: unknown): Promise<OrgResult<{ id: s
   const user = await requireKnownUser();
   const plans = getPlans();
   if (plans && !(await plans.mayCreateFree(user.id))) {
+    // No workspace yet, so no group: the person's own event.
+    track(user.id, "plan_limit_hit", { plan_id: config().plans?.free ?? null, limit: "new_workspace", operation: "createWorkspace", surface: "settings" }, null);
     return fail({ code: "plan_limit", message: "You already have a Free workspace, so a new one starts on a paid plan." });
   }
   const result = await getOrgService().create(user, input);

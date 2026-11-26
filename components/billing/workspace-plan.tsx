@@ -4,6 +4,7 @@ import { PartyPopperIcon, PlugZapIcon, RocketIcon, type LucideIcon } from "lucid
 import { createContext, useContext, useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
+import type { UpgradeSource } from "@/lib/analytics-client";
 import { workspacePath } from "@/lib/apps/paths";
 import type { LimitName } from "@/lib/entitlements/types";
 import type { PlanState } from "@/lib/plans/plans";
@@ -62,6 +63,7 @@ export function UpgradePrompt({
   title,
   detail,
   action = "plans",
+  source,
   className,
 }: {
   icon?: LucideIcon;
@@ -69,6 +71,8 @@ export function UpgradePrompt({
   detail?: string;
   /** plans: the pricing modal. team: the same, for Team. seat: Billing's seats field. */
   action?: "plans" | "team" | "seat";
+  /** Where it is, for analytics. */
+  source: UpgradeSource;
   className?: string;
 }) {
   const plan = useWorkspacePlan();
@@ -93,7 +97,7 @@ export function UpgradePrompt({
             <Button size="sm" onClick={() => setOpen(true)}>
               {action === "team" ? "See Team" : "See plans"}
             </Button>
-            <UpgradeDialog orgId={plan.orgId} open={open} onOpenChange={setOpen} />
+            <UpgradeDialog orgId={plan.orgId} open={open} onOpenChange={setOpen} source={source} fromPlan={plan.planId} />
           </>
         ))}
     </div>
@@ -118,7 +122,7 @@ export function LimitPrompt({ name, className }: { name: "apps" | "connections";
   const next = plan.next[name];
   const prompt = LIMIT_PROMPTS[name]!;
   const detail = !next ? "Delete one to make room." : next.max === null ? `${next.name} has room for more.` : `${next.name} fits ${next.max}.`;
-  return <UpgradePrompt icon={prompt.icon} title={prompt.title(max)} detail={detail} className={className} />;
+  return <UpgradePrompt icon={prompt.icon} title={prompt.title(max)} detail={detail} source={name} className={className} />;
 }
 
 /** At the top of every page of a workspace that's over its plan. */
@@ -142,7 +146,7 @@ export function ViewOnlyBanner() {
           <Button size="sm" onClick={() => setOpen(true)}>
             See plans
           </Button>
-          <UpgradeDialog orgId={plan.orgId} open={open} onOpenChange={setOpen} />
+          <UpgradeDialog orgId={plan.orgId} open={open} onOpenChange={setOpen} source="limit_banner" fromPlan={plan.planId} />
         </>
       )}
     </div>

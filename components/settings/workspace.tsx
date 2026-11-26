@@ -179,7 +179,7 @@ export function InviteForm({ orgId, children }: { orgId: string; children?: Reac
   }
 
   if (rules.nobodyMore) {
-    return <UpgradePrompt icon={UsersIcon} title="Build together on Team" detail="Add editors and free viewers." action="team" />;
+    return <UpgradePrompt icon={UsersIcon} title="Build together on Team" detail="Add editors and free viewers." action="team" source="members" />;
   }
   const builder = role !== "viewer";
   return (
@@ -210,7 +210,7 @@ export function InviteForm({ orgId, children }: { orgId: string; children?: Reac
           {pending ? "Adding…" : "Add"}
         </Button>
       </div>
-      {builder && rules.seatsFull && <UpgradePrompt icon={ArmchairIcon} title={rules.seatsFull} action="seat" className="mt-2" />}
+      {builder && rules.seatsFull && <UpgradePrompt icon={ArmchairIcon} title={rules.seatsFull} action="seat" source="members" className="mt-2" />}
       {error && (
         <p role="alert" className="mt-2 text-sm text-destructive">
           {error}

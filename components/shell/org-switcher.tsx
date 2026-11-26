@@ -249,6 +249,9 @@ export function CreateWorkspaceDialog({ open, onOpenChange }: { open: boolean; o
         planIds={planIds}
         pending={choosing}
         onChoose={checkout}
+        source="new_workspace"
+        fromPlan={null}
+        orgId={null}
       />
     </>
   );

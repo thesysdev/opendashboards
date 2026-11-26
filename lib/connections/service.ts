@@ -164,9 +164,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
   const now = deps.now ?? (() => new Date());
 
   /** Adds a connection row (and anything with it) only if the plan still allows one, under the plan's lock. */
-  async function insertWithinPlan(orgId: string, insert: (tx: Parameters<Parameters<Database["transaction"]>[0]>[0]) => Promise<void>) {
+  async function insertWithinPlan(orgId: string, userId: string, insert: (tx: Parameters<Parameters<Database["transaction"]>[0]>[0]) => Promise<void>) {
     return db.transaction(async (tx) => {
-      const refused = await gate(tx, orgId, "createConnection");
+      const refused = await gate(tx, orgId, "createConnection", userId);
       if (refused) return fail(refused);
       await insert(tx);
       return null;
@@ -627,7 +627,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         const creating = decide("connection", "create", await workspaceFacts(db, userId, orgId));
         if (!creating.allowed) return refusal(creating);
         // Before testing the credential, so nobody fills in a form only to hit the limit; checked again on insert.
-        const early = await gate(db, orgId, "createConnection");
+        const early = await gate(db, orgId, "createConnection", userId);
         if (early) return fail(early);
         const envelope = createEnvelopeSchema.safeParse(input);
         if (!envelope.success) return fromValidation(envelope.error);
@@ -652,7 +652,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           // Sealed first: no point testing a credential we can't store.
           const secret = await sealCredential(credential.data, context(type, userId, id));
           warnings = await check(config, credential.data);
-          const refused = await insertWithinPlan(orgId, async (tx) => {
+          const refused = await insertWithinPlan(orgId, userId, async (tx) => {
             await tx.insert(dataConnections).values({
               id,
               userId,
@@ -768,7 +768,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!parsed.success) return fromValidation(parsed.error);
         const managed = await findManaged(userId, parsed.data.id, "update");
         if (!managed.ok) return managed;
-        const refused = managed.data.row.orgId ? await gate(db, managed.data.row.orgId, "renameConnection") : null;
+        const refused = managed.data.row.orgId ? await gate(db, managed.data.row.orgId, "renameConnection", userId) : null;
         if (refused) return fail(refused);
         const updated = await db
           .update(dataConnections)
@@ -979,7 +979,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           const creating = decide("connection", "create", await workspaceFacts(db, userId, orgId));
           if (!creating.allowed) return refusal(creating);
           // Before sending them off to sign in; checked again when the sign-in is saved.
-          const refused = await gate(db, orgId, "createConnection");
+          const refused = await gate(db, orgId, "createConnection", userId);
           if (refused) return fail(refused);
         }
         const tooLarge = refuseIfTooLarge(sign.config.type, sign.pending, "create");
@@ -1097,7 +1097,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           const secret = await sealCredential(input.credential, context(config.type, userId, id));
           const warnings = await check(config, input.credential);
           const orgId = input.orgId;
-          const refused = await insertWithinPlan(orgId, async (tx) => {
+          const refused = await insertWithinPlan(orgId, userId, async (tx) => {
             await tx.insert(dataConnections).values({
               id,
               userId,

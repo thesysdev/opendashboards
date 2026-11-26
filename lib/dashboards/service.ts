@@ -84,7 +84,7 @@ export function createDashboardService({ db, gate = OPEN_GATE }: { db: Database;
       const app = await appFacts(db, userId, appId);
       if (!can("dashboard", "rename", app?.facts ?? null)) return false;
       // A view-only workspace keeps its dashboards as they are.
-      if (await gate(db, app!.orgId, "editDashboard")) return false;
+      if (await gate(db, app!.orgId, "editDashboard", userId)) return false;
       const renamed = await db
         .update(dashboards)
         .set(changes)

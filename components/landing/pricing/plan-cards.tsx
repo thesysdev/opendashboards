@@ -3,6 +3,7 @@
 import { Check } from "lucide-react";
 import { useState } from "react";
 
+import { trackUpgradeClicked } from "@/lib/analytics-client";
 import { cn } from "@/lib/utils";
 
 import { BevelButton } from "../bevel-button";
@@ -119,7 +120,13 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
       </p>
       <p className="mt-2 text-sm leading-5 whitespace-nowrap text-neutral-950/60">{per}</p>
 
-      <div className="mt-6 [&>*]:w-full">
+      {/* A paid plan's button counts as an upgrade click; Free's is a sign-up. */}
+      <div
+        className="mt-6 [&>*]:w-full"
+        onClickCapture={
+          free ? undefined : () => trackUpgradeClicked({ fromPlan: null, toPlan: plan.id, interval: billing, source: "pricing", orgId: null })
+        }
+      >
         <BevelButton
           href={plan.cta.href}
           label={plan.cta.label}

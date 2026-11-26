@@ -443,7 +443,7 @@ export function createOrgService({ db, gate = OPEN_GATE }: { db: Database; gate?
             .where(and(eq(orgInvites.orgId, orgId), eq(orgInvites.email, email)))
             .limit(1);
           const holdsSeat = already !== undefined && already.role !== "viewer";
-          const refused = role === "viewer" ? await gate(tx, orgId, "addViewer") : holdsSeat ? null : await gate(tx, orgId, "addEditor");
+          const refused = role === "viewer" ? await gate(tx, orgId, "addViewer", userId) : holdsSeat ? null : await gate(tx, orgId, "addEditor", userId);
           if (refused) return fail({ ...refused, field: "role" });
           if (!known.length) {
             await tx
@@ -491,7 +491,7 @@ export function createOrgService({ db, gate = OPEN_GATE }: { db: Database; gate?
         if (current === role) return ok(undefined);
         return db.transaction(async (tx) => {
           // Admin and editor share a seat: only a viewer moving up takes one, and only becoming a viewer needs the role.
-          const refused = role === "viewer" ? await gate(tx, orgId, "addViewer") : current === "viewer" ? await gate(tx, orgId, "addEditor") : null;
+          const refused = role === "viewer" ? await gate(tx, orgId, "addViewer", userId) : current === "viewer" ? await gate(tx, orgId, "addEditor", userId) : null;
           if (refused) return fail(refused);
           await tx.update(orgMembers).set({ role }).where(and(eq(orgMembers.orgId, orgId), eq(orgMembers.userId, memberId)));
           return ok(undefined);

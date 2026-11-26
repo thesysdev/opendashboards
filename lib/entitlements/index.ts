@@ -135,8 +135,10 @@ export type Refusal = { code: "plan_limit"; message: string };
 
 /**
  * What the services call before a gated operation: null to go ahead, or what
- * to tell the person. Built by lib/plans; `OPEN_GATE` when billing is off.
+ * to tell the person. `userId`: who asked, so a refusal is recorded against
+ * them; null for a check nobody asked for (a page asking whether it's
+ * view-only). Built by lib/plans; `OPEN_GATE` when billing is off.
  */
-export type Gate = (db: Executor, orgId: string, operation: Operation) => Promise<Refusal | null>;
+export type Gate = (db: Executor, orgId: string, operation: Operation, userId: string | null) => Promise<Refusal | null>;
 
 export const OPEN_GATE: Gate = async () => null;

@@ -29,6 +29,25 @@ export type SubscriptionSummary = {
   paymentFailed: boolean;
 };
 
+/**
+ * A saved subscription that's different from before: it started (Free to a
+ * plan), changed (plan, period, seats, status or a scheduled cancel), or
+ * ended (back to Free). Only ids, counts and Stripe's fixed labels.
+ */
+export type SubscriptionChange = {
+  kind: "started" | "changed" | "cancelled";
+  orgId: string;
+  /** Who bought it (the checkout's user), else who set up billing. */
+  userId: string | null;
+  plan: string;
+  previousPlan: string;
+  interval: Interval | null;
+  seats: number;
+  previousSeats: number;
+  status: string;
+  cancelAtPeriodEnd: boolean;
+};
+
 /** What a new workspace bought at checkout needs to be created. */
 export type PendingWorkspace = { name: string };
 
@@ -50,6 +69,8 @@ export function createBilling(deps: {
   origin: string;
   /** A checkout for a new workspace finished: create it, in `tx`, and return its id. */
   createWorkspace: (tx: Tx, input: { userId: string; pending: PendingWorkspace }) => Promise<string>;
+  /** Told once per real change, after it's saved: a repeated or reordered event changes nothing, so it isn't told. */
+  onChange?: (change: SubscriptionChange) => void;
 }) {
   const { db, stripe } = deps;
 
@@ -99,13 +120,7 @@ export function createBilling(deps: {
     const product = subscription.metadata?.product;
     if (product && product !== STRIPE_PRODUCT) return false;
     const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
-    // A local customer link also identifies subscriptions created before tagging.
-    // New workspaces get this link when their Checkout completes.
-    const [current] = await db.select().from(orgBilling).where(eq(orgBilling.stripeCustomerId, customerId)).limit(1);
-    if (!current) return false;
     const isLive = LIVE.has(subscription.status);
-    // An older subscription ending never undoes a newer one.
-    if (current.stripeSubscriptionId && current.stripeSubscriptionId !== subscription.id && !isLive) return true;
 
     const item = subscription.items.data[0];
     const priced = item ? planOfPrice(item.price.id) : null;
@@ -121,8 +136,52 @@ export function createBilling(deps: {
       cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end || subscription.cancel_at),
       updatedAt: new Date(),
     };
-    await db.update(orgBilling).set(values).where(eq(orgBilling.stripeCustomerId, customerId));
+    // Locked, so the webhook and the browser's return can't both see the old row and both report the change.
+    const saved = await db.transaction(async (tx) => {
+      // A local customer link also identifies subscriptions created before tagging.
+      // New workspaces get this link when their Checkout completes.
+      const [current] = await tx.select().from(orgBilling).where(eq(orgBilling.stripeCustomerId, customerId)).limit(1).for("update");
+      if (!current) return null;
+      // An older subscription ending never undoes a newer one.
+      if (current.stripeSubscriptionId && current.stripeSubscriptionId !== subscription.id && !isLive) return { current, change: null };
+      await tx.update(orgBilling).set(values).where(eq(orgBilling.stripeCustomerId, customerId));
+      return { current, change: changeOf(current, values) };
+    });
+    if (!saved) return false;
+    if (saved.change && deps.onChange) {
+      deps.onChange({
+        ...saved.change,
+        orgId: saved.current.orgId,
+        userId: subscription.metadata?.user_id || saved.current.createdBy || null,
+        interval: values.interval,
+        seats: values.seats,
+        status: values.status,
+        cancelAtPeriodEnd: values.cancelAtPeriodEnd,
+      });
+    }
     return true;
+  }
+
+  /** How a saved subscription differs from the row before it, or null if it doesn't. A null plan is Free. */
+  function changeOf(
+    before: typeof orgBilling.$inferSelect,
+    after: { plan: string | null; interval: Interval | null; status: string; seats: number; cancelAtPeriodEnd: boolean },
+  ): Pick<SubscriptionChange, "kind" | "plan" | "previousPlan" | "previousSeats"> | null {
+    const kind =
+      !before.plan && after.plan
+        ? "started"
+        : before.plan && !after.plan
+          ? "cancelled"
+          : before.plan &&
+              (before.plan !== after.plan ||
+                before.interval !== after.interval ||
+                before.seats !== after.seats ||
+                before.status !== after.status ||
+                before.cancelAtPeriodEnd !== after.cancelAtPeriodEnd)
+            ? "changed"
+            : null;
+    if (!kind) return null;
+    return { kind, plan: after.plan ?? deps.freePlan, previousPlan: before.plan ?? deps.freePlan, previousSeats: before.seats };
   }
 
   /**

@@ -3,7 +3,8 @@ import "server-only";
 import Stripe from "stripe";
 
 import { config, secrets } from "@/config";
-import { createBilling } from "@/lib/billing";
+import { identifyWorkspacePlan, track } from "@/lib/analytics";
+import { createBilling, type SubscriptionChange } from "@/lib/billing";
 import { getDb, type Database } from "@/lib/db";
 import { createEnforcement, OPEN_GATE, type Enforcement, type Gate } from "@/lib/entitlements";
 import { createOrgService } from "@/lib/orgs/service";
@@ -39,8 +40,33 @@ export function getPlans(): Plans | null {
       if (!created.ok) throw new Error(`Couldn't create the paid workspace: ${created.error.message}`);
       return created.data.id;
     },
+    onChange: trackSubscription,
   });
-  return (plans = createPlans({ db, settings, billing }));
+  return (plans = createPlans({ db, settings, billing, track }));
+}
+
+/** A subscription started, changed or ended: the event, and the workspace group's plan. */
+export function trackSubscription(change: SubscriptionChange): void {
+  identifyWorkspacePlan(change.orgId, { plan_id: change.plan, seats: change.seats, subscription_status: change.status });
+  // With nobody to attribute it to, the group's plan is all that's kept.
+  if (!change.userId) return;
+  const interval = change.interval === "year" ? "annual" : change.interval === "month" ? "monthly" : null;
+  track(
+    change.userId,
+    `subscription_${change.kind}`,
+    {
+      plan_id: change.plan,
+      previous_plan_id: change.previousPlan,
+      interval,
+      seats: change.seats,
+      status: change.status,
+      cancel_at_period_end: change.cancelAtPeriodEnd,
+    },
+    change.orgId,
+  );
+  if (change.kind === "changed" && change.seats !== change.previousSeats) {
+    track(change.userId, "seats_changed", { from_seats: change.previousSeats, to_seats: change.seats, plan_id: change.plan }, change.orgId);
+  }
 }
 
 const OPEN: Enforcement = createEnforcement();

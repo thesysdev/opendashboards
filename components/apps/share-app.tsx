@@ -226,7 +226,7 @@ export function ShareApp({
             </div>
             {/* Free and Standard have one editor and no viewers: nobody else in the workspace to share with yet. */}
             {soloPlan && (
-              <UpgradePrompt icon={UsersIcon} title="Build together on Team" detail="Add editors and free viewers." action="team" className="mt-2" />
+              <UpgradePrompt icon={UsersIcon} title="Build together on Team" detail="Add editors and free viewers." action="team" source="sharing" className="mt-2" />
             )}
           </section>
 

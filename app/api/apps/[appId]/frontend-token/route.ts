@@ -17,6 +17,6 @@ export const POST = route<Ctx>(async (_request, user, { params }) => {
   const { appId } = await params;
   const grant = await appAccess(getDb(), user.id, appId);
   if (!grant) throw new HttpError(404, "App not found");
-  const viewOnly = (await getGate()(getDb(), grant.orgId, "editDashboard")) !== null;
+  const viewOnly = (await getGate()(getDb(), grant.orgId, "editDashboard", null)) !== null;
   return Response.json(await getOpenUI().createFrontendToken(cloudIdentity(user.id, grant, { viewOnly })));
 });

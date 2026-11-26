@@ -397,7 +397,7 @@ function BuildingPaused() {
           <Button size="sm" className="mt-3" onClick={() => setOpen(true)}>
             See plans
           </Button>
-          <UpgradeDialog orgId={plan.orgId} open={open} onOpenChange={setOpen} />
+          <UpgradeDialog orgId={plan.orgId} open={open} onOpenChange={setOpen} source="chat" fromPlan={plan.planId} />
         </>
       )}
     </div>
