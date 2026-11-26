@@ -9,7 +9,7 @@ import {
   renameConnectionAction,
   retestConnectionAction,
   signOutOfConnectionAction,
-  startMcpSignInAction,
+  signInToConnectionAction,
 } from "@/app/(app)/connections/actions";
 import {
   AlertDialog,
@@ -82,7 +82,7 @@ export function ConnectionActions({
 
   function signIn() {
     startTest(async () => {
-      const result = await startMcpSignInAction({ orgId, connectionId: connection.id });
+      const result = await signInToConnectionAction({ orgId, connectionId: connection.id });
       if (result.ok) window.location.assign(result.data.authorizationUrl);
       else toast.error(result.error.message);
     });

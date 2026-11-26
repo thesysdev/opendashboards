@@ -47,6 +47,7 @@ async function ConnectionsContent({ params }: { params: Params }) {
     service.listDemoDatasets(member),
     getOrgService().get(member.userId, member.orgId),
   ]);
+  const sources = service.sourceOptions();
   // Who serves whom only matters once someone else is here (or is about to be): alone, there's nobody to share with.
   const shared = (org?.members.length ?? 1) + (org?.invites.length ?? 0) > 1;
   const team = shared ? member.orgName : null;
@@ -104,6 +105,7 @@ async function ConnectionsContent({ params }: { params: Params }) {
           )}
           <ConnectorCatalog
             secretMode={secretMode}
+            sources={sources}
             sampleData={
               sample &&
               connections.length > 0 && <SampleDataTile dataset={sample.key} name={sample.name} summary={sample.summary} />

@@ -94,6 +94,31 @@ export interface SourceTool<Config, Args = Record<string, unknown>> {
   ): Promise<unknown>;
 }
 
+/**
+ * Getting a connection's credential by signing in on another service's page
+ * instead of pasting a key. The connection service runs the rest: who may
+ * start one, keeping it (sealed) until the browser comes back, and saving
+ * the credential as a new connection or a sign-in to one that exists.
+ */
+export interface SourceSignIn<Config> {
+  /**
+   * Starts one: the page to send the browser to, which comes back to
+   * `callbackUrl`. `pending` is what finishing needs, kept sealed until then.
+   */
+  start(input: { config: Config; callbackUrl: string }): Promise<{ url: string; pending: string }>;
+  /**
+   * Finishes one when the browser comes back, with the callback's query
+   * parameters: the credential to save, which the source's `test` then
+   * checks. Throws SignInRefused (lib/sources/sign-in) when it didn't complete.
+   */
+  finish(input: { config: Config; pending: string; params: URLSearchParams }): Promise<string>;
+  /**
+   * Lets go of what a sign-in that never became a credential holds
+   * elsewhere (e.g. an account made for it). Optional, best effort, like `release`.
+   */
+  discard?(pending: string): Promise<void>;
+}
+
 /** Server: the catalog plus credential handling, checks, errors and tools. */
 export interface ConnectionSource<Config extends Record<string, unknown> = Record<string, unknown>>
   extends SourceCatalog<Config> {
@@ -114,6 +139,25 @@ export interface ConnectionSource<Config extends Record<string, unknown> = Recor
    * renews itself (an OAuth sign-in) renews it here, as a query would.
    */
   retest?(connection: OpenConnection<Config>): Promise<ConnectionWarning[]>;
+  /**
+   * Lets go of what a credential holds elsewhere once its sign-in is deleted
+   * here: signed out, replaced by a new sign-in, its connection removed, its
+   * member gone from the workspace, or the workspace deleted. Optional: only a
+   * source whose sign-ins live with another service (e.g. Composio) needs it.
+   * Called only after the delete has committed, so best effort: a failure
+   * (that service down, say) is logged, never shown, and leaves what it held
+   * there. Deleting the rows themselves isn't best effort: that fails loudly.
+   */
+  release?(credential: string): Promise<void>;
+  /** For a source connected by signing in rather than with a key. */
+  signIn?: SourceSignIn<Config>;
+  /**
+   * Whether this deployment is set up to connect the source, e.g. Composio's
+   * key and the source's auth config are set. Optional: without it, the source
+   * is always available. One that isn't available isn't offered, and new
+   * connections to it are refused.
+   */
+  available?(): boolean;
   /** Turns this source's failures into a user-facing error and the status to record. */
   toError(error: unknown): { error: SourceError; status: Exclude<ConnectionStatus, "ok"> } | null;
   // Each tool has its own argument type; the runner validates them with the tool's schema.

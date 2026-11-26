@@ -1,0 +1,713 @@
+import { and, eq, sql } from "drizzle-orm";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+
+import { createAppService } from "@/lib/apps/service";
+import { finishSignIn, personalSignIns, startNewSignIn, startSignInTo } from "@/lib/connections/sign-in";
+import { deleteSignIns } from "@/lib/connections/deleted-sign-ins";
+import { createConnectionService } from "@/lib/connections/service";
+import { createDatabase } from "@/lib/db";
+import { apps, connectionSignIns, dataConnections, pendingSignIns } from "@/lib/db/schema";
+import { plaintextSecretBox } from "@/lib/secrets/plaintext";
+import { ComposioError, createSignInLink, deleteAccount, runTool, type ComposioDeps } from "@/lib/sources/composio/client";
+import { composioToError, flattenRows, readComposioCredential, runAs, writeComposioCredential } from "@/lib/sources/composio/shared";
+import { gaqlSchema, googleAdsDeps, googleAdsSource, withLimit } from "@/lib/sources/googleads/source";
+import { googleAdsCatalog } from "@/lib/sources/googleads/catalog";
+import { metaAdsCatalog } from "@/lib/sources/metaads/catalog";
+import { metaAdsDeps, metaAdsSource } from "@/lib/sources/metaads/source";
+import type { ConnectionSource } from "@/lib/sources/types";
+
+import { TEST_DATABASE_URL } from "./global-setup";
+import { seedTeam, seedWorkspaces, workspaceOf } from "./orgs";
+
+/** A fake Composio: records requests, answers from `respond`. */
+function fakeComposio(respond: (path: string, init: RequestInit) => { status?: number; body: unknown }) {
+  const calls: { path: string; method: string; headers: Record<string, string>; body: unknown }[] = [];
+  const deps: ComposioDeps = {
+    apiKey: "test-key",
+    authConfigId: "ac_test",
+    fetch: (async (input: string | URL | Request, init?: RequestInit) => {
+      const url = new URL(String(input));
+      calls.push({ path: url.pathname, method: init?.method ?? "GET", headers: init?.headers as Record<string, string>, body: init?.body ? JSON.parse(String(init.body)) : undefined });
+      expect(init?.redirect).toBe("error");
+      const { status = 200, body } = respond(url.pathname, init ?? {});
+      return new Response(JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
+    }) as typeof fetch,
+  };
+  return { deps, calls };
+}
+
+const account = { composioUserId: "od-user", connectedAccountId: "ca_123" };
+const signal = new AbortController().signal;
+
+describe("the Composio client", () => {
+  it("runs a tool as the account, with our key, and returns its data", async () => {
+    const { deps, calls } = fakeComposio(() => ({ body: { successful: true, error: null, data: { results: [{ a: 1 }] } } }));
+    const data = await runTool("googleads", "GOOGLEADS_SEARCH_STREAM_GAQL", account, { query: "SELECT 1" }, signal, deps);
+    expect(data).toEqual({ results: [{ a: 1 }] });
+    expect(calls[0]).toMatchObject({
+      path: "/api/v3.1/tools/execute/GOOGLEADS_SEARCH_STREAM_GAQL",
+      method: "POST",
+      headers: { "x-api-key": "test-key" },
+      body: { connected_account_id: "ca_123", user_id: "od-user", version: "20261116_00", arguments: { query: "SELECT 1" } },
+    });
+  });
+
+  it("reads data Composio sends as a JSON string", async () => {
+    const { deps } = fakeComposio(() => ({ body: { successful: true, error: null, data: '{"resourceNames":["customers/1"]}' } }));
+    expect(await runTool("googleads", "GOOGLEADS_LIST_ACCESSIBLE_CUSTOMERS", account, {}, signal, deps)).toEqual({ resourceNames: ["customers/1"] });
+  });
+
+  it("tells a lost sign-in from a bad query, a rate limit and our own key being refused", async () => {
+    // [the tool run's answer, the account's status (null: the lookup fails), the error]
+    const cases: [{ status?: number; body: unknown }, string | null, string][] = [
+      [{ body: { successful: false, error: "Connected account ca_123 is expired", data: {} } }, "EXPIRED", "reauth_required"],
+      [{ body: { successful: false, error: "Unrecognized field in the query: 'metrics.foo'", data: {} } }, "ACTIVE", "bad_request"],
+      [{ body: { successful: false, error: "RESOURCE_EXHAUSTED: too many requests", data: {} } }, "ACTIVE", "rate_limited"],
+      [{ status: 401, body: { error: { message: "Invalid API key" } } }, null, "project_rejected"],
+      [{ status: 404, body: { error: { message: "Connected account not found" } } }, "REVOKED", "reauth_required"],
+      // A 404 on a tool run on an active account is a wrong tool or version, ours to fix: nobody is asked to sign in again.
+      [{ status: 404, body: { error: { message: "Tool not found" } } }, "ACTIVE", "unexpected"],
+      [{ status: 503, body: {} }, "ACTIVE", "unavailable"],
+    ];
+    for (const [answer, status, code] of cases) {
+      const { deps } = fakeComposio((path) =>
+        path.includes("/connected_accounts/") ? (status ? { body: { id: "ca_123", status } } : { status: 503, body: {} }) : answer,
+      );
+      await expect(runTool("metaads", "METAADS_GET_INSIGHTS", account, {}, signal, deps)).rejects.toMatchObject({ code, toolkit: "metaads" });
+    }
+  });
+
+  it("starts a sign-in on the auth config, for this Composio user, coming back to our callback", async () => {
+    const { deps, calls } = fakeComposio(() => ({ status: 201, body: { redirect_url: "https://connect.composio.dev/link/abc", connected_account_id: "ca_9", link_token: "t", expires_at: "x" } }));
+    const link = await createSignInLink("metaads", { composioUserId: "od-1", callbackUrl: "https://app.example.com/api/sign-in/callback/s" }, deps);
+    expect(link).toEqual({ redirectUrl: "https://connect.composio.dev/link/abc", connectedAccountId: "ca_9" });
+    expect(calls[0]?.body).toEqual({ auth_config_id: "ac_test", user_id: "od-1", callback_url: "https://app.example.com/api/sign-in/callback/s" });
+  });
+
+  it("refuses a sign-in link that isn't https", async () => {
+    const { deps } = fakeComposio(() => ({ status: 201, body: { redirect_url: "javascript:alert(1)", connected_account_id: "ca_9" } }));
+    await expect(createSignInLink("googleads", { composioUserId: "od-1", callbackUrl: "https://x/cb" }, deps)).rejects.toMatchObject({ code: "unexpected" });
+  });
+
+  it("counts an account Composio already dropped as let go of, and still fails on anything else", async () => {
+    const gone = fakeComposio(() => ({ status: 404, body: { message: "Connected account not found" } }));
+    await expect(deleteAccount("ca_9", gone.deps)).resolves.toBeUndefined();
+    const down = fakeComposio(() => ({ status: 503, body: {} }));
+    await expect(deleteAccount("ca_9", down.deps)).rejects.toMatchObject({ code: "unavailable" });
+  });
+
+  it("says when Composio isn't set up", async () => {
+    await expect(createSignInLink("googleads", { composioUserId: "od-1", callbackUrl: "https://x/cb" }, { apiKey: "k", authConfigId: "" })).rejects.toMatchObject({
+      code: "not_configured",
+    });
+  });
+});
+
+describe("a failed tool run asks the account whether the sign-in is lost", () => {
+  /** Meta's usual expiry (OAuthException 190), as Composio passes it on. */
+  const metaExpired = {
+    status: 400,
+    body: {
+      error: {
+        message: "Error validating access token: Session has expired on Tuesday, 24-Nov-26 10:00:00 PST.",
+        status: 400,
+        request_id: "req_7f3a9c",
+        suggested_fix: "Reconnect the account",
+      },
+    },
+  };
+
+  /** A fake Composio whose tool run answers `run` and whose account lookup answers `lookup`. */
+  function composioWith(run: { status?: number; body: unknown }, lookup: { status?: number; body: unknown }) {
+    return fakeComposio((path) => (path.includes("/connected_accounts/") ? lookup : run));
+  }
+
+  /** A connection whose sign-in records being marked invalid. */
+  function connection() {
+    const marked: (string | undefined)[] = [];
+    return {
+      marked,
+      connection: {
+        id: "c",
+        name: "Ads",
+        config: { oauth: { provider: "composio" as const } },
+        credential: JSON.stringify(account),
+        updateCredential: vi.fn(async (change: (current: string) => Promise<{ credential: string; status?: "ok" | "invalid" }>) => {
+          const next = await change(JSON.stringify(account));
+          marked.push(next.status);
+          return next.credential;
+        }),
+      },
+    };
+  }
+
+  it("reads Meta's expired session on an expired account as a lost sign-in, and marks it invalid", async () => {
+    const { deps, calls } = composioWith(metaExpired, { body: { id: "ca_123", status: "EXPIRED", is_disabled: false } });
+    const { connection: open, marked } = connection();
+    const failure = await runAs("metaads", open, "METAADS_GET_INSIGHTS", {}, signal, deps).catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ code: "reauth_required", toolkit: "metaads", requestId: "req_7f3a9c" });
+    expect(marked).toEqual(["invalid"]);
+    // Asked of the account it ran as.
+    expect(calls.map(({ method, path }) => `${method} ${path.replace("/api/v3.1", "")}`)).toEqual([
+      "POST /tools/execute/METAADS_GET_INSIGHTS",
+      "GET /connected_accounts/ca_123",
+    ]);
+    // Composio's request id is logged with the error, never shown.
+    expect((failure as Error).message).toContain("req_7f3a9c");
+    expect(JSON.stringify(composioToError(metaAdsCatalog, failure))).not.toContain("req_7f3a9c");
+    expect(composioToError(metaAdsCatalog, failure)).toMatchObject({ status: "invalid", error: { code: "reauth_required" } });
+  });
+
+  it("reads a revoked, inactive, disabled or deleted account as a lost sign-in, whatever the error says", async () => {
+    const run = { body: { successful: false, error: "Unrecognized field in the query: 'metrics.foo'", data: {} } };
+    for (const lookup of [
+      { body: { id: "ca_123", status: "REVOKED" } },
+      { body: { id: "ca_123", status: "INACTIVE" } },
+      { body: { id: "ca_123", status: "ACTIVE", is_disabled: true } },
+      { status: 404, body: { error: { message: "Connected account not found" } } },
+    ]) {
+      const { deps } = composioWith(run, lookup);
+      await expect(runTool("googleads", "GOOGLEADS_SEARCH_STREAM_GAQL", account, {}, signal, deps)).rejects.toMatchObject({ code: "reauth_required" });
+    }
+  });
+
+  it("keeps a bad query on an active account a bad query, even when its message sounds like a lost sign-in", async () => {
+    const { deps } = composioWith(
+      { body: { successful: false, error: "Request contains an invalid argument: invalid page token", data: {} } },
+      { body: { id: "ca_123", status: "ACTIVE", is_disabled: false } },
+    );
+    const { connection: open, marked } = connection();
+    await expect(runAs("googleads", open, "GOOGLEADS_SEARCH_STREAM_GAQL", {}, signal, deps)).rejects.toMatchObject({
+      code: "bad_request",
+      detail: "Request contains an invalid argument: invalid page token",
+    });
+    expect(marked).toEqual([]);
+  });
+
+  it("falls back to the message when the account can't be looked up", async () => {
+    const lookupFails = { status: 503, body: {} };
+    // Meta's expiry still reads as a lost sign-in…
+    const meta = composioWith(metaExpired, lookupFails);
+    const { connection: open, marked } = connection();
+    await expect(runAs("metaads", open, "METAADS_GET_INSIGHTS", {}, signal, meta.deps)).rejects.toMatchObject({ code: "reauth_required", requestId: "req_7f3a9c" });
+    expect(marked).toEqual(["invalid"]);
+    expect(meta.calls).toHaveLength(2);
+    // A lookup refused with words that sound like a lost sign-in isn't a lost sign-in: only a 404 on the account is.
+    const refused = composioWith({ status: 400, body: { error: { message: "Unknown field: foo" } } }, { status: 401, body: { error: { message: "Invalid or expired token" } } });
+    await expect(runTool("metaads", "METAADS_GET_INSIGHTS", account, {}, signal, refused.deps)).rejects.toMatchObject({ code: "bad_request" });
+    // …and anything else stays what it was.
+    const bad = composioWith({ status: 400, body: { error: { message: "Unknown field: foo", request_id: "req_1" } } }, lookupFails);
+    await expect(runTool("metaads", "METAADS_GET_INSIGHTS", account, {}, signal, bad.deps)).rejects.toMatchObject({ code: "bad_request", requestId: "req_1" });
+  });
+
+  it("doesn't ask about a rate limit or an outage: those aren't the sign-in", async () => {
+    for (const run of [{ status: 429, body: {} }, { status: 503, body: {} }, { body: { successful: false, error: "User request limit reached", data: {} } }]) {
+      const { deps, calls } = composioWith(run, { body: { id: "ca_123", status: "EXPIRED" } });
+      await expect(runTool("metaads", "METAADS_GET_INSIGHTS", account, {}, signal, deps)).rejects.toMatchObject({ code: expect.not.stringMatching("reauth_required") });
+      expect(calls).toHaveLength(1);
+    }
+  });
+});
+
+describe("Google Ads stays read-only", () => {
+  it("only runs one GAQL SELECT", () => {
+    expect(gaqlSchema.safeParse("SELECT campaign.name FROM campaign").success).toBe(true);
+    expect(gaqlSchema.safeParse("  select metrics.clicks from campaign").success).toBe(true);
+    expect(gaqlSchema.safeParse("MUTATE campaign SET status = PAUSED").success).toBe(false);
+    expect(gaqlSchema.safeParse("SELECT campaign.name FROM campaign; SELECT 1").success).toBe(false);
+  });
+
+  it("limits rows: the query's own LIMIT when smaller, never more than the cap", () => {
+    expect(withLimit("SELECT campaign.name FROM campaign", 200)).toBe("SELECT campaign.name FROM campaign LIMIT 201");
+    expect(withLimit("SELECT campaign.name FROM campaign LIMIT 5", 200)).toBe("SELECT campaign.name FROM campaign LIMIT 5");
+    expect(withLimit("SELECT campaign.name FROM campaign LIMIT 50000", 200)).toBe("SELECT campaign.name FROM campaign LIMIT 201");
+  });
+
+  it("calls only Composio tools that only read", async () => {
+    const called = new Set<string>();
+    const fake = fakeComposio((path) => {
+      called.add(path.split("/").pop() ?? "");
+      return { body: { successful: true, error: null, data: { results: [], resourceNames: ["customers/1234567"], data: [] } } };
+    });
+    const connection = { id: "c", name: "Ads", config: { oauth: { provider: "composio" as const } }, credential: JSON.stringify(account) };
+    const realFetch = globalThis.fetch;
+    globalThis.fetch = fake.deps.fetch!;
+    process.env.COMPOSIO_API_KEY = "test-key";
+    try {
+      for (const source of [googleAdsSource, metaAdsSource] as unknown as ConnectionSource[]) {
+        for (const tool of source.tools) {
+          const args =
+            tool.name === "googleads_query"
+              ? { customerId: "1234567", query: "SELECT campaign.name FROM campaign" }
+              : tool.name === "googleads_fields"
+                ? { prefix: "campaign" }
+                : tool.name === "metaads_insights"
+                  ? { objectId: "act_1234567", level: "campaign", fields: ["spend"] }
+                  : tool.name === "metaads_campaigns"
+                    ? { adAccountId: "act_1234567" }
+                    : {};
+          await tool.execute(connection, args, { signal, caller: "agent" });
+        }
+      }
+    } finally {
+      globalThis.fetch = realFetch;
+      delete process.env.COMPOSIO_API_KEY;
+    }
+    // Each one tagged readOnlyHint by Composio (checked against its tool list for version 20261116_00).
+    expect([...called].sort()).toEqual([
+      "GOOGLEADS_LIST_ACCESSIBLE_CUSTOMERS",
+      "GOOGLEADS_SEARCH_GOOGLE_ADS_FIELDS",
+      "GOOGLEADS_SEARCH_STREAM_GAQL",
+      "METAADS_GET_AD_ACCOUNTS",
+      "METAADS_GET_INSIGHTS",
+      "METAADS_LIST_CAMPAIGNS",
+    ]);
+  });
+
+  it("can't be added by pasting a credential: only by signing in", () => {
+    for (const source of [googleAdsSource, metaAdsSource]) {
+      expect(source.credential.schema.safeParse(JSON.stringify(account)).success).toBe(false);
+    }
+  });
+});
+
+describe("rows", () => {
+  it("flattens Google Ads rows and reads metrics as numbers, ids as text", () => {
+    const result = flattenRows(
+      [
+        { campaign: { id: "12345678901", name: "Brand" }, segments: { date: "2026-11-01" }, metrics: { clicks: "12", costMicros: "3400000" } },
+        { campaign: { id: "12345678902", name: "Generic" }, segments: { date: "2026-11-01" }, metrics: { clicks: "7", costMicros: "1200000" } },
+      ],
+      (column) => column.startsWith("metrics."),
+      1,
+    );
+    expect(result).toEqual({
+      columns: ["campaign.id", "campaign.name", "segments.date", "metrics.clicks", "metrics.costMicros"],
+      rows: [{ "campaign.id": "12345678901", "campaign.name": "Brand", "segments.date": "2026-11-01", "metrics.clicks": 12, "metrics.costMicros": 3400000 }],
+      truncated: true,
+    });
+  });
+
+  it("turns Meta's actions into a column per action type", () => {
+    const result = flattenRows(
+      [{ campaign_name: "Sale", publisher_platform: "instagram", spend: "152.40", actions: [{ action_type: "purchase", value: "3" }, { action_type: "link_click", value: "40" }] }],
+      (column) => !column.endsWith("_name"),
+      10,
+    );
+    expect(result.rows[0]).toEqual({ campaign_name: "Sale", publisher_platform: "instagram", spend: 152.4, "actions.purchase": 3, "actions.link_click": 40 });
+  });
+});
+
+describe("errors", () => {
+  it("each source names itself, and a lost sign-in asks to sign in again", () => {
+    const lost = new ComposioError("reauth_required", "expired", "metaads");
+    expect(composioToError(googleAdsCatalog, lost)).toBeNull();
+    // An error that doesn't say which source it's from isn't claimed, rather than named after the wrong one.
+    expect(composioToError(googleAdsCatalog, new ComposioError("unavailable"))).toBeNull();
+    expect(composioToError(metaAdsCatalog, lost)).toEqual({
+      status: "invalid",
+      error: { code: "reauth_required", message: "The sign-in to Meta Ads expired or was revoked. Sign in again from Data Connections." },
+    });
+    expect(googleAdsSource.toError(new ComposioError("bad_request", "Unrecognized field 'metrics.foo'", "googleads"))?.error.message).toContain("metrics.foo");
+  });
+});
+
+describe("signing in through Composio", () => {
+  const { db, pool } = createDatabase(TEST_DATABASE_URL);
+  const service = createConnectionService({
+    db,
+    secrets: () => plaintextSecretBox,
+    // The sources' own checks run against the fake Composio below: they decide whose account it is.
+    sources: (type) => (type === "metaads" ? metaAdsSource : googleAdsSource) as unknown as ConnectionSource,
+  });
+
+  let accountState: { status: string; user_id: string; toolkit: string } = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
+  let deleted: string[] = [];
+  let failDeletes = false;
+  const composio = fakeComposio((path, init) => {
+    if (path.endsWith("/connected_accounts/link")) {
+      const body = JSON.parse(String(init.body)) as { user_id: string };
+      accountState.user_id ||= body.user_id;
+      return { status: 201, body: { redirect_url: "https://connect.composio.dev/link/abc", connected_account_id: "ca_new", link_token: "t", expires_at: "x" } };
+    }
+    if (init.method === "DELETE") {
+      if (failDeletes) return { status: 500, body: { message: "down" } };
+      deleted.push(path.split("/").pop() ?? "");
+      return { body: {} };
+    }
+    if (path.endsWith("/revoke")) return { body: {} };
+    return { body: { id: "ca_new", status: accountState.status, user_id: accountState.user_id, toolkit: { slug: accountState.toolkit } } };
+  });
+  const deps = { service };
+  const finish = (userId: string, state: string | null) => finishSignIn(userId, state, new URLSearchParams(), deps);
+  // Signing in, and releasing a sign-in, go to the fake too, never the real Composio.
+  googleAdsDeps.composio = { ...composio.deps, pollMs: 1 };
+  metaAdsDeps.composio = { ...composio.deps, pollMs: 1 };
+
+  beforeEach(async () => {
+    accountState = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
+    deleted = [];
+    failDeletes = false;
+    await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${pendingSignIns} CASCADE`);
+    await seedWorkspaces(db, ["alice", "mallory"]);
+  });
+
+  afterAll(async () => {
+    await pool.end();
+  });
+
+  const stateOf = (url: string) => new URL(url).pathname.split("/").pop() ?? null;
+
+  async function start(source: "googleads" | "metaads" = "googleads") {
+    const started = await startNewSignIn(workspaceOf("alice"), { type: source, name: "Ads" }, deps);
+    if (!started.ok) throw new Error(started.error.code);
+    const link = composio.calls.findLast((call) => call.path.endsWith("/connected_accounts/link"))?.body as { callback_url: string };
+    return { started, state: stateOf(link.callback_url) ?? "" };
+  }
+
+  it("sends the browser to Composio, then saves a sign-in connection for the account it started", async () => {
+    const { started, state } = await start();
+    expect(started.data.authorizationUrl).toBe("https://connect.composio.dev/link/abc");
+
+    const finished = await finish("alice", state);
+    if (!finished.ok) throw new Error(finished.error.code);
+    const [row] = await db.select().from(dataConnections).where(eq(dataConnections.id, finished.data.id));
+    expect(row).toMatchObject({ type: "googleads", sharing: "personal", name: "Ads", config: { type: "googleads", oauth: { provider: "composio" } } });
+    const [signIn] = await db.select().from(connectionSignIns).where(and(eq(connectionSignIns.connectionId, finished.data.id), eq(connectionSignIns.userId, "alice")));
+    // The account it started, never the one named in the callback's URL.
+    expect(readComposioCredential(await plaintextSecretBox.open(signIn!.secret, { purpose: "", userId: "", connectionId: "" }))).toEqual({ composioUserId: accountState.user_id, connectedAccountId: "ca_new" });
+  });
+
+  it("adding the same source again makes another connection, and the first one's sign-in keeps working", async () => {
+    const first = await start();
+    const done = await finish("alice", first.state);
+    if (!done.ok) throw new Error(done.error.code);
+
+    // A login per client: another Google account, as another connection.
+    accountState = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
+    const again = await startNewSignIn(workspaceOf("alice"), { type: "googleads", name: "Ads, client B" }, deps);
+    expect(again).toEqual({ ok: true, data: { authorizationUrl: "https://connect.composio.dev/link/abc" } });
+    const link = composio.calls.findLast((call) => call.path.endsWith("/connected_accounts/link"))?.body as { callback_url: string };
+    const finished = await finish("alice", stateOf(link.callback_url));
+    if (!finished.ok) throw new Error(finished.error.code);
+
+    expect(finished.data.id).not.toBe(done.data.id);
+    const rows = await db.select({ name: dataConnections.name }).from(dataConnections).orderBy(dataConnections.createdAt);
+    expect(rows).toEqual([{ name: "Ads" }, { name: "Ads, client B" }]);
+    expect(await db.select().from(connectionSignIns)).toHaveLength(2);
+    // Nothing was replaced, so nothing was let go of.
+    expect(deleted).toEqual([]);
+  });
+
+  it("refuses a source it doesn't sign in to, before asking Composio", async () => {
+    const before = composio.calls.length;
+    expect(await startNewSignIn(workspaceOf("alice"), { type: "postgres", name: "DB", sharing: "org" }, deps)).toMatchObject({
+      ok: false,
+      error: { code: "validation" },
+    });
+    expect(composio.calls).toHaveLength(before);
+  });
+
+  it("comes back to a path that carries the state, whatever Composio appends", async () => {
+    await start();
+    const link = composio.calls.findLast((call) => call.path.endsWith("/connected_accounts/link"))?.body as { callback_url: string };
+    expect(link.callback_url).toMatch(/^http:\/\/localhost:\d+\/api\/sign-in\/callback\/[A-Za-z0-9_-]{43}$/);
+    expect(await finish("alice", "not-a-state")).toMatchObject({ ok: false, error: { code: "oauth_failed" } });
+  });
+
+  it("lets go of the Composio account when the connection is removed or signed out of", async () => {
+    for (const leave of ["remove", "signOut"] as const) {
+      deleted = [];
+      const { state } = await start();
+      const finished = await finish("alice", state);
+      if (!finished.ok) throw new Error(finished.error.code);
+      const result = await service[leave]("alice", { id: finished.data.id });
+      expect(result.ok).toBe(true);
+      expect(deleted).toEqual(["ca_new"]);
+      accountState = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
+    }
+  });
+
+  it("lets go of every account on a removed connection, one saved while it is being removed included", async () => {
+    const { state } = await start();
+    const finished = await finish("alice", state);
+    if (!finished.ok) throw new Error(finished.error.code);
+    const connectionId = finished.data.id;
+
+    // Someone else's sign-in, saved in a transaction still open when the removal starts.
+    const other = await pool.connect();
+    try {
+      await other.query("BEGIN");
+      const secret = await plaintextSecretBox.seal(writeComposioCredential({ composioUserId: "od-mallory", connectedAccountId: "ca_other" }), {
+        purpose: "",
+        userId: "",
+        connectionId: "",
+      });
+      await other.query(
+        "INSERT INTO connection_sign_ins (id, connection_id, user_id, secret, status, last_checked_at) VALUES (gen_random_uuid(), $1, 'mallory', $2, 'ok', now())",
+        [connectionId, JSON.stringify(secret)],
+      );
+      const removing = service.remove("alice", { id: connectionId });
+      // The removal waits on that transaction's lock before it commits.
+      await vi.waitFor(async () => {
+        const { rows } = await pool.query<{ n: number }>(
+          "SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE $1",
+          [`%"data_connections"%`],
+        );
+        expect(rows[0]?.n).toBeGreaterThan(0);
+      });
+      await other.query("COMMIT");
+      expect(await removing).toMatchObject({ ok: true });
+    } finally {
+      other.release();
+    }
+
+    expect(deleted.toSorted()).toEqual(["ca_new", "ca_other"]);
+    expect(await db.select().from(connectionSignIns)).toEqual([]);
+  });
+
+  it("lets go of the Composio account when a member leaving or a workspace deleted takes the sign-in", async () => {
+    const { state } = await start();
+    const finished = await finish("alice", state);
+    if (!finished.ok) throw new Error(finished.error.code);
+    composio.calls.length = 0;
+
+    // What lib/orgs does when Alice leaves: delete her sign-ins in its transaction, then hand them over.
+    const gone = await db.transaction((tx) => deleteSignIns(tx, { orgId: workspaceOf("alice").orgId, userId: "alice" }));
+    expect(gone.signIns.map(({ type, signIn }) => [type, signIn.connectionId])).toEqual([["googleads", finished.data.id]]);
+    await service.releaseDeleted(gone);
+
+    // Revoked at the platform, then deleted from Composio.
+    expect(composio.calls.map(({ method, path }) => `${method} ${path.replace("/api/v3.1", "")}`)).toEqual([
+      "POST /connected_accounts/ca_new/revoke",
+      "DELETE /connected_accounts/ca_new",
+    ]);
+    expect(await db.select().from(connectionSignIns)).toEqual([]);
+  });
+
+  it("lets go of the Composio account of a sign-in nobody finished: expired, its member gone, or its connection removed", async () => {
+    // Expired: let go of when the next sign-in starts.
+    await start();
+    await db.update(pendingSignIns).set({ expiresAt: new Date(Date.now() - 1_000) });
+    expect(deleted).toEqual([]);
+    await start();
+    await vi.waitFor(() => expect(deleted).toEqual(["ca_new"]));
+
+    // Its member leaving the workspace: handed over with their finished ones.
+    deleted = [];
+    const gone = await db.transaction((tx) => deleteSignIns(tx, { orgId: workspaceOf("alice").orgId, userId: "alice" }));
+    expect(gone.pending).toHaveLength(1);
+    await service.releaseDeleted(gone);
+    expect(deleted).toEqual(["ca_new"]);
+
+    // Its connection removed while signing in again to it: that sign-in's account, and the one in progress.
+    accountState = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
+    const { state } = await start();
+    const done = await finish("alice", state);
+    if (!done.ok) throw new Error(done.error.code);
+    expect(await startSignInTo(workspaceOf("alice"), { connectionId: done.data.id }, deps)).toMatchObject({ ok: true });
+    deleted = [];
+    expect(await service.remove("alice", { id: done.data.id })).toMatchObject({ ok: true });
+    expect(deleted).toEqual(["ca_new", "ca_new"]);
+    expect(await db.select().from(pendingSignIns)).toEqual([]);
+  });
+
+  it("starts the next sign-in even when letting go of an expired one's account fails", async () => {
+    await start();
+    await db.update(pendingSignIns).set({ expiresAt: new Date(Date.now() - 1_000) });
+    failDeletes = true;
+    await start();
+    expect(await db.select().from(pendingSignIns)).toHaveLength(1);
+  });
+
+  it("can't be finished twice, or by someone else", async () => {
+    const { state } = await start();
+    const mallory = await finish("mallory", state);
+    expect(mallory).toMatchObject({ ok: false, error: { code: "oauth_expired" } });
+    const alice = await finish("alice", state);
+    expect(alice.ok).toBe(true);
+    const again = await finish("alice", state);
+    expect(again).toMatchObject({ ok: false, error: { code: "oauth_expired" } });
+  });
+
+  it("saves nothing, and removes the account, when the sign-in didn't complete", async () => {
+    accountState.status = "FAILED";
+    const { state } = await start();
+    const finished = await finish("alice", state);
+    expect(finished).toMatchObject({ ok: false, error: { code: "oauth_failed" } });
+    expect(await db.select().from(dataConnections)).toEqual([]);
+    expect(deleted).toEqual(["ca_new"]);
+  });
+
+  it("refuses an account that belongs to another Composio user or another platform", async () => {
+    for (const change of [{ user_id: "od-someone-else" }, { toolkit: "metaads" }]) {
+      const { state } = await start();
+      Object.assign(accountState, change);
+      const finished = await finish("alice", state);
+      expect(finished.ok).toBe(false);
+      accountState = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
+    }
+    expect(await db.select().from(dataConnections)).toEqual([]);
+    await vi.waitFor(() => expect(deleted).toContain("ca_new"));
+  });
+});
+
+describe("whose Google Ads or Meta Ads sign-in a query runs as", () => {
+  const { db, pool } = createDatabase(TEST_DATABASE_URL);
+  const service = createConnectionService({
+    db,
+    secrets: () => plaintextSecretBox,
+    sources: (type) => (type === "metaads" ? metaAdsSource : googleAdsSource) as unknown as ConnectionSource,
+  });
+  const appsService = createAppService({ db });
+
+  // A Composio account per sign-in, each its own Composio user's, so whose account a query runs with can be told apart.
+  let toolkit: "googleads" | "metaads" = "googleads";
+  let accounts = new Map<string, { user_id: string; toolkit: string }>();
+  let deleted: string[] = [];
+  const composio = fakeComposio((path, init) => {
+    const id = path.split("/").at(-1) ?? "";
+    if (path.endsWith("/connected_accounts/link")) {
+      const accountId = `ca_${accounts.size + 1}`;
+      accounts.set(accountId, { user_id: (JSON.parse(String(init.body)) as { user_id: string }).user_id, toolkit });
+      return { status: 201, body: { redirect_url: "https://connect.composio.dev/link/abc", connected_account_id: accountId, link_token: "t", expires_at: "x" } };
+    }
+    if (init.method === "DELETE") {
+      deleted.push(id);
+      return { body: {} };
+    }
+    if (path.endsWith("/revoke")) return { body: {} };
+    const account = accounts.get(id);
+    return account ? { body: { id, status: "ACTIVE", user_id: account.user_id, toolkit: { slug: account.toolkit } } } : { status: 404, body: {} };
+  });
+  const deps = { service };
+
+  // Signing in and releasing go through the sources' own deps: this suite's fake while it runs, the suite above's otherwise.
+  const before = { googleads: googleAdsDeps.composio, metaads: metaAdsDeps.composio };
+  beforeAll(() => {
+    googleAdsDeps.composio = { ...composio.deps, pollMs: 1 };
+    metaAdsDeps.composio = { ...composio.deps, pollMs: 1 };
+  });
+  afterAll(async () => {
+    googleAdsDeps.composio = before.googleads;
+    metaAdsDeps.composio = before.metaads;
+    await pool.end();
+  });
+
+  /** Ads Co: Ada is its admin, Eddie an editor, Val a viewer. Gus is in no workspace with them. */
+  let team: string;
+  const inTeam = (userId: string) => ({ userId, orgId: team });
+
+  beforeEach(async () => {
+    accounts = new Map();
+    deleted = [];
+    await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${pendingSignIns} CASCADE`);
+    await seedWorkspaces(db, ["ads-ada", "ads-eddie", "ads-val", "ads-gus"]);
+    team = await seedTeam(db, "Ads Co", { "ads-ada": "admin", "ads-eddie": "editor", "ads-val": "viewer" });
+  });
+
+  /** Signs `userId` in through the real flow: a new connection, or again to `connectionId`. Returns it and the Composio account it got. */
+  async function signIn(userId: string, input: { connectionId: string } | { sharing: "personal" | "org" }) {
+    const started =
+      "connectionId" in input
+        ? await startSignInTo(inTeam(userId), input, deps)
+        : await startNewSignIn(inTeam(userId), { type: toolkit, name: toolkit === "googleads" ? "Google Ads" : "Meta Ads", sharing: input.sharing }, deps);
+    if (!started.ok) throw new Error(started.error.code);
+    const link = composio.calls.findLast((call) => call.path.endsWith("/connected_accounts/link"))?.body as { callback_url: string };
+    const accountId = `ca_${accounts.size}`;
+    const finished = await finishSignIn(userId, new URL(link.callback_url).pathname.split("/").at(-1) ?? null, new URLSearchParams(), deps);
+    if (!finished.ok) throw new Error(finished.error.code);
+    return { id: finished.data.id, accountId };
+  }
+
+  /** The Composio account `userId`'s queries on the connection run with, or null when it doesn't open for them. */
+  async function runsAs(userId: string, id: string, options: { appId?: string } = {}) {
+    const opened = await service.open(userId, id, toolkit, { orgId: team, ...options });
+    return opened ? readComposioCredential(opened.credential).connectedAccountId : null;
+  }
+
+  describe.each(["googleads", "metaads"] as const)("%s", (source) => {
+    beforeEach(() => {
+      toolkit = source;
+    });
+
+    it("a personal connection runs as each member's own sign-in, never another's", async () => {
+      const { id, accountId: adas } = await signIn("ads-ada", { sharing: "personal" });
+      expect(await runsAs("ads-ada", id)).toBe(adas);
+
+      // Eddie can see it, but can't query with Ada's sign-in: he's asked to sign in himself.
+      expect(await runsAs("ads-eddie", id)).toBeNull();
+      expect(await service.whyClosed("ads-eddie", id)).toMatchObject({ code: "sign_in_required" });
+      // Someone outside the workspace isn't even told why.
+      expect(await runsAs("ads-gus", id)).toBeNull();
+      expect(await service.whyClosed("ads-gus", id)).toBeNull();
+
+      // Once he signs in to it, his queries run as his account, and Ada's still as hers.
+      const eddies = await signIn("ads-eddie", { connectionId: id });
+      expect(eddies.id).toBe(id);
+      expect(eddies.accountId).not.toBe(adas);
+      expect(await runsAs("ads-eddie", id)).toBe(eddies.accountId);
+      expect(await runsAs("ads-ada", id)).toBe(adas);
+      expect(await service.whyClosed("ads-eddie", id)).toBeNull();
+    });
+
+    it("lists the workspace's personal connections for someone adding it again, and refuses a name already taken", async () => {
+      const { id } = await signIn("ads-ada", { sharing: "personal" });
+      await signIn("ads-eddie", { sharing: "org" });
+      const name = source === "googleads" ? "Google Ads" : "Meta Ads";
+
+      // Only the personal one, with whether this person signed in to it; nothing for someone outside the workspace.
+      expect(await personalSignIns(inTeam("ads-ada"), { type: source }, deps)).toEqual({ ok: true, data: [{ id, name, signedIn: true }] });
+      expect(await personalSignIns(inTeam("ads-eddie"), { type: source }, deps)).toEqual({ ok: true, data: [{ id, name, signedIn: false }] });
+      expect(await personalSignIns({ userId: "ads-gus", orgId: team }, { type: source }, deps)).toEqual({ ok: true, data: [] });
+
+      // Another personal one needs a name of its own, whatever its case, before anything is asked of Composio.
+      const links = accounts.size;
+      expect(await startNewSignIn(inTeam("ads-eddie"), { type: source, name: name.toUpperCase(), sharing: "personal" }, deps)).toMatchObject({
+        ok: false,
+        error: { code: "name_taken", field: "name" },
+      });
+      expect(accounts.size).toBe(links);
+      expect(await startNewSignIn(inTeam("ads-eddie"), { type: source, name: `${name}, client B`, sharing: "personal" }, deps)).toMatchObject({ ok: true });
+    });
+
+    it("a shared connection runs as its holder, for every member and for a guest of an app using it", async () => {
+      const { id, accountId: holders } = await signIn("ads-eddie", { sharing: "org" });
+      for (const member of ["ads-eddie", "ads-ada", "ads-val"]) expect(await runsAs(member, id)).toBe(holders);
+
+      const app = await appsService.create(inTeam("ads-eddie"), { prompt: "Spend by campaign", connectionIds: [id] });
+      if (!app.ok) throw new Error(app.error.code);
+      expect(await appsService.addGuest("ads-eddie", { id: app.data.id, email: "ads-gus@example.com" })).toEqual({ ok: true, data: undefined });
+      expect(await runsAs("ads-gus", id, { appId: app.data.id })).toBe(holders);
+      // Only through the app: a guest isn't in the workspace.
+      expect(await runsAs("ads-gus", id)).toBeNull();
+    });
+
+    it("a viewer can't start a new connection, and the Composio account it made is let go", async () => {
+      for (const sharing of ["personal", "org"] as const) {
+        const result = await startNewSignIn(inTeam("ads-val"), { type: source, name: "Ads", sharing }, deps);
+        expect(result).toMatchObject({ ok: false, error: { code: "forbidden" } });
+        await vi.waitFor(() => expect(deleted).toContain(`ca_${accounts.size}`));
+      }
+      expect(deleted).toEqual(["ca_1", "ca_2"]);
+      expect(await db.select().from(pendingSignIns)).toEqual([]);
+      expect(await db.select().from(dataConnections)).toEqual([]);
+    });
+
+    it("an admin signing in again to a shared connection replaces the holder's sign-in and lets go of their Composio account", async () => {
+      const { id, accountId: eddies } = await signIn("ads-eddie", { sharing: "org" });
+      // A viewer can't take it over.
+      expect(await startSignInTo(inTeam("ads-val"), { connectionId: id }, deps)).toMatchObject({ ok: false, error: { code: "forbidden" } });
+
+      const adas = await signIn("ads-ada", { connectionId: id });
+      expect(adas.id).toBe(id);
+      expect(await db.select({ userId: connectionSignIns.userId }).from(connectionSignIns).where(eq(connectionSignIns.connectionId, id))).toEqual([
+        { userId: "ads-ada" },
+      ]);
+      // Eddie's account is deleted from Composio; everyone, Eddie included, now runs as Ada.
+      expect(deleted).toEqual([eddies]);
+      for (const member of ["ads-eddie", "ads-ada", "ads-val"]) expect(await runsAs(member, id)).toBe(adas.accountId);
+    });
+  });
+});

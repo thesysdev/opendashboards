@@ -29,3 +29,10 @@ export const connectionRefSchema = z.object({ id: connectionIdSchema }).strict()
 
 /** A demo dataset, by its key in config. */
 export const demoRefSchema = z.object({ dataset: z.string().min(1).max(40) }).strict();
+
+/**
+ * Where the browser may go back to after signing in: an app or one of its
+ * dashboards, on our own site. Anything else (another site, another path) is
+ * refused, so the callback can never be an open redirect.
+ */
+export const RETURN_PATH = /^\/w\/[0-9a-f-]{36}\/apps\/[0-9a-f-]{36}(\/[0-9a-f-]{36})?$/;

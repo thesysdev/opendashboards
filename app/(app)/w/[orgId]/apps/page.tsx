@@ -15,7 +15,6 @@ import { appPath } from "@/lib/apps/paths";
 import { asWorkspace } from "@/lib/orgs/access";
 import { can } from "@/lib/orgs/policy";
 import { getSecretMode } from "@/lib/secrets";
-import { SOURCE_OPTIONS } from "@/lib/sources/catalog";
 
 export const metadata: Metadata = { title: "Apps" };
 
@@ -55,7 +54,7 @@ async function Home({ params }: { params: Params }) {
           tile,
           demo: demo?.key ?? null,
         }))}
-        sources={SOURCE_OPTIONS}
+        sources={connectionService.sourceOptions()}
         demos={demos.map(({ key, name, description, prompts, connectionId }) => ({
           key,
           name,

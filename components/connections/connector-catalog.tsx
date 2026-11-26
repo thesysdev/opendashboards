@@ -4,6 +4,7 @@ import { SearchIcon } from "lucide-react";
 import { useState } from "react";
 
 import { Input } from "@/components/ui/input";
+import type { SourceOption } from "@/lib/sources/catalog";
 import { ANY_MCP_SERVER, CATALOG_CATEGORIES, POPULAR, searchCatalog, type CatalogEntry } from "@/lib/sources/directory";
 
 import { LimitPrompt, useAtLimit, useViewOnly } from "@/components/billing/workspace-plan";
@@ -16,13 +17,27 @@ import { SourceTile } from "./source-tile";
  * Every source and known MCP server, by what people build dashboards about.
  * Picking one opens its connect dialog. `sampleData` is a tile that adds the
  * sample dataset, for someone who has connections but hasn't added it.
+ * `sources`: the sources this person can add here; an entry shows only when
+ * the source it connects through is one of them.
  */
-export function ConnectorCatalog({ secretMode, sampleData }: { secretMode: SecretMode; sampleData?: React.ReactNode }) {
+export function ConnectorCatalog({
+  secretMode,
+  sampleData,
+  sources,
+}: {
+  secretMode: SecretMode;
+  sampleData?: React.ReactNode;
+  sources: SourceOption[];
+}) {
   const [query, setQuery] = useState("");
+  const offered = new Set(sources.map((source) => source.key));
+  // A known MCP server connects through the MCP source.
+  const isOffered = (entry: CatalogEntry) => offered.has(entry.open.kind === "mcp" ? ANY_MCP_SERVER.key : entry.key);
+  const shown = (entries: CatalogEntry[]) => entries.filter(isOffered);
   const [selected, setSelected] = useState<CatalogEntry | null>(null);
   const [open, setOpen] = useState(false);
   const searching = query.trim().length > 0;
-  const results = searching ? searchCatalog(query) : [];
+  const results = searching ? shown(searchCatalog(query)) : [];
 
   // A new connection: paused while the workspace is over its plan or at its connection limit.
   const viewOnly = useViewOnly();
@@ -68,9 +83,9 @@ export function ConnectorCatalog({ secretMode, sampleData }: { secretMode: Secre
               </ul>
             </section>
           )}
-          <Group label="Popular" entries={POPULAR} onPick={pick} disabled={paused} />
+          <Group label="Popular" entries={shown(POPULAR)} onPick={pick} disabled={paused} />
           {CATALOG_CATEGORIES.map((category) => (
-            <Group key={category.key} label={category.label} entries={category.entries} onPick={pick} disabled={paused} />
+            <Group key={category.key} label={category.label} entries={shown(category.entries)} onPick={pick} disabled={paused} />
           ))}
         </>
       )}

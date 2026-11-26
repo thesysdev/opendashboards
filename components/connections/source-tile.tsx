@@ -1,6 +1,7 @@
 import { DatabaseIcon } from "lucide-react";
 import {
   siClickhouse,
+  siGoogleads,
   siGoogleanalytics,
   siGooglebigquery,
   siGooglesearchconsole,
@@ -8,6 +9,7 @@ import {
   siIntercom,
   siJira,
   siLinear,
+  siMeta,
   siMixpanel,
   siSentry,
   siStripe,
@@ -43,6 +45,8 @@ const LOGOS: Record<string, SimpleIcon> = {
   ST: siStripe,
   MX: siMixpanel,
   IC: siIntercom,
+  GD: siGoogleads,
+  MA: siMeta,
 };
 
 /** The square tile at the start of a source or connection row: the source's logo. */

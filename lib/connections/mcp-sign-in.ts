@@ -9,11 +9,11 @@ import type { Scope } from "@/lib/orgs/access";
 import { mcpConfigSchema } from "@/lib/sources/mcp/catalog";
 import { McpError } from "@/lib/sources/mcp/errors";
 import { MCP_SERVICE_KEYS, mcpService, type McpServiceKey } from "@/lib/sources/mcp/services";
+import { hashState } from "@/lib/sources/sign-in";
 import {
   beginOAuthSignIn,
   discoverOAuth,
   exchangeOAuthCode,
-  hashState,
   oauthClientFor,
   writeOAuthCredential,
   type OAuthTestHooks,
@@ -22,7 +22,7 @@ import {
 
 import { getConnectionService } from ".";
 import { fail, fromCheckError, fromValidation, internalError, notFound, ok, type Result } from "./errors";
-import { connectionNameSchema } from "./schemas";
+import { connectionNameSchema, RETURN_PATH } from "./schemas";
 import type { ConnectionService } from "./service";
 
 /**
@@ -44,13 +44,6 @@ export const MCP_CLIENT_METADATA_PATH = "/oauth/client-metadata.json";
  */
 export const mcpClientMetadataUrl = () =>
   appConfig().mcpClientMetadataDocument ? `${appConfig().appOrigin}${MCP_CLIENT_METADATA_PATH}` : null;
-
-/**
- * Where the browser may go back to after signing in: an app or one of its
- * dashboards, on our own site. Anything else (another site, another path) is
- * refused, so the callback can never be an open redirect.
- */
-const RETURN_PATH = /^\/w\/[0-9a-f-]{36}\/apps\/[0-9a-f-]{36}(\/[0-9a-f-]{36})?$/;
 
 /** How a new connection is used, fixed once added: each member signs in themselves unless it's shared. */
 const sharing = z.enum(["personal", "org"]).default("personal");

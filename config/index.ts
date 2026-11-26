@@ -73,6 +73,14 @@ export const secrets = {
   stripeSecretKey: () => process.env.STRIPE_SECRET_KEY,
   /** Verifies that webhook events came from Stripe. */
   stripeWebhookSecret: () => process.env.STRIPE_WEBHOOK_SECRET,
+  /** Composio's project API key, for Google Ads and Meta Ads. Unset: those sources can't be connected. */
+  composioApiKey: () => process.env.COMPOSIO_API_KEY,
+  /**
+   * The Composio auth configs (Composio-managed OAuth) each ads source signs
+   * in through. Not secret, but set per Composio project.
+   */
+  composioAuthConfig: (toolkit: "googleads" | "metaads") =>
+    ({ googleads: process.env.COMPOSIO_GOOGLEADS_AUTH_CONFIG_ID, metaads: process.env.COMPOSIO_METAADS_AUTH_CONFIG_ID })[toolkit],
 };
 
 /**

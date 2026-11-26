@@ -4,7 +4,7 @@ import { refresh } from "next/cache";
 
 import { track } from "@/lib/analytics";
 import { getConnectionService } from "@/lib/connections";
-import { startMcpSignIn } from "@/lib/connections/mcp-sign-in";
+import { personalSignIns, startNewSignIn, startSignInTo } from "@/lib/connections/sign-in";
 import { withLogContext } from "@/lib/log";
 import { fail, type Result } from "@/lib/connections/errors";
 import { inWorkspace, type Member, memberOf, requireKnownUser } from "@/lib/orgs";
@@ -27,26 +27,44 @@ async function run<T>(
   return result;
 }
 
-/** For something new: it goes in the workspace of the page it was sent from, never another tab's. */
-async function runIn<T>(input: unknown, call: (member: Member, fields: unknown) => Promise<Result<T>>): Promise<Result<T>> {
+/** As a member of the workspace of the page it was sent from: something new goes there, never in another tab's. */
+async function asMember<T>(input: unknown, call: (member: Member, fields: unknown) => Promise<Result<T>>): Promise<Result<T>> {
   const { orgId, fields } = inWorkspace(input);
   const member = await memberOf(orgId);
   if (!member) return fail({ code: "not_found", message: "You aren't a member of this workspace any more. Reload the page." });
-  const result = await withLogContext({ user: member.userId }, () => call(member, fields));
+  return withLogContext({ user: member.userId }, () => call(member, fields));
+}
+
+/** For something new, saved now. */
+async function runIn<T>(input: unknown, call: (member: Member, fields: unknown) => Promise<Result<T>>): Promise<Result<T>> {
+  const result = await asMember(input, call);
   if (result.ok) refresh();
   return result;
 }
 
 /**
- * Starts an OAuth sign-in to an MCP server (new, or again for an existing
- * connection). Returns the sign-in page to send the browser to; the
- * connection is saved when it comes back to /api/mcp/oauth/callback.
+ * Adds a connection by signing in instead of with a key (Google Ads, an MCP
+ * server). Returns the sign-in page to send the browser to; the connection is
+ * saved when the browser comes back to that sign-in's callback.
  */
-export async function startMcpSignInAction(input: unknown) {
-  const { orgId, fields } = inWorkspace(input);
-  const member = await memberOf(orgId);
-  if (!member) return fail({ code: "not_found", message: "You aren't a member of this workspace any more. Reload the page." });
-  return startMcpSignIn(member, fields);
+export async function addConnectionWithSignInAction(input: unknown) {
+  // Nothing to refresh: nothing is saved until the sign-in comes back.
+  return asMember(input, startNewSignIn);
+}
+
+/**
+ * Signs in to a connection that exists, in its own workspace: as the caller,
+ * or for a shared one, as the one everyone runs as. Returns the sign-in page
+ * to send the browser to.
+ */
+export async function signInToConnectionAction(input: unknown) {
+  // Nothing to refresh: nothing is saved until the sign-in comes back.
+  return asMember(input, startSignInTo);
+}
+
+/** The workspace's personal connections of a source that signs in, for the add dialog to offer signing in to one of them. */
+export async function personalSignInsAction(input: unknown) {
+  return asMember(input, personalSignIns);
 }
 
 export async function createConnectionAction(input: unknown) {

@@ -2,8 +2,9 @@ import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createDatabase } from "@/lib/db";
-import { appConnections, appGuests, apps, dashboards, dataConnections, orgInvites, orgMembers, orgs, users } from "@/lib/db/schema";
+import { appConnections, appGuests, apps, connectionSignIns, dashboards, pendingSignIns, dataConnections, orgInvites, orgMembers, orgs, users } from "@/lib/db/schema";
 import { roleIn } from "@/lib/orgs/access";
+import type { DeletedSignIns } from "@/lib/connections/deleted-sign-ins";
 import { createOrgService } from "@/lib/orgs/service";
 
 import { TEST_DATABASE_URL } from "./global-setup";
@@ -391,5 +392,77 @@ describe("deleting a workspace", () => {
     const [{ id: own, name }] = await service.list(alice.id);
     expect(await service.remove(alice.id, { orgId: own, name })).toEqual({ ok: true, data: undefined });
     expect(await service.list(alice.id)).toEqual([]);
+  });
+});
+
+describe("letting go of deleted sign-ins", () => {
+  /** A service that records what it's asked to release, and Acme with a Google Ads connection both Alice and Bob signed in to. */
+  async function signedIn() {
+    const released: DeletedSignIns = { signIns: [], pending: [] };
+    const releasing = createOrgService({
+      db,
+      release: async (deleted) => {
+        released.signIns.push(...deleted.signIns);
+        released.pending.push(...deleted.pending);
+      },
+    });
+    const orgId = await team();
+    await service.ensureUser(bob);
+    await service.invite(alice.id, { orgId, email: bob.email, role: "editor" });
+    const [connection] = await db
+      .insert(dataConnections)
+      .values({
+        id: crypto.randomUUID(),
+        userId: alice.id,
+        orgId,
+        name: "Google Ads",
+        type: "googleads",
+        config: { type: "googleads", oauth: { provider: "composio" } },
+        secret: null,
+        credentialHint: "",
+        status: "ok",
+        lastCheckedAt: new Date(),
+        sharing: "personal",
+      })
+      .returning();
+    const signIn = (userId: string) => ({
+      id: crypto.randomUUID(),
+      connectionId: connection.id,
+      userId,
+      secret: { v: 1 as const, provider: "plaintext" as const, value: userId },
+      status: "ok" as const,
+      lastCheckedAt: new Date(),
+    });
+    await db.insert(connectionSignIns).values([signIn(alice.id), signIn(bob.id)]);
+    // And one Bob started and didn't finish.
+    await db.insert(pendingSignIns).values({
+      stateHash: "bob-unfinished",
+      userId: bob.id,
+      orgId,
+      connectionId: null,
+      sharing: "personal",
+      name: "Meta Ads",
+      config: { type: "metaads", oauth: { provider: "composio" } },
+      secret: { v: 1, provider: "plaintext", value: "{}" },
+      expiresAt: new Date(Date.now() + 60_000),
+    });
+    return { releasing, released, orgId };
+  }
+
+  it("releases a removed member's sign-ins, and only theirs", async () => {
+    const { releasing, released, orgId } = await signedIn();
+    expect(await releasing.removeMember(alice.id, { orgId, userId: bob.id })).toEqual({ ok: true, data: undefined });
+    expect(released.signIns.map(({ type, signIn }) => [type, signIn.userId])).toEqual([["googleads", bob.id]]);
+    // Their unfinished sign-in goes too, handed over to let go of what it made.
+    expect(released.pending.map((row) => row.stateHash)).toEqual(["bob-unfinished"]);
+    expect(await db.select().from(pendingSignIns)).toEqual([]);
+    expect((await db.select().from(connectionSignIns)).map((row) => row.userId)).toEqual([alice.id]);
+  });
+
+  it("releases every sign-in in a deleted workspace", async () => {
+    const { releasing, released, orgId } = await signedIn();
+    expect(await releasing.remove(alice.id, { orgId, name: "Acme" })).toEqual({ ok: true, data: undefined });
+    expect(released.signIns.map(({ signIn }) => signIn.userId).sort()).toEqual([alice.id, bob.id]);
+    expect(released.pending.map((row) => row.stateHash)).toEqual(["bob-unfinished"]);
   });
 });

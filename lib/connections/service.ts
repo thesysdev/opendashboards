@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import { and, asc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
+import { waitUntil } from "@vercel/functions";
+import { z } from "zod";
 
 import type { DemoDataset } from "@/config";
 import type { Database } from "@/lib/db";
@@ -9,7 +11,7 @@ import {
   apps,
   connectionSignIns,
   dataConnections,
-  mcpOAuthSignIns,
+  pendingSignIns,
   users,
   type ConnectionSharing,
   type ConnectionSignInRow,
@@ -29,8 +31,10 @@ import {
   CONNECTION_TYPES,
   connectionConfigSchema,
   describeConnection,
+  SOURCE_OPTIONS,
   type ConnectionConfig,
   type ConnectionType,
+  type SourceOption,
 } from "@/lib/sources/catalog";
 import type { ConnectionSource, ConnectionWarning, OpenConnection } from "@/lib/sources/types";
 
@@ -51,6 +55,7 @@ import {
   renameSchema,
   replaceCredentialSchema,
 } from "./schemas";
+import type { DeletedSignIns } from "./deleted-sign-ins";
 import { connectionKind, isSignIn } from "./kind";
 
 export type { ConnectionWarning };
@@ -125,6 +130,11 @@ export type ConnectionServiceDeps = {
   demo?: { datasets: () => DemoDataset[]; password: () => string | undefined };
   /** The workspace's plan: whether it may add a connection or rename one. Everything allowed without. */
   gate?: Gate;
+  /**
+   * The source types this deployment is set up to connect: lib/sources/available
+   * in the app. Every type without.
+   */
+  availableSources?: () => readonly ConnectionType[];
 };
 
 /** How an installed demo dataset reads in lists and pickers. */
@@ -161,7 +171,14 @@ const DEFAULT_KEY_CACHE_TTL_MS = 5 * 60 * 1000;
 export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db } = deps;
   const gate = deps.gate ?? OPEN_GATE;
+  const availableSources = deps.availableSources ?? (() => CONNECTION_TYPES);
   const now = deps.now ?? (() => new Date());
+
+  /** Refuses adding a connection of a type this deployment isn't set up to connect. */
+  function refuseUnavailable(type: ConnectionType): Result<never> | null {
+    if (availableSources().includes(type)) return null;
+    return fail({ code: "not_available", message: "This source isn't set up on this OpenDashboards." });
+  }
 
   /** Adds a connection row (and anything with it) only if the plan still allows one, under the plan's lock. */
   async function insertWithinPlan(orgId: string, userId: string, insert: (tx: Parameters<Parameters<Database["transaction"]>[0]>[0]) => Promise<void>) {
@@ -204,6 +221,44 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 
   const openCredential = (sealed: SealedSecret | null, ctx: SecretContext): Promise<string> =>
     sealed?.provider === "none" ? Promise.resolve("") : deps.secrets().open(sealed!, ctx);
+
+  /**
+   * After sign-ins are deleted: lets the source let go of what they held
+   * elsewhere (a Composio account, with its ad platform tokens). Best effort,
+   * and only this part: the delete has already committed, so a failure at the
+   * other service is logged and the rest are still released, never turned
+   * into an error for a delete that worked.
+   */
+  async function releaseSignIns(type: ConnectionType, signIns: ConnectionSignInRow[]): Promise<void> {
+    const source = deps.sources(type);
+    if (!source.release) return;
+    for (const signIn of signIns) {
+      try {
+        await source.release(await openCredential(signIn.secret, context(type, signIn.userId, signIn.connectionId)));
+      } catch (error) {
+        logError("connections.releaseSignIn", error);
+      }
+    }
+  }
+
+  /**
+   * After unfinished sign-ins were deleted (expired, their connection removed,
+   * their member or workspace gone): lets each source let go of what it made
+   * for them elsewhere (a Composio account). Best effort, like releaseSignIns.
+   */
+  async function discardPending(rows: PendingSignInRow[]): Promise<void> {
+    for (const row of rows) {
+      const config = connectionConfigSchema.safeParse(row.config);
+      const discard = config.success ? deps.sources(config.data.type).signIn?.discard : undefined;
+      if (!discard) continue;
+      try {
+        const opened = await openPending(row);
+        if (opened) await discard(opened.pending);
+      } catch (error) {
+        logError("connections.discardSignIn", error);
+      }
+    }
+  }
 
   /** The source's own check, with the settings stripped of their type tag. */
   function check(config: ConnectionConfig, credential: string): Promise<ConnectionWarning[]> {
@@ -342,6 +397,21 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
   const signInContext = (userId: string, stateHash: string): SecretContext => ({ purpose: "mcp-oauth-sign-in", userId, connectionId: stateHash });
 
   /**
+   * What a pending sign-in keeps sealed: what its source needs to finish it,
+   * and where to go back to. Null for one sealed some other way (started
+   * before this shape), which reads as expired.
+   */
+  async function openPending(row: PendingSignInRow): Promise<{ pending: string; returnTo: string | null } | null> {
+    const opened = await deps.secrets().open(row.secret, signInContext(row.userId, row.stateHash));
+    try {
+      const parsed = pendingSecretSchema.safeParse(JSON.parse(opened));
+      return parsed.success ? parsed.data : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * Changes a sign-in's stored tokens (refreshed, say), one change at a time
    * per sign-in. Under a Postgres advisory lock, it reads the tokens as stored
    * now (another request may have just refreshed them), lets `change` decide,
@@ -445,14 +515,32 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     const users = await appsUsing(userId, row.id);
     if (users.visible.length || users.hidden) return inUse(users);
 
+    const type = row.type as ConnectionType;
+    let removed: { signIns: ConnectionSignInRow[]; pending: PendingSignInRow[] };
     try {
-      await db.delete(dataConnections).where(eq(dataConnections.id, row.id));
+      removed = await db.transaction(async (tx) => {
+        // Locked first, so every sign-in it has is deleted (and released) here: one saved
+        // from now on waits for this to commit, then finds the connection gone. Without
+        // the lock, one committed between the two deletes would go with the connection's
+        // cascade, never released.
+        await tx.select({ id: dataConnections.id }).from(dataConnections).where(eq(dataConnections.id, row.id)).for("update");
+        const signIns = await tx.delete(connectionSignIns).where(eq(connectionSignIns.connectionId, row.id)).returning();
+        // Signing in again to it, unfinished: these would go with the connection's cascade, never discarded.
+        const pending = await tx.delete(pendingSignIns).where(eq(pendingSignIns.connectionId, row.id)).returning();
+        await tx.delete(dataConnections).where(eq(dataConnections.id, row.id));
+        return { signIns, pending };
+      });
     } catch (error) {
-      // An app was added between the check and the delete: the foreign key caught it.
+      // An app was added between the check and the delete: the foreign key caught it,
+      // and the sign-ins' delete rolled back with it.
       if (isForeignKeyViolation(error)) return inUse(await appsUsing(userId, row.id));
       throw error;
     }
     keyCache.delete(row.id);
+    for (const { id } of removed.signIns) keyCache.delete(id);
+    // Committed: the sign-ins are gone for good.
+    await releaseSignIns(type, removed.signIns);
+    await discardPending(removed.pending);
     return ok(undefined);
   }
 
@@ -541,6 +629,12 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         });
       }
       return summaries;
+    },
+
+    /** The sources this deployment is set up to connect, in catalog order. */
+    sourceOptions(): SourceOption[] {
+      const available = availableSources();
+      return SOURCE_OPTIONS.filter((option) => available.includes(option.type));
     },
 
     /** Every demo dataset on offer, and whether the org has it installed. */
@@ -635,6 +729,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!(CONNECTION_TYPES as readonly string[]).includes(type)) {
           return fail({ code: "validation", message: "Unknown source type." });
         }
+        const unavailable = refuseUnavailable(type);
+        if (unavailable) return unavailable;
         const source = deps.sources(type);
         const { name, type: _type, [source.credential.field]: rawCredential, ...rawConfig } = envelope.data;
 
@@ -822,10 +918,24 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         const removed = await db
           .delete(connectionSignIns)
           .where(and(eq(connectionSignIns.connectionId, found.row.id), eq(connectionSignIns.userId, userId)))
-          .returning({ id: connectionSignIns.id });
+          .returning();
         for (const { id } of removed) keyCache.delete(id);
+        await releaseSignIns(found.row.type as ConnectionType, removed);
         return ok(undefined);
       });
+    },
+
+    /**
+     * After sign-ins were deleted elsewhere (a member leaving, a workspace
+     * deleted): lets each source let go of what they held at another service,
+     * finished or not. Best effort, like releaseSignIns: the deleting already happened.
+     */
+    async releaseDeleted(deleted: DeletedSignIns): Promise<void> {
+      for (const { type, signIn } of deleted.signIns) {
+        keyCache.delete(signIn.id);
+        await releaseSignIns(type, [signIn]);
+      }
+      await discardPending(deleted.pending);
     },
 
     /**
@@ -952,6 +1062,23 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     },
 
     /**
+     * The workspace's personal connections of a source, each with whether the
+     * caller has signed in to it: what someone adding the source again may
+     * mean to sign in to instead. Oldest first; none for a non-member.
+     */
+    async personalSignInConnections(scope: Scope, type: ConnectionType): Promise<{ id: string; name: string; signedIn: boolean }[]> {
+      if (!(await roleIn(db, scope.userId, scope.orgId))) return [];
+      const rows = await db
+        .select({ id: dataConnections.id, name: dataConnections.name, signIn: connectionSignIns.id })
+        .from(dataConnections)
+        // The caller's own sign-in, if any: one per member.
+        .leftJoin(connectionSignIns, and(eq(connectionSignIns.connectionId, dataConnections.id), eq(connectionSignIns.userId, scope.userId)))
+        .where(and(inWorkspace(scope), eq(dataConnections.type, type), eq(dataConnections.sharing, "personal"), isNull(dataConnections.demoDataset)))
+        .orderBy(asc(dataConnections.createdAt));
+      return rows.map(({ id, name, signIn }) => ({ id, name, signedIn: signIn !== null }));
+    },
+
+    /**
      * Keeps a started OAuth sign-in until the browser comes back: the user it
      * belongs to, the connection it will become, and (sealed) the PKCE verifier
      * and client registration. Found later by the state's hash only.
@@ -964,6 +1091,8 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         name: string;
         config: ConnectionConfig;
         pending: string;
+        /** An app path to go back to once it's finished. */
+        returnTo?: string;
         /** For a new connection: shared with the workspace, or requiring each member's own sign-in. */
         sharing: ConnectionSharing;
       },
@@ -978,16 +1107,21 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         } else {
           const creating = decide("connection", "create", await workspaceFacts(db, userId, orgId));
           if (!creating.allowed) return refusal(creating);
+          // A connection already here can still be signed in to; only a new one needs the source on offer.
+          const unavailable = refuseUnavailable(sign.config.type);
+          if (unavailable) return unavailable;
           // Before sending them off to sign in; checked again when the sign-in is saved.
           const refused = await gate(db, orgId, "createConnection", userId);
           if (refused) return fail(refused);
         }
         const tooLarge = refuseIfTooLarge(sign.config.type, sign.pending, "create");
         if (tooLarge) return tooLarge;
-        // Old, abandoned sign-ins go first.
-        await db.delete(mcpOAuthSignIns).where(lt(mcpOAuthSignIns.expiresAt, now()));
-        const secret = await deps.secrets().seal(sign.pending, signInContext(userId, sign.stateHash));
-        await db.insert(mcpOAuthSignIns).values({
+        // Old, abandoned sign-ins go first. Whatever their sources made for them is let go of after the
+        // response: they're anyone's, so this sign-in doesn't wait on another service for them.
+        waitUntil(discardPending(await db.delete(pendingSignIns).where(lt(pendingSignIns.expiresAt, now())).returning()));
+        const sealed = JSON.stringify({ pending: sign.pending, returnTo: sign.returnTo ?? null } satisfies z.infer<typeof pendingSecretSchema>);
+        const secret = await deps.secrets().seal(sealed, signInContext(userId, sign.stateHash));
+        await db.insert(pendingSignIns).values({
           stateHash: sign.stateHash,
           userId,
           orgId,
@@ -1016,20 +1150,22 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       name: string;
       config: ConnectionConfig;
       pending: string;
+      returnTo: string | null;
     } | null> {
       const [row] = await db
-        .delete(mcpOAuthSignIns)
-        .where(and(eq(mcpOAuthSignIns.stateHash, stateHash), eq(mcpOAuthSignIns.userId, userId), gt(mcpOAuthSignIns.expiresAt, now())))
+        .delete(pendingSignIns)
+        .where(and(eq(pendingSignIns.stateHash, stateHash), eq(pendingSignIns.userId, userId), gt(pendingSignIns.expiresAt, now())))
         .returning();
       if (!row) return null;
-      const pending = await deps.secrets().open(row.secret, signInContext(userId, stateHash));
+      const opened = await openPending(row);
+      if (!opened) return null;
       return {
         orgId: row.orgId,
         connectionId: row.connectionId,
         sharing: row.sharing,
         name: row.name,
         config: connectionConfigSchema.parse(row.config),
-        pending,
+        ...opened,
       };
     },
 
@@ -1061,11 +1197,14 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           if (!existing || !can("connection", "signIn", existing.facts)) return notFound();
           const { row } = existing;
           if (row.type !== config.type || row.demoDataset !== null) return notFound();
-          const replaced: string[] = [];
+          const replaced: ConnectionSignInRow[] = [];
           try {
             const secret = await sealCredential(input.credential, context(config.type, userId, row.id));
             const warnings = await check(config, input.credential);
             await db.transaction(async (tx) => {
+              // The connection before its sign-ins, the order removing it locks them in:
+              // the two wait for each other instead of deadlocking.
+              await tx.update(dataConnections).set({ config, updatedAt: now() }).where(eq(dataConnections.id, row.id));
               // A shared sign-in has one: whoever signed in last is the one everyone runs as.
               const gone = await tx
                 .delete(connectionSignIns)
@@ -1074,18 +1213,19 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
                     ? eq(connectionSignIns.connectionId, row.id)
                     : and(eq(connectionSignIns.connectionId, row.id), eq(connectionSignIns.userId, userId)),
                 )
-                .returning({ id: connectionSignIns.id });
-              replaced.push(...gone.map((signIn) => signIn.id));
+                .returning();
+              replaced.push(...gone);
               await tx
                 .insert(connectionSignIns)
                 .values({ id: randomUUID(), connectionId: row.id, userId, secret, status: "ok", lastCheckedAt: now() });
-              await tx.update(dataConnections).set({ config, updatedAt: now() }).where(eq(dataConnections.id, row.id));
             });
+            // Committed: the sign-ins it replaced are gone for good.
+            await releaseSignIns(config.type, replaced);
             return ok({ id: row.id, warnings });
           } catch (error) {
             return checkFailure(error, config.type);
           } finally {
-            for (const id of replaced) keyCache.delete(id);
+            for (const { id } of replaced) keyCache.delete(id);
           }
         }
 
@@ -1125,6 +1265,11 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
 }
 
 export type ConnectionService = ReturnType<typeof createConnectionService>;
+
+type PendingSignInRow = typeof pendingSignIns.$inferSelect;
+
+/** What a pending sign-in keeps sealed. */
+const pendingSecretSchema = z.object({ pending: z.string(), returnTo: z.string().nullable() }).strict();
 
 /** Decrypted credentials, kept briefly so a busy dashboard doesn't decrypt per query. */
 function createKeyCache(ttlMs: number, now: () => Date) {

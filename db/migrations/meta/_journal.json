@@ -50,6 +50,13 @@
       "when": 1795505999919,
       "tag": "0006_billing",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1795596304888,
+      "tag": "0007_ads_sources",
+      "breakpoints": true
     }
   ]
 }

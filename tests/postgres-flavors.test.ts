@@ -42,6 +42,8 @@ describe("SOURCE_OPTIONS", () => {
       ["bigquery", "bigquery", null],
       ["ga4", "ga4", null],
       ["searchconsole", "searchconsole", null],
+      ["googleads", "googleads", null],
+      ["metaads", "metaads", null],
       ["mcp", "mcp", null],
     ]);
   });

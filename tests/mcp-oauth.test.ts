@@ -12,7 +12,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { finishMcpSignIn, startMcpSignIn } from "@/lib/connections/mcp-sign-in";
 import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
-import { apps, connectionSignIns, dataConnections, mcpOAuthSignIns } from "@/lib/db/schema";
+import { apps, connectionSignIns, dataConnections, pendingSignIns } from "@/lib/db/schema";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 import type { McpConfig } from "@/lib/sources/mcp/catalog";
 import { McpError } from "@/lib/sources/mcp/errors";
@@ -164,7 +164,7 @@ const deps = { service, testHooks: hooks, redirectUri: REDIRECT };
 beforeEach(async () => {
   mode = {};
   registrations = 0;
-  await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${mcpOAuthSignIns} CASCADE`);
+  await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${pendingSignIns} CASCADE`);
   await seedWorkspaces(db, ["alice", "mallory"]);
 });
 afterAll(() => pool.end());
@@ -208,7 +208,7 @@ describe("signing in", () => {
     expect(authorize.searchParams.get("redirect_uri")).toBe(REDIRECT);
 
     // The pending sign-in is keyed by a hash of the state, and its secrets are sealed.
-    const [pending] = await db.select().from(mcpOAuthSignIns);
+    const [pending] = await db.select().from(pendingSignIns);
     expect(pending.stateHash).not.toBe(authorize.searchParams.get("state"));
     expect(JSON.stringify(pending.config)).not.toContain("code_verifier");
 
@@ -222,7 +222,7 @@ describe("signing in", () => {
     expect(signIn).toMatchObject({ connectionId: row.id, userId: "alice", status: "ok" });
     const credential = readOAuthCredential(await plaintextSecretBox.open(signIn.secret, { purpose: "", userId: "", connectionId: "" }));
     expect(credential.tokens).toMatchObject({ access_token: "at-" + issued, refresh_token: "rt-" + issued });
-    expect(await db.select().from(mcpOAuthSignIns)).toHaveLength(0);
+    expect(await db.select().from(pendingSignIns)).toHaveLength(0);
   });
 
   it("can't be finished twice", async () => {
@@ -269,7 +269,7 @@ describe("signing in", () => {
     const state = new URL(started.data.authorizationUrl).searchParams.get("state") ?? "";
     const declined = new URLSearchParams({ error: "access_denied", state });
     expect(await finishMcpSignIn("alice", declined, deps)).toMatchObject({ ok: false, error: { code: "oauth_failed" } });
-    expect(await db.select().from(mcpOAuthSignIns)).toHaveLength(0);
+    expect(await db.select().from(pendingSignIns)).toHaveLength(0);
   });
 
   it("says where a declined sign-in started, to go back there (N-9)", async () => {

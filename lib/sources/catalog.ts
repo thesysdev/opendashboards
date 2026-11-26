@@ -3,7 +3,9 @@ import { z } from "zod";
 import { bigqueryCatalog, bigqueryConfigSchema } from "./bigquery/catalog";
 import { clickhouseCatalog, clickhouseConfigSchema } from "./clickhouse/catalog";
 import { ga4Catalog, ga4ConfigSchema } from "./ga4/catalog";
+import { googleAdsCatalog, googleAdsConfigSchema } from "./googleads/catalog";
 import { mcpCatalog, mcpStoredConfigSchema } from "./mcp/catalog";
+import { metaAdsCatalog, metaAdsConfigSchema } from "./metaads/catalog";
 import { mysqlCatalog, mysqlConfigSchema } from "./mysql/catalog";
 import { posthogCatalog, posthogConfigSchema } from "./posthog/catalog";
 import { searchConsoleCatalog, searchConsoleConfigSchema } from "./searchconsole/catalog";
@@ -14,9 +16,9 @@ import type { SourceCatalog, SourceDescription } from "./types";
  * Every source's client-safe catalog. Adding a source: add it here and in
  * ./index.ts, and to the connection_type enum in lib/db/schema.ts.
  */
-export const CATALOGS = [posthogCatalog, postgresCatalog, mysqlCatalog, clickhouseCatalog, bigqueryCatalog, ga4Catalog, searchConsoleCatalog, mcpCatalog] as const;
+export const CATALOGS = [posthogCatalog, postgresCatalog, mysqlCatalog, clickhouseCatalog, bigqueryCatalog, ga4Catalog, searchConsoleCatalog, googleAdsCatalog, metaAdsCatalog, mcpCatalog] as const;
 
-export const CONNECTION_TYPES = ["posthog", "postgres", "mysql", "clickhouse", "bigquery", "ga4", "searchconsole", "mcp"] as const satisfies readonly (typeof CATALOGS)[number]["type"][];
+export const CONNECTION_TYPES = ["posthog", "postgres", "mysql", "clickhouse", "bigquery", "ga4", "searchconsole", "googleads", "metaads", "mcp"] as const satisfies readonly (typeof CATALOGS)[number]["type"][];
 export type ConnectionType = (typeof CONNECTION_TYPES)[number];
 
 /** A stored config: the source's settings, tagged with its type. */
@@ -28,6 +30,8 @@ export const connectionConfigSchema = z.discriminatedUnion("type", [
   bigqueryConfigSchema.extend({ type: z.literal("bigquery") }),
   ga4ConfigSchema.extend({ type: z.literal("ga4") }),
   searchConsoleConfigSchema.extend({ type: z.literal("searchconsole") }),
+  googleAdsConfigSchema.extend({ type: z.literal("googleads") }),
+  metaAdsConfigSchema.extend({ type: z.literal("metaads") }),
   mcpStoredConfigSchema.extend({ type: z.literal("mcp") }),
 ]);
 

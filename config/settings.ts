@@ -130,6 +130,21 @@ export type CommonSettings = {
     /** Refresh an OAuth access token when it has less than this left. */
     oauthRefreshMarginMs: number;
   };
+  /**
+   * Composio: the sign-in and API calls behind the Google Ads and Meta Ads
+   * sources, until they run on OpenDashboards' own approved apps. Composio's
+   * own approved OAuth apps sign people in; we only call its REST API.
+   */
+  composio: {
+    /** Composio's REST API (v3.1). Fixed: never from a user or a response. */
+    apiUrl: string;
+    /** One tool run (a report), end to end. */
+    queryTimeoutMs: number;
+    /** Any other Composio call: an account lookup, a sign-in link, a delete. */
+    checkTimeoutMs: number;
+    /** Rows a report may return. */
+    maxRows: { agent: number; dashboard: number };
+  };
   /** Sample datasets users can install to try OpenDashboards without data of their own. Read-only. */
   demoData: DemoData;
 };
