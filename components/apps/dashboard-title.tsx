@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 
 import { updateDashboardAction } from "@/app/(app)/apps/actions";
 import { InlineRename } from "@/components/inline-rename";
@@ -12,17 +12,19 @@ type Field = "title" | "description";
  * A dashboard's title and description, above it: OpenDashboards' own record, set to
  * the width, padding and ink of the @openuidev/dashboard-library dashboard below (whose
  * own top padding is the gap under it). Click either to change it in
- * place; a saved change shows straight away.
+ * place; a saved change shows straight away. `actions` sit at the right of the title.
  */
 export function DashboardTitle({
   appId,
   dashboard,
   readOnly = false,
+  actions,
 }: {
   appId: string;
   dashboard: { id: string; title: string; description: string | null };
   /** For someone who can only view the app: the title and description as plain text. */
   readOnly?: boolean;
+  actions?: ReactNode;
 }) {
   const [editing, setEditing] = useState<Field | null>(null);
   // A workspace over its plan keeps its dashboards as they are.
@@ -67,9 +69,12 @@ export function DashboardTitle({
   return (
     <div className="@container bg-white text-[#0d0d0d]">
       <header className="mx-auto max-w-[1440px] px-4 pt-5 @min-[721px]:px-9 @min-[721px]:pt-6">
-        <h1 className="text-[22px] leading-tight font-semibold tracking-[-0.015em]">
-          {editing === "title" ? editor("title", 120) : display("title", shown("title"))}
-        </h1>
+        <div className="flex items-start justify-between gap-3">
+          <h1 className="min-w-0 text-[22px] leading-tight font-semibold tracking-[-0.015em]">
+            {editing === "title" ? editor("title", 120) : display("title", shown("title"))}
+          </h1>
+          {actions && <div className="flex shrink-0 items-center gap-1">{actions}</div>}
+        </div>
         <p className="mt-1.5 max-w-[64ch] text-[13.5px] leading-normal text-[#0d0d0d]/64">
           {editing === "description"
             ? editor("description", 300)

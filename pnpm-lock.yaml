@@ -24,14 +24,14 @@ importers:
         specifier: 1.2.0
         version: 1.2.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(zod@4.6.7)
       '@openuidev/react-headless':
-        specifier: 0.20.0
-        version: 0.20.0(react@19.3.0)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))
+        specifier: 0.20.1
+        version: 0.20.1(react@19.3.0)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))
       '@openuidev/react-lang':
         specifier: ^1.2.0
         version: 1.2.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)
       '@openuidev/react-ui':
-        specifier: 0.20.0
-        version: 0.20.0(@openuidev/react-headless@0.20.0(react@19.3.0)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0)))(@openuidev/react-lang@1.2.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(csstype@3.2.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))
+        specifier: 0.20.1
+        version: 0.20.1(@openuidev/react-headless@0.20.1(react@19.3.0)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0)))(@openuidev/react-lang@1.2.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(csstype@3.2.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))
       '@openuidev/server':
         specifier: 0.5.3
         version: 0.5.3(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(zod@4.6.7)
@@ -1283,8 +1283,8 @@ packages:
       zod: ^3.25.0 || ^4.0.0
       zustand: ^4.5.5
 
-  '@openuidev/react-headless@0.20.0':
-    resolution: {integrity: sha512-YKkQAWlXvtSO13wWJ3jcgVs22pNOh+sWO7LYad/2K51lvydLpEFqvgrN1KIuTqJzW+LHGblLmi8sQ6JgAe48aA==}
+  '@openuidev/react-headless@0.20.1':
+    resolution: {integrity: sha512-3F11/mM3F3qoeXDA28HDVr4Rc5jeBphb5dFTHeVx1sdpra31sPo7oaYu88/cY/ok1H8Z59/PNDZj5DrATNeWGA==}
     peerDependencies:
       ai: ^6.0.0 || ^7.0.0
       react: ^18.3.1 || ^19.0.0
@@ -1325,8 +1325,8 @@ packages:
       react-native:
         optional: true
 
-  '@openuidev/react-ui@0.20.0':
-    resolution: {integrity: sha512-sCYJQvLvKJNbfsHI/gwtMbt6Bqm3RYNsw9SuiFLm8GgSabbaDBL6wvlqU7D7Ii6BVOJ5g5S8rWdh2Do/OwGjFQ==}
+  '@openuidev/react-ui@0.20.1':
+    resolution: {integrity: sha512-Tenpv6obQw8FKpDPSXHLxdh04X+th1XeqaXL9mGrRcTj0ehzjYYk9AKtRpWQLnt4o/BbI3SUt1J6RPvSWOkN/w==}
     peerDependencies:
       '@openuidev/react-headless': '>=0.18.2 <0.21.0'
       '@openuidev/react-lang': '>=1.2.0 <2.0.0'
@@ -7080,7 +7080,7 @@ snapshots:
       - csstype
       - supports-color
 
-  '@openuidev/react-headless@0.20.0(react@19.3.0)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))':
+  '@openuidev/react-headless@0.20.1(react@19.3.0)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))':
     dependencies:
       '@ag-ui/core': 0.0.53
       '@openuidev/observability': 0.0.4
@@ -7109,11 +7109,11 @@ snapshots:
       '@modelcontextprotocol/sdk': 1.32.2(zod@4.6.7)
       react-dom: 19.3.0(react@19.3.0)
 
-  '@openuidev/react-ui@0.20.0(@openuidev/react-headless@0.20.0(react@19.3.0)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0)))(@openuidev/react-lang@1.2.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(csstype@3.2.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))':
+  '@openuidev/react-ui@0.20.1(@openuidev/react-headless@0.20.1(react@19.3.0)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0)))(@openuidev/react-lang@1.2.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7))(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(csstype@3.2.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))':
     dependencies:
       '@floating-ui/react-dom': 2.1.9(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@openuidev/react-components': 0.0.5(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(csstype@3.2.3)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))
-      '@openuidev/react-headless': 0.20.0(react@19.3.0)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))
+      '@openuidev/react-headless': 0.20.1(react@19.3.0)(zustand@4.5.7(@types/react@19.3.0)(immer@11.2.9)(react@19.3.0))
       '@openuidev/react-lang': 1.2.0(@modelcontextprotocol/sdk@1.32.2(zod@4.6.7))(react-dom@19.3.0(react@19.3.0))(react@19.3.0)(zod@4.6.7)
       '@radix-ui/react-accordion': 1.3.1(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
       '@radix-ui/react-aspect-ratio': 1.2.0(@types/react-dom@19.3.0(@types/react@19.3.0))(@types/react@19.3.0)(react-dom@19.3.0(react@19.3.0))(react@19.3.0)
