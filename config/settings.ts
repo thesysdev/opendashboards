@@ -127,11 +127,6 @@ export type CommonSettings = {
     /** Refresh an OAuth access token when it has less than this left. */
     oauthRefreshMarginMs: number;
   };
-  /** Feature flags (lib/flags). */
-  flags: {
-    /** How long a page waits on the flag provider before treating a flag as off. */
-    timeoutMs: number;
-  };
   /**
    * Composio: the sign-in and API calls behind the Google Ads and Meta Ads
    * sources, until they run on OpenDashboards' own approved apps. Composio's

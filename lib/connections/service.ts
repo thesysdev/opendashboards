@@ -129,11 +129,10 @@ export type ConnectionServiceDeps = {
   /** The workspace's plan: whether it may add a connection or rename one. Everything allowed without. */
   gate?: Gate;
   /**
-   * The source types this person can add in this workspace (set up on this
-   * deployment, and not held back by a feature flag): lib/sources/available
+   * The source types this deployment is set up to connect: lib/sources/available
    * in the app. Every type without.
    */
-  availableSources?: (scope: Scope) => Promise<readonly ConnectionType[]>;
+  availableSources?: () => readonly ConnectionType[];
 };
 
 /** How an installed demo dataset reads in lists and pickers. */
@@ -170,13 +169,13 @@ const DEFAULT_KEY_CACHE_TTL_MS = 5 * 60 * 1000;
 export function createConnectionService(deps: ConnectionServiceDeps) {
   const { db } = deps;
   const gate = deps.gate ?? OPEN_GATE;
-  const availableSources = deps.availableSources ?? (async () => CONNECTION_TYPES);
+  const availableSources = deps.availableSources ?? (() => CONNECTION_TYPES);
   const now = deps.now ?? (() => new Date());
 
-  /** Refuses adding a connection of a type this person can't add here. */
-  async function refuseUnavailable(scope: Scope, type: ConnectionType): Promise<Result<never> | null> {
-    if ((await availableSources(scope)).includes(type)) return null;
-    return fail({ code: "not_available", message: "This source isn't available in this workspace yet." });
+  /** Refuses adding a connection of a type this deployment isn't set up to connect. */
+  function refuseUnavailable(type: ConnectionType): Result<never> | null {
+    if (availableSources().includes(type)) return null;
+    return fail({ code: "not_available", message: "This source isn't set up on this OpenDashboards." });
   }
 
   /** Adds a connection row (and anything with it) only if the plan still allows one, under the plan's lock. */
@@ -581,9 +580,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
       return summaries;
     },
 
-    /** The sources this person can add in this workspace, in catalog order. */
-    async sourceOptions(scope: Scope): Promise<SourceOption[]> {
-      const available = await availableSources(scope);
+    /** The sources this deployment is set up to connect, in catalog order. */
+    sourceOptions(): SourceOption[] {
+      const available = availableSources();
       return SOURCE_OPTIONS.filter((option) => available.includes(option.type));
     },
 
@@ -679,7 +678,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         if (!(CONNECTION_TYPES as readonly string[]).includes(type)) {
           return fail({ code: "validation", message: "Unknown source type." });
         }
-        const unavailable = await refuseUnavailable(scope, type);
+        const unavailable = refuseUnavailable(type);
         if (unavailable) return unavailable;
         const source = deps.sources(type);
         const { name, type: _type, [source.credential.field]: rawCredential, ...rawConfig } = envelope.data;
@@ -1039,7 +1038,7 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
           const creating = decide("connection", "create", await workspaceFacts(db, userId, orgId));
           if (!creating.allowed) return refusal(creating);
           // A connection already here can still be signed in to; only a new one needs the source on offer.
-          const unavailable = await refuseUnavailable(scope, sign.config.type);
+          const unavailable = refuseUnavailable(sign.config.type);
           if (unavailable) return unavailable;
           // Before sending them off to sign in; checked again when the sign-in is saved.
           const refused = await gate(db, orgId, "createConnection");

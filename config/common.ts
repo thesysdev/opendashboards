@@ -35,8 +35,6 @@ export const common: CommonSettings = {
     oauthSignInTtlMs: 10 * 60 * 1000,
     oauthRefreshMarginMs: 60 * 1000,
   },
-  // A page renders after the flags it needs: a slow provider costs at most this, and hides what's flagged.
-  flags: { timeoutMs: 1_000 },
   composio: {
     apiUrl: "https://backend.composio.dev/api/v3.1",
     // Meta builds large insight reports on demand: allow it the dashboard interpreter's budget, less margin.

@@ -42,12 +42,12 @@ export default function ConnectionsPage({ params }: { params: Params }) {
 async function ConnectionsContent({ params }: { params: Params }) {
   const member = await requireMemberOf((await params).orgId);
   const service = getConnectionService();
-  const [connections, demos, org, sources] = await Promise.all([
+  const [connections, demos, org] = await Promise.all([
     service.list(member),
     service.listDemoDatasets(member),
     getOrgService().get(member.userId, member.orgId),
-    service.sourceOptions(member),
   ]);
+  const sources = service.sourceOptions();
   // Who serves whom only matters once someone else is here (or is about to be): alone, there's nobody to share with.
   const shared = (org?.members.length ?? 1) + (org?.invites.length ?? 0) > 1;
   const team = shared ? member.orgName : null;

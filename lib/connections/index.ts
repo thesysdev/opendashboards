@@ -22,7 +22,7 @@ export function getConnectionService(): ConnectionService {
     demo: { datasets: () => config().demoData.datasets, password: secrets.demoDataPassword },
     signInTtlMs: config().mcp.oauthSignInTtlMs,
     gate: getGate(),
-    availableSources: (scope) => availableSources(scope),
+    availableSources,
   });
   return service;
 }

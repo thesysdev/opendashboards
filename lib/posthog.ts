@@ -16,7 +16,7 @@ export const ORG_GROUP = "opendash_org";
 
 let client: PostHog | undefined;
 
-/** The server's PostHog client, on our production deployment only: shared by analytics (lib/analytics) and feature flags (lib/flags). */
+/** The server's PostHog client, on our production deployment only (lib/analytics). */
 export function posthogClient(): PostHog | undefined {
   if (!POSTHOG_KEY || process.env.VERCEL_ENV !== "production") return undefined;
   return (client ??= new PostHog(POSTHOG_KEY, { host: POSTHOG_HOST }));
