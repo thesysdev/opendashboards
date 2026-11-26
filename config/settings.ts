@@ -151,6 +151,14 @@ export type EnvironmentSettings = {
    * OAuth sign-ins come back here, so it must be exactly what the browser uses.
    */
   appOrigin: string;
+  /**
+   * Sign in to MCP servers as `${appOrigin}/oauth/client-metadata.json` where
+   * their authorization server supports client ID metadata documents (CIMD),
+   * instead of registering a new client every time. The server fetches that
+   * document itself, so it must be reachable from the internet without signing
+   * in or a bot check: an https appOrigin, and the gateway letting it through.
+   */
+  mcpClientMetadataDocument: boolean;
   secrets: {
     /** Store data-source keys unencrypted when no KMS key is configured. Local only. */
     allowPlaintext: boolean;

@@ -82,6 +82,9 @@ export const secrets = {
  */
 export function settingsProblems(name: Environment, settings: Settings): string[] {
   const problems = [...demoDatasetProblems(settings), ...planProblems(settings)];
+  if (settings.mcpClientMetadataDocument && !/^https:\/\/[^/]+$/.test(settings.appOrigin)) {
+    problems.push(`${name}: mcpClientMetadataDocument needs an https:// appOrigin, which authorization servers can fetch from`);
+  }
   if (name === "local") return problems;
   if (settings.auth.devUser !== null) problems.push(`${name}: auth.devUser must be null; only local may skip the gateway`);
   if (settings.auth.publicHost === null) problems.push(`${name}: auth.publicHost must be set; it sits behind the gateway`);

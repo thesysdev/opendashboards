@@ -14,7 +14,7 @@ import {
   discoverOAuth,
   exchangeOAuthCode,
   hashState,
-  registerOAuthClient,
+  oauthClientFor,
   writeOAuthCredential,
   type OAuthTestHooks,
   type PendingSignIn,
@@ -27,13 +27,23 @@ import type { ConnectionService } from "./service";
 
 /**
  * Signing in to an MCP server with OAuth: start (discover the server's
- * authorization server, register, send the browser to sign in) and finish
- * (the callback: check it's this user's sign-in, swap the code for tokens,
- * test, save). Everything secret stays on the server.
+ * authorization server, pick the client to sign in as, send the browser to
+ * sign in) and finish (the callback: check it's this user's sign-in, swap the
+ * code for tokens, test, save). Everything secret stays on the server.
  */
 
 /** Where the authorization server sends the browser back. Exactly what's registered. */
 export const mcpSignInRedirectUri = () => `${appConfig().appOrigin}/api/mcp/oauth/callback`;
+
+/** Where the client metadata document is served. Public: see lib/auth/public-paths.ts. */
+export const MCP_CLIENT_METADATA_PATH = "/oauth/client-metadata.json";
+
+/**
+ * OpenDashboards' client id where it signs in with a client metadata document
+ * (CIMD): the document's own URL. null where it isn't served.
+ */
+export const mcpClientMetadataUrl = () =>
+  appConfig().mcpClientMetadataDocument ? `${appConfig().appOrigin}${MCP_CLIENT_METADATA_PATH}` : null;
 
 /**
  * Where the browser may go back to after signing in: an app or one of its
@@ -56,7 +66,7 @@ const startSchema = z.union([
 /** What a pending sign-in keeps sealed, besides the settings it will save. */
 type PendingSecret = PendingSignIn & { requireIss: boolean; returnTo?: string };
 
-type Deps = { service?: ConnectionService; testHooks?: OAuthTestHooks; redirectUri?: string };
+type Deps = { service?: ConnectionService; testHooks?: OAuthTestHooks; redirectUri?: string; clientMetadataUrl?: string | null };
 
 /**
  * Starts a sign-in: to a new server in the member's org, or to a connection
@@ -112,7 +122,8 @@ export async function startMcpSignIn(
   try {
     const redirectUri = deps.redirectUri ?? mcpSignInRedirectUri();
     const discovery = await discoverOAuth(url, deps.testHooks);
-    const client = await registerOAuthClient(discovery, redirectUri, deps.testHooks);
+    const clientMetadataUrl = deps.clientMetadataUrl !== undefined ? deps.clientMetadataUrl : mcpClientMetadataUrl();
+    const client = await oauthClientFor(discovery, redirectUri, clientMetadataUrl, deps.testHooks);
     const started = await beginOAuthSignIn(discovery, client, redirectUri);
     const pending: PendingSecret = {
       ...started.pending,

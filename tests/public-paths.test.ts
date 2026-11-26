@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { isPublicPath } from "@/lib/auth/public-paths";
 
 describe("isPublicPath", () => {
-  it("lets the landing page and its images through", () => {
+  it("lets public pages, assets, and endpoints through", () => {
     for (const path of [
       "/",
       "/pricing",
@@ -12,6 +12,7 @@ describe("isPublicPath", () => {
       "/robots.txt",
       "/sitemap.xml",
       "/opengraph-image",
+      "/oauth/client-metadata.json",
       "/api/stripe/webhook",
       "/landing/dashboards/revenue-light.png",
       "/landing/brand-icons/postgresql-solid.png",
@@ -39,6 +40,8 @@ describe("isPublicPath", () => {
       "/robots.txt/apps",
       "/sitemap.xml.bak",
       "/opengraph-image/apps",
+      "/oauth/client-metadata.json/apps",
+      "/oauth/",
       "/pricing/",
       "/pricing/apps",
       "/opendashboards",
