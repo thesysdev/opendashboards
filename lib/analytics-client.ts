@@ -1,5 +1,9 @@
 import posthog from "posthog-js";
 
+import type { IntervalLabel } from "./analytics-labels";
+
+export { intervalLabel, type IntervalLabel } from "./analytics-labels";
+
 /*
  * Product events from the browser, named like the server's (lib/analytics.ts):
  * `opendashboards_` first, the workspace as the `opendash_org` group. Same
@@ -18,11 +22,6 @@ export type UpgradeSource =
   | "settings"
   | "new_workspace"
   | "pricing";
-
-/** A billing period, as events name it. */
-export type IntervalLabel = "monthly" | "annual";
-
-export const intervalLabel = (interval: "month" | "year"): IntervalLabel => (interval === "year" ? "annual" : "monthly");
 
 export function trackClient(event: string, properties: Record<string, unknown>, orgId?: string | null): void {
   if (!posthog.__loaded) return;

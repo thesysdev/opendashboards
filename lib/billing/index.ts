@@ -3,6 +3,7 @@ import type Stripe from "stripe";
 
 import type { StripePlan } from "@/config";
 import type { Database } from "@/lib/db";
+import { logWarning } from "@/lib/log";
 import { orgBilling, stripeEvents } from "@/lib/db/schema";
 
 /*
@@ -116,62 +117,74 @@ export function createBilling(deps: {
    * to repeat and order-free: whatever Stripe says now wins.
    */
   async function sync(subscriptionId: string): Promise<boolean> {
-    const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    const product = subscription.metadata?.product;
-    if (product && product !== STRIPE_PRODUCT) return false;
-    const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
-    const isLive = LIVE.has(subscription.status);
-
-    const item = subscription.items.data[0];
-    const priced = item ? planOfPrice(item.price.id) : null;
-    const periodEnd = (item as { current_period_end?: number } | undefined)?.current_period_end ??
-      (subscription as unknown as { current_period_end?: number }).current_period_end;
-    const values = {
-      stripeSubscriptionId: subscription.id,
-      plan: isLive && priced ? priced.plan.id : null,
-      interval: priced?.interval ?? null,
-      status: subscription.status,
-      seats: item?.quantity ?? 1,
-      currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : null,
-      cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end || subscription.cancel_at),
-      updatedAt: new Date(),
-    };
-    // Locked, so the webhook and the browser's return can't both see the old row and both report the change.
+    // One sync per subscription at a time, and Stripe is read only once it's this one's turn: an earlier
+    // read can never be saved over a later one, and each change is reported once.
     const saved = await db.transaction(async (tx) => {
+      await tx.execute(sql`select pg_advisory_xact_lock(hashtext(${`subscription:${subscriptionId}`}))`);
+      const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+      const product = subscription.metadata?.product;
+      if (product && product !== STRIPE_PRODUCT) return null;
+      const customerId = typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id;
+      const isLive = LIVE.has(subscription.status);
+
+      const item = subscription.items.data[0];
+      const priced = item ? planOfPrice(item.price.id) : null;
+      if (isLive && item && !priced) logWarning("billing.unknown_price", { subscription: subscription.id, price: item.price.id });
+      const periodEnd = (item as { current_period_end?: number } | undefined)?.current_period_end ??
+        (subscription as unknown as { current_period_end?: number }).current_period_end;
+      const values = {
+        stripeSubscriptionId: subscription.id,
+        plan: isLive && priced ? priced.plan.id : null,
+        interval: priced?.interval ?? null,
+        status: subscription.status,
+        seats: item?.quantity ?? 1,
+        currentPeriodEnd: periodEnd ? new Date(periodEnd * 1000) : null,
+        cancelAtPeriodEnd: Boolean(subscription.cancel_at_period_end || subscription.cancel_at),
+        updatedAt: new Date(),
+      };
       // A local customer link also identifies subscriptions created before tagging.
-      // New workspaces get this link when their Checkout completes.
+      // New workspaces get this link when their Checkout completes. Locked against the customer's other subscriptions.
       const [current] = await tx.select().from(orgBilling).where(eq(orgBilling.stripeCustomerId, customerId)).limit(1).for("update");
       if (!current) return null;
       // An older subscription ending never undoes a newer one.
       if (current.stripeSubscriptionId && current.stripeSubscriptionId !== subscription.id && !isLive) return { current, change: null };
       await tx.update(orgBilling).set(values).where(eq(orgBilling.stripeCustomerId, customerId));
-      return { current, change: changeOf(current, values) };
+      const change = changeOf(current, values, isLive);
+      return {
+        current,
+        change: change && {
+          ...change,
+          orgId: current.orgId,
+          userId: subscription.metadata?.user_id || current.createdBy || null,
+          interval: values.interval,
+          seats: values.seats,
+          status: values.status,
+          cancelAtPeriodEnd: values.cancelAtPeriodEnd,
+        },
+      };
     });
     if (!saved) return false;
-    if (saved.change && deps.onChange) {
-      deps.onChange({
-        ...saved.change,
-        orgId: saved.current.orgId,
-        userId: subscription.metadata?.user_id || saved.current.createdBy || null,
-        interval: values.interval,
-        seats: values.seats,
-        status: values.status,
-        cancelAtPeriodEnd: values.cancelAtPeriodEnd,
-      });
-    }
+    if (saved.change) deps.onChange?.(saved.change);
     return true;
   }
 
-  /** How a saved subscription differs from the row before it, or null if it doesn't. A null plan is Free. */
+  /**
+   * How a saved subscription differs from the row before it, or null if it
+   * doesn't. A null plan is Free. Only a subscription Stripe has ended is
+   * cancelled: a live one on a price we don't know isn't reported at all.
+   */
   function changeOf(
     before: typeof orgBilling.$inferSelect,
     after: { plan: string | null; interval: Interval | null; status: string; seats: number; cancelAtPeriodEnd: boolean },
+    isLive: boolean,
   ): Pick<SubscriptionChange, "kind" | "plan" | "previousPlan" | "previousSeats"> | null {
     const kind =
       !before.plan && after.plan
         ? "started"
         : before.plan && !after.plan
-          ? "cancelled"
+          ? isLive
+            ? null
+            : "cancelled"
           : before.plan &&
               (before.plan !== after.plan ||
                 before.interval !== after.interval ||

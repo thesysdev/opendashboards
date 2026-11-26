@@ -47,7 +47,7 @@ describe("subscription events", () => {
   it("keeps only the group's plan when nobody can be credited", () => {
     trackSubscription(change({ kind: "cancelled", userId: null, plan: "free", status: "canceled" }));
     expect(analytics.track).not.toHaveBeenCalled();
-    expect(analytics.identifyWorkspacePlan).toHaveBeenCalledWith(ORG, { plan_id: "free", seats: 3, subscription_status: "canceled" });
+    expect(analytics.identifyWorkspacePlan).toHaveBeenCalledWith(ORG, { plan_id: "free", seats: 1, subscription_status: "canceled" });
   });
 });
 

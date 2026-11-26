@@ -120,11 +120,11 @@ function PlanCard({ plan, billing }: { plan: Plan; billing: Billing }) {
       </p>
       <p className="mt-2 text-sm leading-5 whitespace-nowrap text-neutral-950/60">{per}</p>
 
-      {/* A paid plan's button counts as an upgrade click; Free's is a sign-up. */}
+      {/* A button that goes to Checkout counts as an upgrade click. Not Free's (a sign-up) or one that leaves the site (sales). */}
       <div
         className="mt-6 [&>*]:w-full"
         onClickCapture={
-          free ? undefined : () => trackUpgradeClicked({ fromPlan: null, toPlan: plan.id, interval: billing, source: "pricing", orgId: null })
+          free || plan.cta.external ? undefined : () => trackUpgradeClicked({ fromPlan: null, toPlan: plan.id, interval: billing, source: "pricing", orgId: null })
         }
       >
         <BevelButton

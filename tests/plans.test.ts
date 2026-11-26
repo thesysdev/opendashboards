@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { sql } from "drizzle-orm";
+import Stripe from "stripe";
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { hostedPlans } from "@/config/plans";
@@ -227,7 +228,9 @@ describe("analytics", () => {
       orgId,
     );
 
-    vi.mocked(billing.startCheckout).mockRejectedValueOnce(Object.assign(new Error("No such price: 'price_tm'"), { code: "resource_missing" }));
+    vi.mocked(billing.startCheckout).mockRejectedValueOnce(
+      new Stripe.errors.StripeInvalidRequestError({ type: "invalid_request_error", code: "resource_missing", message: "No such price: 'price_tm'" }),
+    );
     await expect(plans.upgrade(orgId, { planId: "team", interval: "month", userId: alice.id })).rejects.toThrow();
     expect(track).toHaveBeenLastCalledWith(
       alice.id,
@@ -236,5 +239,10 @@ describe("analytics", () => {
       orgId,
     );
     expect(track).toHaveBeenCalledTimes(2);
+
+    // Not Stripe's: a database error's code isn't passed off as one.
+    vi.mocked(billing.startCheckout).mockRejectedValueOnce(Object.assign(new Error("duplicate key"), { code: "23505" }));
+    await expect(plans.upgrade(orgId, { planId: "team", interval: "month", userId: alice.id })).rejects.toThrow();
+    expect(track).toHaveBeenLastCalledWith(alice.id, "checkout_failed", expect.objectContaining({ error_code: "unknown" }), orgId);
   });
 });
