@@ -10,19 +10,13 @@ export const isComposioToolkit = (type: string): type is ComposioToolkit => (COM
  * The settings of a source that signs in through Composio (Google Ads, Meta
  * Ads). Client-safe. There's nothing to choose: which ad accounts a query
  * reads is an argument of the query, and the sign-in decides which ones it
- * may. The `oauth` marker is what makes it a sign-in connection: its
- * credential is per person, in connection_sign_ins, like an MCP sign-in.
+ * may. The `oauth` marker, filled in when absent, is what makes it a sign-in
+ * connection: its credential is per person, in connection_sign_ins.
  */
-export const composioSignInConfigSchema = z.object({ oauth: z.object({ provider: z.literal("composio") }).strict() }).strict();
+export const composioSignInConfigSchema = z
+  .object({ oauth: z.object({ provider: z.literal("composio") }).strict().default({ provider: "composio" }) })
+  .strict();
 
 export type ComposioSignInConfig = z.infer<typeof composioSignInConfigSchema>;
 
 export const COMPOSIO_SIGN_IN: ComposioSignInConfig = { oauth: { provider: "composio" } };
-
-/**
- * Whether a saved connection signs in through Composio: by what its own
- * settings recorded when it was made, not by what its source uses today.
- */
-export function isComposioSignIn(config: { type: string; oauth?: unknown }): config is { type: ComposioToolkit } & ComposioSignInConfig {
-  return isComposioToolkit(config.type) && composioSignInConfigSchema.safeParse({ oauth: config.oauth }).success;
-}

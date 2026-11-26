@@ -5,6 +5,7 @@ import { z } from "zod";
 import { config as appConfig } from "@/config";
 
 import { ComposioError, isConfigured, isRecord, type ComposioDeps } from "../composio/client";
+import { composioSignIn } from "../composio/sign-in";
 import { checkAccount, composioCredential, composioToError, flattenRows, readComposioCredential, releaseAccount, runAs } from "../composio/shared";
 import type { ConnectionSource, SourceTool } from "../types";
 
@@ -184,6 +185,7 @@ export const metaAdsSource: ConnectionSource<MetaAdsConfig> = {
   },
   available: () => isConfigured(metaAdsCatalog.type),
   release: (credential) => releaseAccount(credential, metaAdsDeps.composio),
+  signIn: composioSignIn("metaads", () => metaAdsDeps.composio),
   toError: (error) => composioToError(metaAdsCatalog, error),
   tools: [insightsTool, accountsTool, campaignsTool],
 };

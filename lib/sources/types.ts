@@ -94,6 +94,32 @@ export interface SourceTool<Config, Args = Record<string, unknown>> {
   ): Promise<unknown>;
 }
 
+/**
+ * Getting a connection's credential by signing in on another service's page
+ * instead of pasting a key. The connection service runs the rest: who may
+ * start one, keeping it (sealed) until the browser comes back, and saving
+ * the credential as a new connection or a sign-in to one that exists.
+ */
+export interface SourceSignIn<Config> {
+  /**
+   * Starts one: the page to send the browser to, which comes back to
+   * `callbackUrl` (it carries `state`). `pending` is what finishing needs,
+   * kept sealed until then.
+   */
+  start(input: { config: Config; state: string; callbackUrl: string }): Promise<{ url: string; pending: string }>;
+  /**
+   * Finishes one when the browser comes back, with the callback's query
+   * parameters: the credential to save, which the source's `test` then
+   * checks. Throws SignInRefused (lib/sources/sign-in) when it didn't complete.
+   */
+  finish(input: { config: Config; pending: string; params: URLSearchParams }): Promise<string>;
+  /**
+   * Lets go of what a sign-in that never became a credential holds
+   * elsewhere (e.g. an account made for it). Optional, best effort, like `release`.
+   */
+  discard?(pending: string): Promise<void>;
+}
+
 /** Server: the catalog plus credential handling, checks, errors and tools. */
 export interface ConnectionSource<Config extends Record<string, unknown> = Record<string, unknown>>
   extends SourceCatalog<Config> {
@@ -124,6 +150,8 @@ export interface ConnectionSource<Config extends Record<string, unknown> = Recor
    * there. Deleting the rows themselves isn't best effort: that fails loudly.
    */
   release?(credential: string): Promise<void>;
+  /** For a source connected by signing in rather than with a key. */
+  signIn?: SourceSignIn<Config>;
   /**
    * Whether this deployment is set up to connect the source, e.g. Composio's
    * key and the source's auth config are set. Optional: without it, the source

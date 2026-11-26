@@ -5,7 +5,7 @@ import { usePathname } from "next/navigation";
 import { useTransition } from "react";
 import { toast } from "sonner";
 
-import { startSignInAction } from "@/app/(app)/connections/actions";
+import { signInToConnectionAction } from "@/app/(app)/connections/actions";
 import { Button } from "@/components/ui/button";
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
 
@@ -39,7 +39,7 @@ export function SignInAgainBanner({ problems }: { problems: SignInProblem[] }) {
 
   function signIn(connectionId: string) {
     startTransition(async () => {
-      const result = await startSignInAction({ orgId, kind: "connection", connectionId, returnTo: pathname });
+      const result = await signInToConnectionAction({ orgId, connectionId, returnTo: pathname });
       if (result.ok) window.location.assign(result.data.authorizationUrl);
       else toast.error(result.error.message);
     });

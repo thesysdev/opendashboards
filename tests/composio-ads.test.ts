@@ -2,11 +2,11 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createAppService } from "@/lib/apps/service";
-import { finishComposioSignIn, startComposioSignIn } from "@/lib/connections/composio-sign-in";
+import { finishSignIn, startNewSignIn, startSignInTo } from "@/lib/connections/sign-in";
 import { deleteSignIns } from "@/lib/connections/deleted-sign-ins";
 import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
-import { apps, connectionSignIns, dataConnections, mcpOAuthSignIns } from "@/lib/db/schema";
+import { apps, connectionSignIns, dataConnections, pendingSignIns } from "@/lib/db/schema";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 import { ComposioError, createSignInLink, runTool, type ComposioDeps } from "@/lib/sources/composio/client";
 import { composioToError, flattenRows, readComposioCredential, runAs, writeComposioCredential } from "@/lib/sources/composio/shared";
@@ -79,9 +79,9 @@ describe("the Composio client", () => {
 
   it("starts a sign-in on the auth config, for this Composio user, coming back to our callback", async () => {
     const { deps, calls } = fakeComposio(() => ({ status: 201, body: { redirect_url: "https://connect.composio.dev/link/abc", connected_account_id: "ca_9", link_token: "t", expires_at: "x" } }));
-    const link = await createSignInLink("metaads", { composioUserId: "od-1", callbackUrl: "https://app.example.com/api/composio/callback/s" }, deps);
+    const link = await createSignInLink("metaads", { composioUserId: "od-1", callbackUrl: "https://app.example.com/api/sign-in/callback/s" }, deps);
     expect(link).toEqual({ redirectUrl: "https://connect.composio.dev/link/abc", connectedAccountId: "ca_9" });
-    expect(calls[0]?.body).toEqual({ auth_config_id: "ac_test", user_id: "od-1", callback_url: "https://app.example.com/api/composio/callback/s" });
+    expect(calls[0]?.body).toEqual({ auth_config_id: "ac_test", user_id: "od-1", callback_url: "https://app.example.com/api/sign-in/callback/s" });
   });
 
   it("refuses a sign-in link that isn't https", async () => {
@@ -317,6 +317,7 @@ describe("signing in through Composio", () => {
 
   let accountState: { status: string; user_id: string; toolkit: string } = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
   let deleted: string[] = [];
+  let failDeletes = false;
   const composio = fakeComposio((path, init) => {
     if (path.endsWith("/connected_accounts/link")) {
       const body = JSON.parse(String(init.body)) as { user_id: string };
@@ -324,21 +325,24 @@ describe("signing in through Composio", () => {
       return { status: 201, body: { redirect_url: "https://connect.composio.dev/link/abc", connected_account_id: "ca_new", link_token: "t", expires_at: "x" } };
     }
     if (init.method === "DELETE") {
+      if (failDeletes) return { status: 500, body: { message: "down" } };
       deleted.push(path.split("/").pop() ?? "");
       return { body: {} };
     }
     if (path.endsWith("/revoke")) return { body: {} };
     return { body: { id: "ca_new", status: accountState.status, user_id: accountState.user_id, toolkit: { slug: accountState.toolkit } } };
   });
-  const deps = { service, composio: composio.deps, pollMs: 1 };
-  // Releasing a sign-in goes to the fake too, never the real Composio.
-  googleAdsDeps.composio = composio.deps;
-  metaAdsDeps.composio = composio.deps;
+  const deps = { service };
+  const finish = (userId: string, state: string | null) => finishSignIn(userId, state, new URLSearchParams(), deps);
+  // Signing in, and releasing a sign-in, go to the fake too, never the real Composio.
+  googleAdsDeps.composio = { ...composio.deps, pollMs: 1 };
+  metaAdsDeps.composio = { ...composio.deps, pollMs: 1 };
 
   beforeEach(async () => {
     accountState = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
     deleted = [];
-    await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${mcpOAuthSignIns} CASCADE`);
+    failDeletes = false;
+    await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${pendingSignIns} CASCADE`);
     await seedWorkspaces(db, ["alice", "mallory"]);
   });
 
@@ -349,7 +353,7 @@ describe("signing in through Composio", () => {
   const stateOf = (url: string) => new URL(url).pathname.split("/").pop() ?? null;
 
   async function start(source: "googleads" | "metaads" = "googleads") {
-    const started = await startComposioSignIn(workspaceOf("alice"), { name: "Ads", source }, deps);
+    const started = await startNewSignIn(workspaceOf("alice"), { type: source, name: "Ads" }, deps);
     if (!started.ok) throw new Error(started.error.code);
     const link = composio.calls.findLast((call) => call.path.endsWith("/connected_accounts/link"))?.body as { callback_url: string };
     return { started, state: stateOf(link.callback_url) ?? "" };
@@ -359,7 +363,7 @@ describe("signing in through Composio", () => {
     const { started, state } = await start();
     expect(started.data.authorizationUrl).toBe("https://connect.composio.dev/link/abc");
 
-    const finished = await finishComposioSignIn("alice", state, deps);
+    const finished = await finish("alice", state);
     if (!finished.ok) throw new Error(finished.error.code);
     const [row] = await db.select().from(dataConnections).where(eq(dataConnections.id, finished.data.id));
     expect(row).toMatchObject({ type: "googleads", sharing: "personal", name: "Ads", config: { type: "googleads", oauth: { provider: "composio" } } });
@@ -368,32 +372,30 @@ describe("signing in through Composio", () => {
     expect(readComposioCredential(await plaintextSecretBox.open(signIn!.secret, { purpose: "", userId: "", connectionId: "" }))).toEqual({ composioUserId: accountState.user_id, connectedAccountId: "ca_new" });
   });
 
-  it("adding the same source again signs in to the workspace's connection, like an MCP server", async () => {
+  it("adding the same source again makes another connection, and the first one's sign-in keeps working", async () => {
     const first = await start();
-    const done = await finishComposioSignIn("alice", first.state, deps);
+    const done = await finish("alice", first.state);
     if (!done.ok) throw new Error(done.error.code);
 
-    accountState.user_id = "";
-    const again = await startComposioSignIn(workspaceOf("alice"), { name: "Ads again", source: "googleads" }, deps);
-    expect(again).toMatchObject({ ok: true, data: { existing: "Ads" } });
+    // A login per client: another Google account, as another connection.
+    accountState = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
+    const again = await startNewSignIn(workspaceOf("alice"), { type: "googleads", name: "Ads, client B" }, deps);
+    expect(again).toEqual({ ok: true, data: { authorizationUrl: "https://connect.composio.dev/link/abc" } });
     const link = composio.calls.findLast((call) => call.path.endsWith("/connected_accounts/link"))?.body as { callback_url: string };
-    const finished = await finishComposioSignIn("alice", stateOf(link.callback_url), deps);
-    expect(finished).toMatchObject({ ok: true, data: { id: done.data.id } });
-    expect(await db.select().from(dataConnections)).toHaveLength(1);
+    const finished = await finish("alice", stateOf(link.callback_url));
+    if (!finished.ok) throw new Error(finished.error.code);
 
-    // A shared connection is its own: it isn't one each person signs in to.
-    accountState.user_id = "";
-    expect(await startComposioSignIn(workspaceOf("alice"), { name: "Team ads", source: "googleads", sharing: "org" }, deps)).toMatchObject({
-      ok: true,
-      data: { existing: null },
-    });
-    // Another source is another connection.
-    expect(await startComposioSignIn(workspaceOf("alice"), { name: "Meta", source: "metaads" }, deps)).toMatchObject({ ok: true, data: { existing: null } });
+    expect(finished.data.id).not.toBe(done.data.id);
+    const rows = await db.select({ name: dataConnections.name }).from(dataConnections).orderBy(dataConnections.createdAt);
+    expect(rows).toEqual([{ name: "Ads" }, { name: "Ads, client B" }]);
+    expect(await db.select().from(connectionSignIns)).toHaveLength(2);
+    // Nothing was replaced, so nothing was let go of.
+    expect(deleted).toEqual([]);
   });
 
   it("refuses a source it doesn't sign in to, before asking Composio", async () => {
     const before = composio.calls.length;
-    expect(await startComposioSignIn(workspaceOf("alice"), { name: "DB", source: "postgres", sharing: "org" }, deps)).toMatchObject({
+    expect(await startNewSignIn(workspaceOf("alice"), { type: "postgres", name: "DB", sharing: "org" }, deps)).toMatchObject({
       ok: false,
       error: { code: "validation" },
     });
@@ -403,15 +405,15 @@ describe("signing in through Composio", () => {
   it("comes back to a path that carries the state, whatever Composio appends", async () => {
     await start();
     const link = composio.calls.findLast((call) => call.path.endsWith("/connected_accounts/link"))?.body as { callback_url: string };
-    expect(link.callback_url).toMatch(/^http:\/\/localhost:\d+\/api\/composio\/callback\/[A-Za-z0-9_-]{43}$/);
-    expect(await finishComposioSignIn("alice", "not-a-state", deps)).toMatchObject({ ok: false, error: { code: "oauth_failed" } });
+    expect(link.callback_url).toMatch(/^http:\/\/localhost:\d+\/api\/sign-in\/callback\/[A-Za-z0-9_-]{43}$/);
+    expect(await finish("alice", "not-a-state")).toMatchObject({ ok: false, error: { code: "oauth_failed" } });
   });
 
   it("lets go of the Composio account when the connection is removed or signed out of", async () => {
     for (const leave of ["remove", "signOut"] as const) {
       deleted = [];
       const { state } = await start();
-      const finished = await finishComposioSignIn("alice", state, deps);
+      const finished = await finish("alice", state);
       if (!finished.ok) throw new Error(finished.error.code);
       const result = await service[leave]("alice", { id: finished.data.id });
       expect(result.ok).toBe(true);
@@ -422,7 +424,7 @@ describe("signing in through Composio", () => {
 
   it("lets go of every account on a removed connection, one saved while it is being removed included", async () => {
     const { state } = await start();
-    const finished = await finishComposioSignIn("alice", state, deps);
+    const finished = await finish("alice", state);
     if (!finished.ok) throw new Error(finished.error.code);
     const connectionId = finished.data.id;
 
@@ -460,13 +462,13 @@ describe("signing in through Composio", () => {
 
   it("lets go of the Composio account when a member leaving or a workspace deleted takes the sign-in", async () => {
     const { state } = await start();
-    const finished = await finishComposioSignIn("alice", state, deps);
+    const finished = await finish("alice", state);
     if (!finished.ok) throw new Error(finished.error.code);
     composio.calls.length = 0;
 
     // What lib/orgs does when Alice leaves: delete her sign-ins in its transaction, then hand them over.
     const gone = await db.transaction((tx) => deleteSignIns(tx, { orgId: workspaceOf("alice").orgId, userId: "alice" }));
-    expect(gone.map(({ type, signIn }) => [type, signIn.connectionId])).toEqual([["googleads", finished.data.id]]);
+    expect(gone.signIns.map(({ type, signIn }) => [type, signIn.connectionId])).toEqual([["googleads", finished.data.id]]);
     await service.releaseDeleted(gone);
 
     // Revoked at the platform, then deleted from Composio.
@@ -477,20 +479,55 @@ describe("signing in through Composio", () => {
     expect(await db.select().from(connectionSignIns)).toEqual([]);
   });
 
+  it("lets go of the Composio account of a sign-in nobody finished: expired, its member gone, or its connection removed", async () => {
+    // Expired: let go of when the next sign-in starts.
+    await start();
+    await db.update(pendingSignIns).set({ expiresAt: new Date(Date.now() - 1_000) });
+    expect(deleted).toEqual([]);
+    await start();
+    expect(deleted).toEqual(["ca_new"]);
+
+    // Its member leaving the workspace: handed over with their finished ones.
+    deleted = [];
+    const gone = await db.transaction((tx) => deleteSignIns(tx, { orgId: workspaceOf("alice").orgId, userId: "alice" }));
+    expect(gone.pending).toHaveLength(1);
+    await service.releaseDeleted(gone);
+    expect(deleted).toEqual(["ca_new"]);
+
+    // Its connection removed while signing in again to it: that sign-in's account, and the one in progress.
+    accountState = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
+    const { state } = await start();
+    const done = await finish("alice", state);
+    if (!done.ok) throw new Error(done.error.code);
+    expect(await startSignInTo(workspaceOf("alice"), { connectionId: done.data.id }, deps)).toMatchObject({ ok: true });
+    deleted = [];
+    expect(await service.remove("alice", { id: done.data.id })).toMatchObject({ ok: true });
+    expect(deleted).toEqual(["ca_new", "ca_new"]);
+    expect(await db.select().from(pendingSignIns)).toEqual([]);
+  });
+
+  it("starts the next sign-in even when letting go of an expired one's account fails", async () => {
+    await start();
+    await db.update(pendingSignIns).set({ expiresAt: new Date(Date.now() - 1_000) });
+    failDeletes = true;
+    await start();
+    expect(await db.select().from(pendingSignIns)).toHaveLength(1);
+  });
+
   it("can't be finished twice, or by someone else", async () => {
     const { state } = await start();
-    const mallory = await finishComposioSignIn("mallory", state, deps);
+    const mallory = await finish("mallory", state);
     expect(mallory).toMatchObject({ ok: false, error: { code: "oauth_expired" } });
-    const alice = await finishComposioSignIn("alice", state, deps);
+    const alice = await finish("alice", state);
     expect(alice.ok).toBe(true);
-    const again = await finishComposioSignIn("alice", state, deps);
+    const again = await finish("alice", state);
     expect(again).toMatchObject({ ok: false, error: { code: "oauth_expired" } });
   });
 
   it("saves nothing, and removes the account, when the sign-in didn't complete", async () => {
     accountState.status = "FAILED";
     const { state } = await start();
-    const finished = await finishComposioSignIn("alice", state, deps);
+    const finished = await finish("alice", state);
     expect(finished).toMatchObject({ ok: false, error: { code: "oauth_failed" } });
     expect(await db.select().from(dataConnections)).toEqual([]);
     expect(deleted).toEqual(["ca_new"]);
@@ -500,7 +537,7 @@ describe("signing in through Composio", () => {
     for (const change of [{ user_id: "od-someone-else" }, { toolkit: "metaads" }]) {
       const { state } = await start();
       Object.assign(accountState, change);
-      const finished = await finishComposioSignIn("alice", state, deps);
+      const finished = await finish("alice", state);
       expect(finished.ok).toBe(false);
       accountState = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
     }
@@ -537,13 +574,13 @@ describe("whose Google Ads or Meta Ads sign-in a query runs as", () => {
     const account = accounts.get(id);
     return account ? { body: { id, status: "ACTIVE", user_id: account.user_id, toolkit: { slug: account.toolkit } } } : { status: 404, body: {} };
   });
-  const deps = { service, composio: composio.deps, pollMs: 1 };
+  const deps = { service };
 
-  // Releasing goes through the sources' own deps: this suite's fake while it runs, the suite above's otherwise.
+  // Signing in and releasing go through the sources' own deps: this suite's fake while it runs, the suite above's otherwise.
   const before = { googleads: googleAdsDeps.composio, metaads: metaAdsDeps.composio };
   beforeAll(() => {
-    googleAdsDeps.composio = composio.deps;
-    metaAdsDeps.composio = composio.deps;
+    googleAdsDeps.composio = { ...composio.deps, pollMs: 1 };
+    metaAdsDeps.composio = { ...composio.deps, pollMs: 1 };
   });
   afterAll(async () => {
     googleAdsDeps.composio = before.googleads;
@@ -558,22 +595,21 @@ describe("whose Google Ads or Meta Ads sign-in a query runs as", () => {
   beforeEach(async () => {
     accounts = new Map();
     deleted = [];
-    await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${mcpOAuthSignIns} CASCADE`);
+    await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${pendingSignIns} CASCADE`);
     await seedWorkspaces(db, ["ads-ada", "ads-eddie", "ads-val", "ads-gus"]);
     team = await seedTeam(db, "Ads Co", { "ads-ada": "admin", "ads-eddie": "editor", "ads-val": "viewer" });
   });
 
   /** Signs `userId` in through the real flow: a new connection, or again to `connectionId`. Returns it and the Composio account it got. */
   async function signIn(userId: string, input: { connectionId: string } | { sharing: "personal" | "org" }) {
-    const started = await startComposioSignIn(
-      inTeam(userId),
-      "connectionId" in input ? input : { name: toolkit === "googleads" ? "Google Ads" : "Meta Ads", source: toolkit, sharing: input.sharing },
-      deps,
-    );
+    const started =
+      "connectionId" in input
+        ? await startSignInTo(inTeam(userId), input, deps)
+        : await startNewSignIn(inTeam(userId), { type: toolkit, name: toolkit === "googleads" ? "Google Ads" : "Meta Ads", sharing: input.sharing }, deps);
     if (!started.ok) throw new Error(started.error.code);
     const link = composio.calls.findLast((call) => call.path.endsWith("/connected_accounts/link"))?.body as { callback_url: string };
     const accountId = `ca_${accounts.size}`;
-    const finished = await finishComposioSignIn(userId, new URL(link.callback_url).pathname.split("/").at(-1) ?? null, deps);
+    const finished = await finishSignIn(userId, new URL(link.callback_url).pathname.split("/").at(-1) ?? null, new URLSearchParams(), deps);
     if (!finished.ok) throw new Error(finished.error.code);
     return { id: finished.data.id, accountId };
   }
@@ -600,8 +636,8 @@ describe("whose Google Ads or Meta Ads sign-in a query runs as", () => {
       expect(await runsAs("ads-gus", id)).toBeNull();
       expect(await service.whyClosed("ads-gus", id)).toBeNull();
 
-      // Once he does, his queries run as his account, and Ada's still as hers.
-      const eddies = await signIn("ads-eddie", { sharing: "personal" });
+      // Once he signs in to it, his queries run as his account, and Ada's still as hers.
+      const eddies = await signIn("ads-eddie", { connectionId: id });
       expect(eddies.id).toBe(id);
       expect(eddies.accountId).not.toBe(adas);
       expect(await runsAs("ads-eddie", id)).toBe(eddies.accountId);
@@ -623,19 +659,19 @@ describe("whose Google Ads or Meta Ads sign-in a query runs as", () => {
 
     it("a viewer can't start a new connection, and the Composio account it made is let go", async () => {
       for (const sharing of ["personal", "org"] as const) {
-        const result = await startComposioSignIn(inTeam("ads-val"), { name: "Ads", source, sharing }, deps);
+        const result = await startNewSignIn(inTeam("ads-val"), { type: source, name: "Ads", sharing }, deps);
         expect(result).toMatchObject({ ok: false, error: { code: "forbidden" } });
         await vi.waitFor(() => expect(deleted).toContain(`ca_${accounts.size}`));
       }
       expect(deleted).toEqual(["ca_1", "ca_2"]);
-      expect(await db.select().from(mcpOAuthSignIns)).toEqual([]);
+      expect(await db.select().from(pendingSignIns)).toEqual([]);
       expect(await db.select().from(dataConnections)).toEqual([]);
     });
 
     it("an admin signing in again to a shared connection replaces the holder's sign-in and lets go of their Composio account", async () => {
       const { id, accountId: eddies } = await signIn("ads-eddie", { sharing: "org" });
       // A viewer can't take it over.
-      expect(await startComposioSignIn(inTeam("ads-val"), { connectionId: id }, deps)).toMatchObject({ ok: false, error: { code: "forbidden" } });
+      expect(await startSignInTo(inTeam("ads-val"), { connectionId: id }, deps)).toMatchObject({ ok: false, error: { code: "forbidden" } });
 
       const adas = await signIn("ads-ada", { connectionId: id });
       expect(adas.id).toBe(id);

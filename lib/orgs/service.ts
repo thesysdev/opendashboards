@@ -9,7 +9,7 @@ import {
   connectionSignIns,
   dashboards,
   dataConnections,
-  mcpOAuthSignIns,
+  pendingSignIns,
   orgInvites,
   orgMembers,
   orgs,
@@ -314,7 +314,7 @@ export function createOrgService({
           sharing: sql`CASE WHEN ${dataConnections.config} -> 'oauth' IS NOT NULL THEN 'personal'::connection_sharing ELSE 'org'::connection_sharing END`,
         })
         .where(and(eq(dataConnections.userId, userId), isNull(dataConnections.orgId)));
-      await db.update(mcpOAuthSignIns).set({ orgId }).where(and(eq(mcpOAuthSignIns.userId, userId), isNull(mcpOAuthSignIns.orgId)));
+      await db.update(pendingSignIns).set({ orgId }).where(and(eq(pendingSignIns.userId, userId), isNull(pendingSignIns.orgId)));
       // A sign-in saved by that version kept its tokens on the connection: they move to whoever signed in,
       // sealed for the same user and connection, as the migration moved the rest.
       await db.transaction(async (tx) => {

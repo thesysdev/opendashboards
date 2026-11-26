@@ -15,7 +15,7 @@ import {
   apps,
   connectionSignIns,
   dataConnections,
-  mcpOAuthSignIns,
+  pendingSignIns,
   orgMembers,
   type AppTeamAccess,
   type OrgRole,
@@ -112,7 +112,7 @@ async function app(userId: string, teamAccess: AppTeamAccess = "private") {
 }
 
 beforeEach(async () => {
-  await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${mcpOAuthSignIns} CASCADE`);
+  await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${pendingSignIns} CASCADE`);
   await seedWorkspaces(db, ["alice", "ed", "vera", "mallory"]);
   acme = await seedTeam(db, "Acme", { alice: "admin", ed: "editor", vera: "viewer" });
 });

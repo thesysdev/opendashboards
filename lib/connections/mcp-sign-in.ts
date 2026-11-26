@@ -9,11 +9,11 @@ import type { Scope } from "@/lib/orgs/access";
 import { mcpConfigSchema } from "@/lib/sources/mcp/catalog";
 import { McpError } from "@/lib/sources/mcp/errors";
 import { MCP_SERVICE_KEYS, mcpService, type McpServiceKey } from "@/lib/sources/mcp/services";
+import { hashState } from "@/lib/sources/sign-in";
 import {
   beginOAuthSignIn,
   discoverOAuth,
   exchangeOAuthCode,
-  hashState,
   oauthClientFor,
   writeOAuthCredential,
   type OAuthTestHooks,
@@ -104,7 +104,7 @@ export async function startMcpSignIn(
     ({ url, service: preset } = settings.data);
     ({ name, sharing: sharingOf } = parsed.data);
     // One connection per server that requires sign-in: everyone signs in to the same one.
-    const already = sharingOf === "personal" ? await service.signInConnectionTo(scope, { url }) : null;
+    const already = sharingOf === "personal" ? await service.signInConnectionTo(scope, url) : null;
     if (already) {
       connectionId = already.id;
       ({ name } = already);

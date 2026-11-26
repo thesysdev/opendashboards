@@ -1,7 +1,5 @@
 import "server-only";
 
-import { createHash, randomBytes } from "node:crypto";
-
 import {
   discoverOAuthServerInfo,
   exchangeAuthorization,
@@ -18,6 +16,8 @@ import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/sdk/types.js";
 
 import { config as appConfig } from "@/config";
 import { createGuardedFetch, type GuardedFetchTestHooks } from "@/lib/net/guarded-fetch";
+
+import { hashState, newState } from "../sign-in";
 
 import type { McpOAuthSettings } from "./catalog";
 import { McpError, toMcpError } from "./errors";
@@ -269,7 +269,7 @@ export async function beginOAuthSignIn(
   client: OAuthClientInformationMixed,
   redirectUri: string,
 ): Promise<{ state: string; stateHash: string; authorizationUrl: URL; pending: PendingSignIn }> {
-  const state = randomBytes(32).toString("base64url");
+  const state = newState();
   const { authorizationUrl, codeVerifier } = await startAuthorization(discovery.settings.issuer, {
     metadata: discovery.metadata,
     clientInformation: client,
@@ -286,9 +286,6 @@ export async function beginOAuthSignIn(
   }
   return { state, stateHash: hashState(state), authorizationUrl, pending: { codeVerifier, client, redirectUri } };
 }
-
-/** Pending sign-ins are found by a hash of their state, never the state itself. */
-export const hashState = (state: string) => createHash("sha256").update(state).digest("hex");
 
 /** The token endpoint's details, as stored, in the shape the SDK takes. */
 const metadataOf = (settings: McpOAuthSettings) =>

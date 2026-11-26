@@ -332,12 +332,14 @@ export const appThreads = pgTable(
 );
 
 /**
- * An MCP OAuth sign-in that's been started and not yet finished: kept from
- * sending the browser to the server's sign-in page until it comes back. The
- * key is a hash of the `state` sent with it, so a database read can't replay
- * one. Single use, short-lived, and tied to the user who started it.
+ * A sign-in that's been started and not yet finished (an MCP server's OAuth,
+ * Google Ads through Composio): kept from sending the browser to the sign-in
+ * page until it comes back. The key is a hash of the `state` sent with it, so
+ * a database read can't replay one. Single use, short-lived, and tied to the
+ * user who started it. The table keeps its first name, from when only MCP
+ * servers signed in.
  */
-export const mcpOAuthSignIns = pgTable(
+export const pendingSignIns = pgTable(
   "mcp_oauth_sign_ins",
   {
     /** SHA-256 of the state, hex. */
@@ -350,9 +352,9 @@ export const mcpOAuthSignIns = pgTable(
     /** How a new connection from this sign-in is used. Ignored for an existing one. */
     sharing: connectionSharingEnum("sharing").notNull().default("personal"),
     name: text("name").notNull(),
-    /** The connection's settings once signed in: the server and its authorization server, nothing secret. */
+    /** The connection's settings once signed in, nothing secret. */
     config: jsonb("config").notNull(),
-    /** The PKCE verifier and client registration, sealed like any credential. */
+    /** What finishing needs (an MCP server's PKCE verifier and client registration, say), sealed like any credential. */
     secret: jsonb("secret").$type<SealedSecret>().notNull(),
     expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

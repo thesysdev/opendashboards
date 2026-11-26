@@ -4,7 +4,7 @@ import { ExternalLinkIcon, Loader2Icon, TriangleAlertIcon, UploadIcon } from "lu
 import { Fragment, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { createConnectionAction, replaceCredentialAction, startSignInAction } from "@/app/(app)/connections/actions";
+import { addConnectionWithSignInAction, createConnectionAction, replaceCredentialAction } from "@/app/(app)/connections/actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -90,18 +90,17 @@ export function SourceFormDialog(props: Props) {
     setPasteNote("Filled in the fields below. Check them, then test.");
   }
 
-  /** What this form signs in to: an MCP server (a known one, or by its URL), or any other source's own platform (Google Ads). */
+  /** The new connection to sign in for: its source and name, and for an MCP server, which one (a known one, or by its URL). */
   function signInRequest() {
-    const common = { orgId, name: values.name ?? "", sharing };
-    if (type !== "mcp") return { ...common, kind: "source", source: type };
-    if (service) return { ...common, kind: "service", service };
-    return { ...common, kind: "url", url: values.url ?? "" };
+    const connection = { orgId, type, name: values.name ?? "", sharing };
+    if (type !== "mcp") return connection;
+    return service ? { ...connection, service } : { ...connection, url: values.url ?? "" };
   }
 
   /** OAuth instead of a key: the server's own sign-in page, then back to Data Connections. */
   function signIn() {
     startTransition(async () => {
-      const result = await startSignInAction(signInRequest());
+      const result = await addConnectionWithSignInAction(signInRequest());
       if (!result.ok) {
         // Each result replaces the last one's message: a stale error under a field would contradict it.
         if (result.error.field && fields.some((field) => field.name === result.error.field)) {
@@ -113,7 +112,7 @@ export function SourceFormDialog(props: Props) {
         }
         return;
       }
-      // The workspace already has this server, with everyone signing in: this signs in to that one.
+      // The workspace already has this MCP server, with everyone signing in: this signs in to that one.
       if (result.data.existing) {
         toast.info(`This is already here as ${result.data.existing}. Signing you in to it.`);
         await new Promise((resolve) => setTimeout(resolve, 1500));

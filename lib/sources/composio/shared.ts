@@ -7,7 +7,7 @@ import { logRejection } from "@/lib/log";
 import type { ConnectionSource, OpenConnection, QueryResult, SourceError } from "../types";
 
 import { ComposioError, deleteAccount, getAccount, isRecord, runTool, type ComposioAccountRef, type ComposioDeps, type ComposioToolkit } from "./client";
-import { COMPOSIO_TOOLKITS, type ComposioSignInConfig } from "./catalog";
+import type { ComposioSignInConfig } from "./catalog";
 
 /**
  * What the sources that sign in through Composio share: the stored
@@ -31,25 +31,6 @@ export function writeComposioCredential(account: ComposioAccountRef): string {
 }
 
 /**
- * What a sign-in started and not yet finished keeps (sealed) until the
- * browser comes back: the Composio account it made, whose user that is, and
- * where to go back to.
- */
-const pendingSchema = z
-  .object({ toolkit: z.enum(COMPOSIO_TOOLKITS), composioUserId: z.string().min(1), connectedAccountId: z.string().min(1), returnTo: z.string().optional() })
-  .strict();
-
-export type PendingSignIn = z.infer<typeof pendingSchema>;
-
-export function readPendingSignIn(pending: string): PendingSignIn {
-  return pendingSchema.parse(JSON.parse(pending));
-}
-
-export function writePendingSignIn(pending: PendingSignIn): string {
-  return JSON.stringify(pendingSchema.parse(pending));
-}
-
-/**
  * The credential part of a Composio source. There's nothing to paste: these
  * connect only by signing in, so the form's credential check always refuses.
  */
@@ -69,7 +50,6 @@ export function composioCredential(label: string, purpose: string): ConnectionSo
 export async function releaseAccount(credential: string, deps?: ComposioDeps): Promise<void> {
   await deleteAccount(readComposioCredential(credential).connectedAccountId, deps);
 }
-
 
 /** Throws unless the account is this toolkit's, this Composio user's, and active now. */
 export async function checkAccount(toolkit: ComposioToolkit, account: ComposioAccountRef, deps?: ComposioDeps, signal?: AbortSignal): Promise<void> {

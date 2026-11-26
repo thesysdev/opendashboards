@@ -5,6 +5,7 @@ import { z } from "zod";
 import { config as appConfig } from "@/config";
 
 import { isConfigured, isRecord, type ComposioDeps } from "../composio/client";
+import { composioSignIn } from "../composio/sign-in";
 import { checkAccount, composioCredential, composioToError, flattenRows, readComposioCredential, releaseAccount, runAs } from "../composio/shared";
 import type { ConnectionSource, OpenConnection, QueryResult, SourceTool } from "../types";
 
@@ -173,6 +174,7 @@ export const googleAdsSource: ConnectionSource<GoogleAdsConfig> = {
   },
   available: () => isConfigured(googleAdsCatalog.type),
   release: (credential) => releaseAccount(credential, googleAdsDeps.composio),
+  signIn: composioSignIn("googleads", () => googleAdsDeps.composio),
   toError: (error) => composioToError(googleAdsCatalog, error),
   tools: [queryTool, accountsTool, fieldsTool],
 };

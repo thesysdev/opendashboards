@@ -46,8 +46,8 @@ export class ComposioError extends Error {
   }
 }
 
-/** Tests only: replace fetch. */
-export type ComposioDeps = { fetch?: typeof fetch; apiKey?: string; authConfigId?: string };
+/** Tests only: replace fetch, the key and auth config, and how long a sign-in waits between asking about its account. */
+export type ComposioDeps = { fetch?: typeof fetch; apiKey?: string; authConfigId?: string; pollMs?: number };
 
 function apiKey(deps: ComposioDeps, toolkit?: ComposioToolkit): string {
   const key = deps.apiKey ?? secrets.composioApiKey();

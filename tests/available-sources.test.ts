@@ -3,7 +3,7 @@ import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
-import { apps, dataConnections, mcpOAuthSignIns } from "@/lib/db/schema";
+import { apps, dataConnections, pendingSignIns } from "@/lib/db/schema";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 import { availableSources } from "@/lib/sources/available";
 import { CONNECTION_TYPES } from "@/lib/sources/catalog";
@@ -53,7 +53,7 @@ describe("sources that aren't available", () => {
   });
 
   beforeEach(async () => {
-    await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${mcpOAuthSignIns} CASCADE`);
+    await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${pendingSignIns} CASCADE`);
     await seedWorkspaces(db, ["alice"]);
   });
 
