@@ -59,7 +59,8 @@ export function LiveDashboard({
 /**
  * The dashboard the Build chat is creating, from the moment its call starts until you leave its
  * page, in one renderer: pending, building, then done, with no remount. Until the app lists it,
- * the pending loader draws where its title and description go.
+ * the pending loader draws where its title and description go. Only an editor builds, so it has
+ * Sources from the start.
  */
 export function NewDashboard({
   appId,
@@ -71,8 +72,8 @@ export function NewDashboard({
   response?: string;
 }) {
   return (
-    <DashboardView response={response} heading={!dashboard}>
-      {dashboard && <DashboardTitle appId={appId} dashboard={dashboard} />}
+    <DashboardView response={response} heading={!dashboard} sources>
+      {dashboard && <DashboardTitle appId={appId} dashboard={dashboard} actions={<LiveArtifactRenderer.ProvenanceToggle />} />}
     </DashboardView>
   );
 }
