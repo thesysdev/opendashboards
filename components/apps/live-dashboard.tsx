@@ -45,13 +45,37 @@ export function LiveDashboard({
   );
 }
 
+/**
+ * The dashboard the Build chat is creating, from the moment its call starts until you leave its
+ * page, in one renderer: pending, building, then done, with no remount. Until the app lists it,
+ * the pending loader draws where its title and description go.
+ */
+export function NewDashboard({
+  appId,
+  dashboard,
+  response,
+}: {
+  appId: string;
+  dashboard?: { id: string; title: string; description: string | null };
+  response?: string;
+}) {
+  return (
+    <DashboardView response={response} heading={!dashboard}>
+      {dashboard && <DashboardTitle appId={appId} dashboard={dashboard} />}
+    </DashboardView>
+  );
+}
+
 function DashboardView({
   id,
   response,
+  heading = false,
   children,
 }: {
   id?: string;
   response?: string;
+  /** No title above it yet: the pending loader draws one. */
+  heading?: boolean;
   children?: React.ReactNode;
 }) {
   const router = useRouter();
@@ -98,7 +122,7 @@ function DashboardView({
       >
         <LiveArtifactRenderer.Chrome>
           <LiveArtifactRenderer.Content className="h-full">
-            <LiveArtifactRenderer.Pending />
+            <LiveArtifactRenderer.Pending heading={heading} />
             {/* "Loading data…" at the bottom of what's visible; a build's feed takes its place. */}
             <LiveArtifactRenderer.Loading />
             <LiveArtifactRenderer.Error />

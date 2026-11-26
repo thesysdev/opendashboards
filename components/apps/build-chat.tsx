@@ -48,7 +48,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/apps/paths";
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
-import { usePublishDashboardResponse, useSetBuildRunning } from "./app-workspace";
+import { usePublishDashboardResponse, useSetBuildRunning, useSetCreatingDashboard } from "./app-workspace";
 import { scopeStorageToApp } from "@/lib/apps/thread-storage";
 import { cn } from "@/lib/utils";
 
@@ -540,18 +540,21 @@ function TurnEffects({
   // arrive, so an open dashboard follows the edit; a new one opens to be watched.
   const messages = useThread((s) => s.messages);
   const publish = usePublishDashboardResponse();
+  const setCreating = useSetCreatingDashboard();
   const handled = useRef(new Set<string>());
   const opening = useRef<string | null>(null);
-  // Create and edit calls whose dashboard has started building: it's open (a new one
-  // has its page), though the call runs on until the build is saved or fails.
-  const started = useRef(new Set<string>());
+  // Create and edit calls whose dashboard has started building, with its id: it's open (a new
+  // one has its page), though the call runs on until the build is saved or fails.
+  const started = useRef(new Map<string, string | null>());
   useEffect(() => {
     const onStarted = ({ toolCallId, tool, response }: DashboardStarted) => {
-      started.current.add(toolCallId);
       const artifactId = artifactIdOf(response);
+      started.current.set(toolCallId, artifactId);
       if (!artifactId) return;
       publish(artifactId, response);
       if (tool === "create_dashboard") {
+        // The new dashboard's renderer goes from pending to building.
+        setCreating((creating) => (creating?.callId === toolCallId ? { ...creating, artifactId } : creating));
         opening.current = artifactId;
         router.refresh(); // The server has recorded it; the sidebar picks it up.
       }
@@ -560,7 +563,7 @@ function TurnEffects({
     return () => {
       startedListeners.delete(onStarted);
     };
-  }, [startedListeners, publish, router]);
+  }, [startedListeners, publish, setCreating, router]);
   useEffect(() => {
     if (!isRunning) return;
     // Only this turn's messages, after the message that started it. The thread's
@@ -568,10 +571,20 @@ function TurnEffects({
     // without this the first run after a load replays every earlier create and
     // edit: an old create then covers the page with the dashboard it made back then.
     const turn = messages.slice(messages.findLastIndex((message) => message.role === "user") + 1);
+    const answered = new Set(turn.flatMap((message) => (message.role === "tool" ? [message.toolCallId] : [])));
     const toolNames = new Map<string, string>();
     for (const message of turn) {
       if (message.role !== "assistant") continue;
-      for (const call of message.toolCalls ?? []) toolNames.set(call.id, call.function.name);
+      for (const call of message.toolCalls ?? []) {
+        toolNames.set(call.id, call.function.name);
+        if (call.function.name !== "create_dashboard" || answered.has(call.id)) continue;
+        // A create shows its dashboard, pending, as soon as the call starts. One at a time.
+        setCreating((creating) =>
+          creating?.callId === call.id || (creating && !creating.done)
+            ? creating
+            : { callId: call.id, at: pathname, artifactId: started.current.get(call.id) ?? undefined },
+        );
+      }
     }
     for (const message of turn) {
       if (message.role !== "tool") continue;
@@ -580,15 +593,19 @@ function TurnEffects({
       const tool = toolNames.get(message.toolCallId);
       if (tool !== "create_dashboard" && tool !== "edit_dashboard") continue;
       const artifactId = artifactIdOf(message.content);
+      // A create that failed: back to the page it started on.
+      if (tool === "create_dashboard" && !artifactId)
+        setCreating((creating) => (creating?.callId === message.toolCallId ? null : creating));
       if (!artifactId) continue;
       publish(artifactId, message.content);
       // Started earlier: it's open already, and the last response only updates it.
       if (tool === "create_dashboard" && !started.current.has(message.toolCallId)) {
+        setCreating((creating) => (creating?.callId === message.toolCallId ? { ...creating, artifactId } : creating));
         opening.current = artifactId;
         router.refresh(); // The server has recorded it; the sidebar picks it up.
       }
     }
-  }, [isRunning, messages, publish, router]);
+  }, [isRunning, messages, pathname, publish, setCreating, router]);
 
   useEffect(() => {
     if (!opening.current) return;
@@ -605,12 +622,18 @@ function TurnEffects({
     return () => setBuildRunning(false);
   }, [isRunning, setBuildRunning]);
 
-  // When a turn ends, pick up titles and deletions.
+  // When a turn ends, pick up titles and deletions. A new dashboard's view stays on its page until
+  // you leave it; one that never got a page goes now.
   const wasRunning = useRef(false);
   useEffect(() => {
-    if (wasRunning.current && !isRunning) router.refresh();
+    if (wasRunning.current && !isRunning) {
+      router.refresh();
+      setCreating((creating) =>
+        creating && dashboards.some((d) => d.artifactId === creating.artifactId) ? { ...creating, done: true } : null,
+      );
+    }
     wasRunning.current = isRunning;
-  }, [isRunning, router]);
+  }, [isRunning, dashboards, setCreating, router]);
 
   return null;
 }

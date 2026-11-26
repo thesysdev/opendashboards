@@ -4,7 +4,7 @@ import { OpenUICloudProvider } from "@openuidev/react-ui/cloud";
 import { PanelRightCloseIcon, SparklesIcon, XIcon } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { createContext, use, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, use, useCallback, useEffect, useMemo, useRef, useState, type Dispatch, type SetStateAction } from "react";
 
 import { renameAppAction } from "@/app/(app)/apps/actions";
 import { InlineRename } from "@/components/inline-rename";
@@ -15,7 +15,9 @@ import { appPath, dashboardPath, frontendTokenPath, parseAppPath } from "@/lib/a
 import { useWorkspaceId } from "@/lib/apps/use-workspace";
 import { cn } from "@/lib/utils";
 
-type Dashboard = { id: string; title: string };
+import { NewDashboard } from "./live-dashboard";
+
+type Dashboard = { id: string; title: string; description: string | null; artifactId: string };
 
 const BuildPanelContext = createContext<{ open: boolean; setOpen: (open: boolean) => void } | null>(null);
 
@@ -37,9 +39,23 @@ export function useSetBuildRunning() {
   return context.setRunning;
 }
 
+/**
+ * A dashboard the Build chat is creating, shown from the moment its call starts: on the page the
+ * call started on (`at`), then on its own page once the app opens it. `artifactId` is Cloud's,
+ * once the build has started.
+ */
+export type Creating = {
+  callId: string;
+  at: string;
+  artifactId?: string;
+  /** The turn has ended: the view goes once you leave its page. */
+  done?: boolean;
+};
+
 type DashboardResponses = {
   responses: Readonly<Record<string, string>>;
   publish: (artifactId: string, response: string) => void;
+  setCreating: Dispatch<SetStateAction<Creating | null>>;
 };
 
 const DashboardResponsesContext = createContext<DashboardResponses | null>(null);
@@ -62,6 +78,11 @@ export function useDashboardResponse(artifactId: string): string | undefined {
 /** For the Build chat: hands a create/edit response to the dashboard it's for. */
 export function usePublishDashboardResponse() {
   return useDashboardResponses().publish;
+}
+
+/** For the Build chat: shows the dashboard it's creating. */
+export function useSetCreatingDashboard() {
+  return useDashboardResponses().setCreating;
 }
 
 const RenameAppContext = createContext<(() => void) | null>(null);
@@ -193,9 +214,20 @@ export function AppWorkspace({
       setResponses((current) => (current[artifactId] === response ? current : { ...current, [artifactId]: response })),
     [],
   );
-  const dashboardResponses = useMemo(() => ({ responses, publish }), [responses, publish]);
+  const [creating, setCreating] = useState<Creating | null>(null);
+  const dashboardResponses = useMemo(() => ({ responses, publish, setCreating }), [responses, publish]);
   const [renaming, setRenaming] = useState(false);
   const startRename = useCallback(() => setRenaming(true), []);
+  // The dashboard being created, once the app lists it: its title and its page.
+  const created = creating?.artifactId ? dashboards.find((d) => d.artifactId === creating.artifactId) : undefined;
+  const pathname = usePathname();
+  const onItsPage = created !== undefined && parseAppPath(pathname).dashboardId === created.id;
+  // The view stays up while the app moves to the dashboard's page, so its renderer isn't
+  // remounted, and from then on belongs to that page.
+  if (creating && onItsPage && creating.at !== pathname) setCreating({ ...creating, at: pathname });
+  const showCreating = creating !== null && (pathname === creating.at || onItsPage);
+  // Once the turn has ended, leaving the page hands over to the pages.
+  if (creating?.done && !showCreating) setCreating(null);
 
   return (
     // One Cloud connection for the workspace: the chat and the dashboard
@@ -238,8 +270,17 @@ export function AppWorkspace({
 
           <MobileDashboardTabs appId={appId} dashboards={dashboards} />
           {notice}
-          {/* A new dashboard shows once the app opens its page: until then, this page stays. */}
-          {children}
+          {/* A new dashboard shows from the moment its call starts, pending until it's built. */}
+          {creating && showCreating ? (
+            <NewDashboard
+              key={creating.callId}
+              appId={appId}
+              dashboard={created}
+              response={creating.artifactId ? responses[creating.artifactId] : undefined}
+            />
+          ) : (
+            children
+          )}
         </div>
 
         <aside
