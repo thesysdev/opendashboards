@@ -9,7 +9,7 @@ import { createDatabase } from "@/lib/db";
 import { apps, connectionSignIns, dataConnections, mcpOAuthSignIns } from "@/lib/db/schema";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 import { ComposioError, createSignInLink, runTool, type ComposioDeps } from "@/lib/sources/composio/client";
-import { composioToError, flattenRows, readComposioCredential, writeComposioCredential } from "@/lib/sources/composio/shared";
+import { composioToError, flattenRows, readComposioCredential, runAs, writeComposioCredential } from "@/lib/sources/composio/shared";
 import { gaqlSchema, googleAdsDeps, googleAdsSource, withLimit } from "@/lib/sources/googleads/source";
 import { googleAdsCatalog } from "@/lib/sources/googleads/catalog";
 import { metaAdsCatalog } from "@/lib/sources/metaads/catalog";
@@ -58,18 +58,21 @@ describe("the Composio client", () => {
   });
 
   it("tells a lost sign-in from a bad query, a rate limit and our own key being refused", async () => {
-    const cases: [{ status?: number; body: unknown }, string][] = [
-      [{ body: { successful: false, error: "Connected account ca_123 is expired", data: {} } }, "reauth_required"],
-      [{ body: { successful: false, error: "Unrecognized field in the query: 'metrics.foo'", data: {} } }, "bad_request"],
-      [{ body: { successful: false, error: "RESOURCE_EXHAUSTED: too many requests", data: {} } }, "rate_limited"],
-      [{ status: 401, body: { error: { message: "Invalid API key" } } }, "project_rejected"],
-      [{ status: 404, body: { error: { message: "Connected account not found" } } }, "reauth_required"],
-      // A 404 on a tool run without account wording is a wrong tool or version, ours to fix: nobody is asked to sign in again.
-      [{ status: 404, body: { error: { message: "Tool not found" } } }, "unexpected"],
-      [{ status: 503, body: {} }, "unavailable"],
+    // [the tool run's answer, the account's status (null: the lookup fails), the error]
+    const cases: [{ status?: number; body: unknown }, string | null, string][] = [
+      [{ body: { successful: false, error: "Connected account ca_123 is expired", data: {} } }, "EXPIRED", "reauth_required"],
+      [{ body: { successful: false, error: "Unrecognized field in the query: 'metrics.foo'", data: {} } }, "ACTIVE", "bad_request"],
+      [{ body: { successful: false, error: "RESOURCE_EXHAUSTED: too many requests", data: {} } }, "ACTIVE", "rate_limited"],
+      [{ status: 401, body: { error: { message: "Invalid API key" } } }, null, "project_rejected"],
+      [{ status: 404, body: { error: { message: "Connected account not found" } } }, "REVOKED", "reauth_required"],
+      // A 404 on a tool run on an active account is a wrong tool or version, ours to fix: nobody is asked to sign in again.
+      [{ status: 404, body: { error: { message: "Tool not found" } } }, "ACTIVE", "unexpected"],
+      [{ status: 503, body: {} }, "ACTIVE", "unavailable"],
     ];
-    for (const [answer, code] of cases) {
-      const { deps } = fakeComposio(() => answer);
+    for (const [answer, status, code] of cases) {
+      const { deps } = fakeComposio((path) =>
+        path.includes("/connected_accounts/") ? (status ? { body: { id: "ca_123", status } } : { status: 503, body: {} }) : answer,
+      );
       await expect(runTool("metaads", "METAADS_GET_INSIGHTS", account, {}, signal, deps)).rejects.toMatchObject({ code, toolkit: "metaads" });
     }
   });
@@ -90,6 +93,110 @@ describe("the Composio client", () => {
     await expect(createSignInLink("googleads", { composioUserId: "od-1", callbackUrl: "https://x/cb" }, { apiKey: "k", authConfigId: "" })).rejects.toMatchObject({
       code: "not_configured",
     });
+  });
+});
+
+describe("a failed tool run asks the account whether the sign-in is lost", () => {
+  /** Meta's usual expiry (OAuthException 190), as Composio passes it on. */
+  const metaExpired = {
+    status: 400,
+    body: {
+      error: {
+        message: "Error validating access token: Session has expired on Tuesday, 24-Nov-26 10:00:00 PST.",
+        status: 400,
+        request_id: "req_7f3a9c",
+        suggested_fix: "Reconnect the account",
+      },
+    },
+  };
+
+  /** A fake Composio whose tool run answers `run` and whose account lookup answers `lookup`. */
+  function composioWith(run: { status?: number; body: unknown }, lookup: { status?: number; body: unknown }) {
+    return fakeComposio((path) => (path.includes("/connected_accounts/") ? lookup : run));
+  }
+
+  /** A connection whose sign-in records being marked invalid. */
+  function connection() {
+    const marked: (string | undefined)[] = [];
+    return {
+      marked,
+      connection: {
+        id: "c",
+        name: "Ads",
+        config: { oauth: { provider: "composio" as const } },
+        credential: JSON.stringify(account),
+        updateCredential: vi.fn(async (change: (current: string) => Promise<{ credential: string; status?: "ok" | "invalid" }>) => {
+          const next = await change(JSON.stringify(account));
+          marked.push(next.status);
+          return next.credential;
+        }),
+      },
+    };
+  }
+
+  it("reads Meta's expired session on an expired account as a lost sign-in, and marks it invalid", async () => {
+    const { deps, calls } = composioWith(metaExpired, { body: { id: "ca_123", status: "EXPIRED", is_disabled: false } });
+    const { connection: open, marked } = connection();
+    const failure = await runAs("metaads", open, "METAADS_GET_INSIGHTS", {}, signal, deps).catch((error: unknown) => error);
+
+    expect(failure).toMatchObject({ code: "reauth_required", toolkit: "metaads", requestId: "req_7f3a9c" });
+    expect(marked).toEqual(["invalid"]);
+    // Asked of the account it ran as.
+    expect(calls.map(({ method, path }) => `${method} ${path.replace("/api/v3.1", "")}`)).toEqual([
+      "POST /tools/execute/METAADS_GET_INSIGHTS",
+      "GET /connected_accounts/ca_123",
+    ]);
+    // Composio's request id is logged with the error, never shown.
+    expect((failure as Error).message).toContain("req_7f3a9c");
+    expect(JSON.stringify(composioToError(metaAdsCatalog, failure))).not.toContain("req_7f3a9c");
+    expect(composioToError(metaAdsCatalog, failure)).toMatchObject({ status: "invalid", error: { code: "reauth_required" } });
+  });
+
+  it("reads a revoked, inactive, disabled or deleted account as a lost sign-in, whatever the error says", async () => {
+    const run = { body: { successful: false, error: "Unrecognized field in the query: 'metrics.foo'", data: {} } };
+    for (const lookup of [
+      { body: { id: "ca_123", status: "REVOKED" } },
+      { body: { id: "ca_123", status: "INACTIVE" } },
+      { body: { id: "ca_123", status: "ACTIVE", is_disabled: true } },
+      { status: 404, body: { error: { message: "Connected account not found" } } },
+    ]) {
+      const { deps } = composioWith(run, lookup);
+      await expect(runTool("googleads", "GOOGLEADS_SEARCH_STREAM_GAQL", account, {}, signal, deps)).rejects.toMatchObject({ code: "reauth_required" });
+    }
+  });
+
+  it("keeps a bad query on an active account a bad query, even when its wording sounds like a lost sign-in", async () => {
+    const { deps } = composioWith(
+      { body: { successful: false, error: "Request contains an invalid argument: invalid page token", data: {} } },
+      { body: { id: "ca_123", status: "ACTIVE", is_disabled: false } },
+    );
+    const { connection: open, marked } = connection();
+    await expect(runAs("googleads", open, "GOOGLEADS_SEARCH_STREAM_GAQL", {}, signal, deps)).rejects.toMatchObject({
+      code: "bad_request",
+      detail: "Request contains an invalid argument: invalid page token",
+    });
+    expect(marked).toEqual([]);
+  });
+
+  it("falls back to the wording when the account can't be looked up", async () => {
+    const lookupFails = { status: 503, body: {} };
+    // Meta's expiry still reads as a lost sign-in…
+    const meta = composioWith(metaExpired, lookupFails);
+    const { connection: open, marked } = connection();
+    await expect(runAs("metaads", open, "METAADS_GET_INSIGHTS", {}, signal, meta.deps)).rejects.toMatchObject({ code: "reauth_required", requestId: "req_7f3a9c" });
+    expect(marked).toEqual(["invalid"]);
+    expect(meta.calls).toHaveLength(2);
+    // …and anything else stays what it was.
+    const bad = composioWith({ status: 400, body: { error: { message: "Unknown field: foo", request_id: "req_1" } } }, lookupFails);
+    await expect(runTool("metaads", "METAADS_GET_INSIGHTS", account, {}, signal, bad.deps)).rejects.toMatchObject({ code: "bad_request", requestId: "req_1" });
+  });
+
+  it("doesn't ask about a rate limit, an outage or a timeout: those aren't the sign-in", async () => {
+    for (const run of [{ status: 429, body: {} }, { status: 503, body: {} }, { body: { successful: false, error: "User request limit reached", data: {} } }]) {
+      const { deps, calls } = composioWith(run, { body: { id: "ca_123", status: "EXPIRED" } });
+      await expect(runTool("metaads", "METAADS_GET_INSIGHTS", account, {}, signal, deps)).rejects.toMatchObject({ code: expect.not.stringMatching("reauth_required") });
+      expect(calls).toHaveLength(1);
+    }
   });
 });
 

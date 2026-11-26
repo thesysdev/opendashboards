@@ -2,6 +2,8 @@ import "server-only";
 
 import { z } from "zod";
 
+import { logRejection } from "@/lib/log";
+
 import type { ConnectionSource, OpenConnection, QueryResult, SourceError } from "../types";
 
 import { ComposioError, deleteAccount, getAccount, isRecord, runTool, type ComposioAccountRef, type ComposioDeps, type ComposioToolkit } from "./client";
@@ -89,13 +91,16 @@ export async function runAs(
   slug: string,
   args: Record<string, unknown>,
   signal: AbortSignal,
+  deps?: ComposioDeps,
 ): Promise<unknown> {
   const account = readComposioCredential(connection.credential);
   try {
-    return await runTool(toolkit, slug, account, args, signal);
+    return await runTool(toolkit, slug, account, args, signal, deps);
   } catch (error) {
-    if (error instanceof ComposioError && error.code === "reauth_required" && connection.updateCredential) {
-      await connection.updateCredential(async (current) => ({ credential: current, status: "invalid" }));
+    if (error instanceof ComposioError && error.code === "reauth_required") {
+      // Not shown to anyone but kept: why, and Composio's request id for their support.
+      logRejection(`composio.${toolkit}.signInLost`, error);
+      if (connection.updateCredential) await connection.updateCredential(async (current) => ({ credential: current, status: "invalid" }));
     }
     throw error;
   }

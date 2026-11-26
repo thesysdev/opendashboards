@@ -38,8 +38,10 @@ export class ComposioError extends Error {
     /** The reason, from Composio or the ad platform. Shown for bad requests; logged otherwise. */
     readonly detail?: string,
     readonly toolkit?: ComposioToolkit,
+    /** Composio's id for the failed request (its request_id, or a tool run's log_id), for their support. Logged (it's in the message), never shown. */
+    readonly requestId?: string,
   ) {
-    super(`Composio request failed: ${code}${detail ? ` (${detail.slice(0, 300)})` : ""}`);
+    super(`Composio request failed: ${code}${detail ? ` (${detail.slice(0, 300)})` : ""}${requestId ? ` [request_id ${requestId}]` : ""}`);
     this.name = "ComposioError";
   }
 }
@@ -60,7 +62,14 @@ export function isConfigured(toolkit: ComposioToolkit): boolean {
 
 async function request<T>(
   path: string,
-  init: { method: "GET" | "POST" | "DELETE"; body?: unknown; signal?: AbortSignal; timeoutMs?: number },
+  init: {
+    method: "GET" | "POST" | "DELETE";
+    body?: unknown;
+    signal?: AbortSignal;
+    timeoutMs?: number;
+    /** False: a failure's wording never makes it `reauth_required` (the caller asks the account instead). */
+    wording?: boolean;
+  },
   deps: ComposioDeps,
   toolkit?: ComposioToolkit,
 ): Promise<T> {
@@ -83,8 +92,18 @@ async function request<T>(
     throw new ComposioError(timeout.aborted ? "timeout" : "unavailable", (error as Error)?.message, toolkit);
   }
   const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) throw classify(response.status, body, path.startsWith("/connected_accounts/"), toolkit);
+  if (!response.ok) throw classify(response.status, body, path.startsWith("/connected_accounts/"), toolkit, init.wording ?? true);
   return body as T;
+}
+
+/** Composio's id for a failed request, if it gave one: `{ error: { request_id } }`. */
+function requestIdOf(body: unknown): string | undefined {
+  return asId(isRecord(body) ? (isRecord(body.error) ? body.error.request_id : body.request_id) : undefined);
+}
+
+/** An id Composio sent, kept only when it looks like one: it goes into log lines. */
+function asId(value: unknown): string | undefined {
+  return typeof value === "string" && /^[\w.:-]{1,100}$/.test(value) ? value : undefined;
 }
 
 /** Composio's error message, wherever it put it. */
@@ -96,23 +115,36 @@ function messageOf(body: unknown): string {
   return typeof body.message === "string" ? body.message : "";
 }
 
-/** A connected account that can't be used any more reads as one: the user signs in again. */
-const ACCOUNT_GONE = /connected[ _]?account.*(not found|inactive|expired|revoked|failed|deleted|disabled|not active)|(expired|revoked|invalid).*(token|credential|grant)|reauth/i;
+/**
+ * Wording that says a connected account can't be used any more. Only a
+ * fallback: Composio's errors carry no codes, so whether a failed tool run
+ * means signing in again is decided by the account's status (`runTool`), and
+ * this is read only when that can't be looked up. Includes Meta's expired
+ * token (OAuthException 190): "Error validating access token: Session has
+ * expired…".
+ */
+const ACCOUNT_GONE =
+  /connected[ _]?account.*(not found|inactive|expired|revoked|failed|deleted|disabled|not active)|(expired|revoked|invalid).*(token|credential|grant)|validating access token|session has expired|reauth/i;
 
-/** `account`: the request was about one connected account, so a 404 means it's gone (elsewhere, it's ours: a wrong tool or version). */
-function classify(status: number, body: unknown, account: boolean, toolkit?: ComposioToolkit): ComposioError {
+/**
+ * `account`: the request was about one connected account, so a 404 means it's
+ * gone (elsewhere, it's ours: a wrong tool or version). `wording`: whether the
+ * message alone may say the sign-in is lost (see ACCOUNT_GONE).
+ */
+function classify(status: number, body: unknown, account: boolean, toolkit?: ComposioToolkit, wording = true): ComposioError {
   const message = messageOf(body).slice(0, 1_000);
+  const requestId = requestIdOf(body);
+  const error = (code: ComposioErrorCode, detail: string) => new ComposioError(code, detail, toolkit, requestId);
+  const gone = wording && ACCOUNT_GONE.test(message);
   if (status === 401 || status === 403) {
     // A 401/403 about the connected account is the user's sign-in; about the key, it's ours.
-    return ACCOUNT_GONE.test(message)
-      ? new ComposioError("reauth_required", message, toolkit)
-      : new ComposioError("project_rejected", message || `HTTP ${status}`, toolkit);
+    return gone ? error("reauth_required", message) : error("project_rejected", message || `HTTP ${status}`);
   }
-  if ((status === 404 && account) || ACCOUNT_GONE.test(message)) return new ComposioError("reauth_required", message || "Account not found", toolkit);
-  if (status === 429) return new ComposioError("rate_limited", message, toolkit);
-  if (status === 400 || status === 422) return new ComposioError("bad_request", message || `HTTP ${status}`, toolkit);
-  if (status >= 500) return new ComposioError("unavailable", message || `HTTP ${status}`, toolkit);
-  return new ComposioError("unexpected", message || `HTTP ${status}`, toolkit);
+  if ((status === 404 && account) || gone) return error("reauth_required", message || "Account not found");
+  if (status === 429) return error("rate_limited", message);
+  if (status === 400 || status === 422) return error("bad_request", message || `HTTP ${status}`);
+  if (status >= 500) return error("unavailable", message || `HTTP ${status}`);
+  return error("unexpected", message || `HTTP ${status}`);
 }
 
 /**
@@ -194,6 +226,9 @@ export type ComposioAccountRef = { composioUserId: string; connectedAccountId: s
 /**
  * Runs one Composio tool on the user's connected account and returns its
  * `data`. The tool's slug comes from the calling source's own fixed list.
+ *
+ * A failure that could be a lost sign-in is checked against the account
+ * itself (`lostSignIn`), since Composio's errors carry no codes.
  */
 export async function runTool(
   toolkit: ComposioToolkit,
@@ -203,25 +238,73 @@ export async function runTool(
   signal: AbortSignal,
   deps: ComposioDeps = {},
 ): Promise<unknown> {
-  const body = await request<{ data?: unknown; error?: unknown; successful?: unknown }>(
-    `/tools/execute/${encodeURIComponent(slug)}`,
-    {
-      method: "POST",
-      body: { connected_account_id: account.connectedAccountId, user_id: account.composioUserId, version: TOOLKIT_VERSION, arguments: args },
-      signal,
-      // Meta builds large insight reports on demand.
-      timeoutMs: config().composio.queryTimeoutMs,
-    },
-    deps,
-    toolkit,
-  );
+  let body: { data?: unknown; error?: unknown; successful?: unknown; log_id?: unknown };
+  try {
+    body = await request(
+      `/tools/execute/${encodeURIComponent(slug)}`,
+      {
+        method: "POST",
+        body: { connected_account_id: account.connectedAccountId, user_id: account.composioUserId, version: TOOLKIT_VERSION, arguments: args },
+        signal,
+        // Meta builds large insight reports on demand.
+        timeoutMs: config().composio.queryTimeoutMs,
+        wording: false,
+      },
+      deps,
+      toolkit,
+    );
+  } catch (error) {
+    // A timeout, an outage or a rate limit isn't the sign-in: no need to ask.
+    if (!(error instanceof ComposioError) || !MAYBE_SIGN_IN.has(error.code)) throw error;
+    throw await lostSignIn(error, account, signal, deps, toolkit);
+  }
   if (body?.successful !== true) {
     const message = typeof body?.error === "string" ? body.error : messageOf(body?.data);
-    if (ACCOUNT_GONE.test(message)) throw new ComposioError("reauth_required", message, toolkit);
-    if (/rate.?limit|too many requests|RESOURCE_EXHAUSTED|user request limit/i.test(message)) throw new ComposioError("rate_limited", message, toolkit);
-    throw new ComposioError("bad_request", message || "The tool failed without saying why", toolkit);
+    const requestId = asId(body?.log_id) ?? requestIdOf(body);
+    const failed = (code: ComposioErrorCode, detail: string) => new ComposioError(code, detail, toolkit, requestId);
+    if (/rate.?limit|too many requests|RESOURCE_EXHAUSTED|user request limit/i.test(message)) throw failed("rate_limited", message);
+    throw await lostSignIn(failed("bad_request", message || "The tool failed without saying why"), account, signal, deps, toolkit);
   }
   return parseData(body.data);
+}
+
+/** Failures that may be a lost sign-in, which the account's status settles. */
+const MAYBE_SIGN_IN = new Set<ComposioErrorCode>(["bad_request", "project_rejected", "unexpected"]);
+
+/** Account statuses that mean it can't run tools until the user signs in again. */
+const SIGNED_OUT = new Set(["EXPIRED", "REVOKED", "INACTIVE"]);
+
+/**
+ * What a failed tool run means, asked of the account itself (a GET, on the
+ * short check timeout): expired, revoked, inactive, disabled or gone is a
+ * lost sign-in; active means the failure is what it says (a bad query, say),
+ * whatever its wording. Only when the account can't be looked up, or is in
+ * some other state, does the wording decide (ACCOUNT_GONE).
+ */
+async function lostSignIn(
+  failure: ComposioError,
+  account: ComposioAccountRef,
+  signal: AbortSignal,
+  deps: ComposioDeps,
+  toolkit: ComposioToolkit,
+): Promise<ComposioError> {
+  const signedOut = (why: string) => new ComposioError("reauth_required", `${why}: ${failure.detail ?? failure.code}`, toolkit, failure.requestId);
+  let found: ComposioAccount;
+  try {
+    found = await getAccount(account.connectedAccountId, deps, signal, toolkit);
+  } catch (lookup) {
+    // A 404 on the account: it's gone.
+    if (lookup instanceof ComposioError && lookup.code === "reauth_required") return signedOut("The account is gone");
+    return byWording(failure, toolkit);
+  }
+  if (found.disabled || SIGNED_OUT.has(found.status)) return signedOut(`The account is ${found.disabled ? "disabled" : found.status.toLowerCase()}`);
+  if (found.status === "ACTIVE") return failure;
+  return byWording(failure, toolkit);
+}
+
+/** The fallback: the failure, unless its wording says the sign-in is lost. */
+function byWording(failure: ComposioError, toolkit: ComposioToolkit): ComposioError {
+  return ACCOUNT_GONE.test(failure.detail ?? "") ? new ComposioError("reauth_required", failure.detail, toolkit, failure.requestId) : failure;
 }
 
 /** Tool data, which Composio sometimes sends as a JSON string. */
