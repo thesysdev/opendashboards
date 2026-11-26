@@ -5,6 +5,7 @@ import { library } from "@openuidev/dashboard-library";
 import { useRouter } from "next/navigation";
 import { useCallback, useRef } from "react";
 
+import { describeSource } from "@/lib/dashboards/describe-source";
 import { SIGN_IN_LOST_HEADER } from "@/lib/dashboards/sign-in-lost";
 
 import { useDashboardResponse } from "./app-workspace";
@@ -26,6 +27,11 @@ function interpreterError(error: unknown, status: number): Error {
  * loads fresh through our interpreter every time it opens. When the Build
  * chat creates or edits it, the renderer gets Cloud's response too, and
  * follows the new version as it's built.
+ *
+ * Someone who can edit the app also gets Sources, by the title: its main half turns on inspect
+ * mode, where a click on a number, table or chart opens a popover with where its data comes from
+ * (the query, its result, any formula); its chevron lists every source on the dashboard. Viewers
+ * don't get it, as it shows the queries and table names.
  */
 export function LiveDashboard({
   appId,
@@ -39,8 +45,13 @@ export function LiveDashboard({
 }) {
   const response = useDashboardResponse(dashboard.artifactId);
   return (
-    <DashboardView id={dashboard.artifactId} response={response}>
-      <DashboardTitle appId={appId} dashboard={dashboard} readOnly={readOnly} />
+    <DashboardView id={dashboard.artifactId} response={response} sources={!readOnly}>
+      <DashboardTitle
+        appId={appId}
+        dashboard={dashboard}
+        readOnly={readOnly}
+        actions={readOnly ? undefined : <LiveArtifactRenderer.ProvenanceToggle />}
+      />
     </DashboardView>
   );
 }
@@ -66,16 +77,22 @@ export function NewDashboard({
   );
 }
 
+/**
+ * `children` sit above the dashboard, inside the renderer's chrome, so they can hold its Sources
+ * button. `sources`: inspect mode, the Sources popover and the All sources menu are on.
+ */
 function DashboardView({
   id,
   response,
   heading = false,
+  sources = false,
   children,
 }: {
   id?: string;
   response?: string;
   /** No title above it yet: the pending loader draws one. */
   heading?: boolean;
+  sources?: boolean;
   children?: React.ReactNode;
 }) {
   const router = useRouter();
@@ -106,7 +123,6 @@ function DashboardView({
   return (
     // The renderer takes the height under the title, so the pending loader fills it; a taller dashboard scrolls.
     <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white">
-      {children}
       <LiveArtifactRenderer
         id={id}
         response={response}
@@ -114,6 +130,7 @@ function DashboardView({
         className="flex-1"
         library={library}
         interpreter={interpreter}
+        enableProvenance={sources}
         onError={(errors) => {
           if (!errors.length) return;
           console.error("[dashboard]", JSON.stringify(errors));
@@ -121,11 +138,13 @@ function DashboardView({
         }}
       >
         <LiveArtifactRenderer.Chrome>
+          {children}
           <LiveArtifactRenderer.Content className="h-full">
             <LiveArtifactRenderer.Pending heading={heading} />
             {/* "Loading data…" at the bottom of what's visible; a build's feed takes its place. */}
             <LiveArtifactRenderer.Loading />
             <LiveArtifactRenderer.Error />
+            {sources && <LiveArtifactRenderer.Provenance describeSource={describeSource} />}
           </LiveArtifactRenderer.Content>
         </LiveArtifactRenderer.Chrome>
       </LiveArtifactRenderer>
