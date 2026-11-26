@@ -48,8 +48,8 @@ export function Hero() {
         </div>
 
         <div className="order-2 mt-7 flex w-full flex-col items-center gap-3 md:flex-row md:justify-center min-[56.25rem]:order-3 min-[56.25rem]:mt-[49px] min-[56.25rem]:-ml-2 min-[56.25rem]:w-auto">
-          <BevelButton href={LINKS.github} label="Star on GitHub" variant="primary" external />
-          <BevelButton href={LINKS.app} label="Try for free" variant="secondary" arrow />
+          <BevelButton href={LINKS.app} label="Try for free" variant="primary" arrow />
+          <BevelButton href={LINKS.github} label="Star on GitHub" variant="secondary" external />
         </div>
       </div>
 

@@ -8,10 +8,14 @@ import { LINKS } from "./links";
 /** The site's pages, in the top bar's nav. */
 const NAV = [{ label: "Pricing", href: "/pricing" }];
 
+/** Pricing and the GitHub star: quiet text buttons, so Try for free stands out. */
+const NAV_LINK =
+  "inline-flex h-10 items-center gap-1.5 rounded-full whitespace-nowrap px-3 text-[15px] font-medium text-[#0a0a0a] transition-colors hover:bg-black/4 focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-neutral-950";
+
 /**
- * The marketing pages' top bar, after openui.com's: Shiro and the product name
- * on the left, the nav centred, Try for free and the GitHub star button on the
- * right. Below 768px the nav and the star button move into a menu.
+ * The marketing pages' top bar: Shiro and the product name on the left; Pricing,
+ * the GitHub star and the Try for free primary button on the right. Below 768px
+ * Pricing and the star move into a menu.
  */
 export function Header() {
   return (
@@ -33,32 +37,23 @@ export function Header() {
             OpenDashboards
           </Link>
         </div>
-        <nav
-          aria-label="Main"
-          className="absolute top-1/2 left-1/2 flex -translate-1/2 items-center gap-2 max-md:hidden"
-        >
-          {NAV.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="inline-flex h-8 items-center rounded-[10px] px-2 font-(family-name:--font-display) text-[15px] text-neutral-950 transition-colors hover:bg-black/4 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-950"
-            >
-              {item.label}
-            </Link>
-          ))}
-        </nav>
         <div className="flex items-center gap-2">
+          <nav aria-label="Main" className="flex items-center gap-2 max-md:hidden">
+            {NAV.map((item) => (
+              <Link key={item.href} href={item.href} className={NAV_LINK}>
+                {item.label}
+              </Link>
+            ))}
+            <StarButton />
+          </nav>
           {/* The app is behind sign-in: there's nothing to prefetch. */}
           <Link
             href={LINKS.app}
             prefetch={false}
-            className="inline-flex h-10 items-center rounded-full whitespace-nowrap border border-black/8 bg-[#f7f7f8] px-3.5 text-[15px] font-medium text-[#0a0a0a] shadow-[inset_0_2px_1px_-0.5px_#fff,inset_0_-3px_6px_-1px_rgb(0_0_0/0.1)] focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-neutral-950"
+            className="inline-flex h-10 items-center rounded-full whitespace-nowrap border border-white/14 bg-[#0a0a0a] px-3.5 text-[15px] font-medium text-white shadow-[inset_0_7px_12px_-6px_rgb(255_255_255/0.16),inset_0_-5px_8px_-2px_rgb(0_0_0/0.6)] focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-neutral-950"
           >
             Try for free
           </Link>
-          <div className="max-md:hidden">
-            <StarButton />
-          </div>
           <MobileMenu />
         </div>
       </div>
@@ -110,10 +105,7 @@ function MobileMenu() {
   );
 }
 
-/**
- * A black pill with a glowing GitHub mark: "Star". Below 404px there isn't room
- * for the name, Try for free and both labels, so it's the round mark alone there.
- */
+/** The GitHub mark and "Star", styled like the nav's links. */
 function StarButton() {
   return (
     <a
@@ -121,16 +113,16 @@ function StarButton() {
       target="_blank"
       rel="noopener noreferrer"
       aria-label="Star OpenDashboards on GitHub"
-      className="inline-flex h-10 items-center gap-1.5 rounded-full border border-white/14 whitespace-nowrap bg-[#0a0a0a] px-3.5 text-[15px] font-medium text-white shadow-[inset_0_7px_12px_-6px_rgb(255_255_255/0.16),inset_0_-5px_8px_-2px_rgb(0_0_0/0.6),inset_0_8px_12px_-6px_rgb(255_255_255/0.14)] focus-visible:outline-2 focus-visible:outline-offset-[5px] focus-visible:outline-neutral-950 max-[25.25rem]:w-10 max-[25.25rem]:justify-center max-[25.25rem]:px-0"
+      className={NAV_LINK}
     >
       <svg
         aria-hidden
         viewBox="0 0 24 24"
-        className="size-[18px] shrink-0 fill-white drop-shadow-[0_0_4px_rgb(255_255_255/0.5)]"
+        className="size-[18px] shrink-0 fill-current"
       >
         <path d={siGithub.path} />
       </svg>
-      <span className="max-[25.25rem]:hidden">Star</span>
+      Star
     </a>
   );
 }
