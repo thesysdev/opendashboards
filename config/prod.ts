@@ -8,4 +8,6 @@ export const prod: EnvironmentSettings = {
   mcpClientMetadataDocument: false,
   secrets: { allowPlaintext: false },
   network: { connectAttemptTimeoutMs: null },
+  // Loaded from STRIPE_PRICE_* and STRIPE_PORTAL_* env vars when set (scripts/stripe-setup.mjs prints them).
+  plans: null,
 };

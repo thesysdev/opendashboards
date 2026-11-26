@@ -10,4 +10,8 @@ export const local: EnvironmentSettings = {
   secrets: { allowPlaintext: true },
   // Home and office networks are often slow, or have IPv6 that goes nowhere.
   network: { connectAttemptTimeoutMs: 2_000 },
+  // Off: no billing, no limits. To try billing, set `hostedPlans({ … })` from ./plans with
+  // Stripe test-mode ids (scripts/stripe-setup.mjs prints them), plus STRIPE_SECRET_KEY and
+  // STRIPE_WEBHOOK_SECRET (`stripe listen --forward-to localhost:3100/api/stripe/webhook`).
+  plans: null,
 };

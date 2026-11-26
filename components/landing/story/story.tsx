@@ -1,15 +1,6 @@
 "use client";
 
-import {
-  ChevronLeft,
-  ChevronRight,
-  Database,
-  LayoutDashboard,
-  MessageCircle,
-  Pause,
-  Play,
-  RefreshCw,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, LayoutDashboard, Pause, Play, Plug, RefreshCw, UserRoundPlus } from "lucide-react";
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from "react";
 
 import { useReducedMotion } from "../use-reduced-motion";
@@ -17,9 +8,9 @@ import { FILM_LENGTH, FILM_STEPS, FILM_STILL, StoryFilm } from "./story-film";
 
 /** One point per film step, in the film's order. */
 const POINTS = [
-  { id: "ask", Icon: MessageCircle, title: "Ask a question", description: "Ask in plain words. No SQL, no ticket." },
-  { id: "fetch", Icon: Database, title: "Query every tool", description: "Each part of the answer comes from the tool that has it." },
-  { id: "build", Icon: LayoutDashboard, title: "Get a dashboard", description: "The whole answer in one dashboard, across every source." },
+  { id: "connect", Icon: Plug, title: "Connect", description: "Your tools, your databases and any MCP server." },
+  { id: "build", Icon: LayoutDashboard, title: "Build a dashboard", description: "Ask in plain words. Each chart comes from the tool that has it." },
+  { id: "share", Icon: UserRoundPlus, title: "Share", description: "Invite your team to view or edit it." },
   { id: "live", Icon: RefreshCw, title: "Always current", description: "When your data changes, the dashboard updates. No regeneration." },
 ];
 
@@ -97,7 +88,8 @@ function Fill({ step, running, className }: { step: Step; running: boolean; clas
 
 /**
  * "All your data. One question away." The heading and lead, then the film on
- * a flat stage with its four steps under it. The film plays only while it's on
+ * a flat stage with its four steps under it: connect, build a dashboard, share,
+ * always current. The film plays only while it's on
  * screen, in a visible tab and not paused, and each step's rule tracks its
  * clock; choosing a step jumps the film to it. Under reduced motion the film
  * rests on one frame until the reader presses play.

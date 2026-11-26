@@ -168,8 +168,8 @@
   .app-shell:has([data-app-header]) [data-sidebar-open][data-floating] {
     display: none;
   }
-  .app-shell:has([data-sidebar][data-pref="collapsed"]) [data-main],
-  .app-shell:has([data-guest-app]):has([data-sidebar][data-pref="none"]) [data-main] {
+  .app-shell:has([data-sidebar][data-pref="collapsed"]) :is([data-main], [data-main-banner]),
+  .app-shell:has([data-guest-app]):has([data-sidebar][data-pref="none"]) :is([data-main], [data-main-banner]) {
     margin-left: 0.5rem;
   }
 }

@@ -5,6 +5,10 @@
  * environment variables, read in index.ts.
  */
 
+import type { PlansSettings } from "./plans";
+
+export type { CatalogPlan, PlansSettings, StripePlan } from "./plans";
+
 /** local: `next dev` and tests. prod: production builds and `next start`. */
 export const ENVIRONMENTS = ["local", "prod"] as const;
 export type Environment = (typeof ENVIRONMENTS)[number];
@@ -167,6 +171,12 @@ export type EnvironmentSettings = {
      */
     connectAttemptTimeoutMs: number | null;
   };
+  /**
+   * Paid plans, billed through Stripe (config/plans.ts). null: billing and
+   * plan limits are off, and everything is allowed: self-hosted installs,
+   * and local unless a developer is testing billing.
+   */
+  plans: PlansSettings | null;
 };
 
 export type Settings = CommonSettings & EnvironmentSettings;

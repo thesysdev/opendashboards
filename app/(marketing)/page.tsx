@@ -15,7 +15,8 @@ import { SITE_URL } from "@/lib/site";
 import { alt as OG_ALT } from "../opengraph-image";
 
 const TITLE = "OpenDashboards | The open-source alternative to Claude Dashboards";
-const DESCRIPTION = "Ask any question across PostHog, your database, and any MCP server. Get a live dashboard.";
+const DESCRIPTION =
+  "Build live dashboards from your connected tools. Share them with your team and see where the numbers come from.";
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
@@ -54,8 +55,8 @@ export default function LandingPage() {
       <main>
         <Hero />
         <Story />
-        <Connectors />
         <Features />
+        <Connectors />
         <Ways />
         <Compare />
         <Faq />

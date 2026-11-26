@@ -2,26 +2,37 @@ import Image from "next/image";
 import type { ReactNode } from "react";
 
 import { ConversationalArt, EditWidgetArt, HoverArt, LiveArt } from "./feature-art";
+import { SharingIllustration, SourcesIllustration } from "./LaunchIllustrations";
 
 const FEATURES: { title: string; description: string; art: ReactNode }[] = [
   {
+    title: "Share and edit",
+    description: "Invite your team to view or edit.",
+    art: <SharingIllustration />,
+  },
+  {
+    title: "See the sources",
+    description: "Trace any chart back to its data.",
+    art: <SourcesIllustration />,
+  },
+  {
     title: "Conversational",
-    description: "Ask what you need to know. Get a dashboard built for that question.",
+    description: "Ask a question. Get a dashboard.",
     art: <ConversationalArt />,
   },
   { title: "Interactive by default", description: "Pick a filter and every widget updates.", art: <HoverArt /> },
   { title: "Live updates", description: "New data, same dashboard. No regeneration.", art: <LiveArt /> },
   {
     title: "Targeted edits",
-    description: "Change one chart. Only that chart is generated again.",
+    description: "Change one chart. The rest stays put.",
     art: <EditWidgetArt />,
   },
 ];
 
 /**
- * "Your data, your models, your servers": a centred statement, then four
- * cards two by two (one column on phones), each a scene on the hero's light
- * dither stage with a title and a line under it.
+ * Six cards, three by two on wide screens (two by three on tablets, one
+ * column on phones): sharing and Sources lead, then the everyday dashboard
+ * workflow on the same stage.
  */
 export function Features() {
   return (
@@ -34,14 +45,13 @@ export function Features() {
           id="features-title"
           className="mx-auto max-w-208 text-center font-(family-name:--font-display) text-2xl leading-[1.1] font-semibold tracking-[-0.02em] text-balance md:text-[32px]"
         >
-          Your data, your models,
-          <br className="md:hidden" /> your servers
+          Dashboards your team can share and check
         </h2>
         <p className="mx-auto mt-4 max-w-144 text-center text-base leading-normal text-pretty text-neutral-950/60 md:text-[17px]">
-          Run OpenDashboards on your own infrastructure, with any model through the OpenUI Dashboards API.
+          Share live dashboards with your team and trace every number to its source.
         </p>
 
-        <div className="mt-10 grid grid-cols-1 gap-10 md:mt-16 md:grid-cols-2 md:gap-x-4 md:gap-y-12 min-[56.25rem]:gap-x-6 min-[56.25rem]:gap-y-16">
+        <div className="mt-10 grid grid-cols-1 gap-10 md:mt-16 md:grid-cols-2 md:gap-x-4 md:gap-y-12 min-[56.25rem]:gap-x-6 min-[56.25rem]:gap-y-16 min-[75rem]:grid-cols-3">
           {FEATURES.map((feature) => (
             <article key={feature.title} className="min-w-0">
               {/* Phones: the scene runs edge to edge, out past the section's gutter, with square sides. */}

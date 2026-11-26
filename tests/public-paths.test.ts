@@ -3,15 +3,17 @@ import { describe, expect, it } from "vitest";
 import { isPublicPath } from "@/lib/auth/public-paths";
 
 describe("isPublicPath", () => {
-  it("lets the landing page and its images through", () => {
+  it("lets public pages, assets, and endpoints through", () => {
     for (const path of [
       "/",
+      "/pricing",
       "/icon.svg",
       "/shiro-logo.svg",
       "/robots.txt",
       "/sitemap.xml",
       "/opengraph-image",
       "/oauth/client-metadata.json",
+      "/api/stripe/webhook",
       "/landing/dashboards/revenue-light.png",
       "/landing/brand-icons/postgresql-solid.png",
       "/landing/shaders/faded-dither-light-wide.webp",
@@ -21,7 +23,7 @@ describe("isPublicPath", () => {
   });
 
   it("keeps the app and the API behind sign-in", () => {
-    for (const path of ["/apps", "/apps/123", "/connections", "/api/interpreter", "/api/frontend-token", "/api/apps/123/chat"]) {
+    for (const path of ["/apps", "/apps/123", "/connections", "/api/interpreter", "/api/frontend-token", "/api/apps/123/chat", "/api/stripe", "/api/billing/checkout-complete"]) {
       expect(isPublicPath(path)).toBe(false);
     }
   });
@@ -40,6 +42,8 @@ describe("isPublicPath", () => {
       "/opengraph-image/apps",
       "/oauth/client-metadata.json/apps",
       "/oauth/",
+      "/pricing/",
+      "/pricing/apps",
       "/opendashboards",
       "/landing/",
       "/landing",

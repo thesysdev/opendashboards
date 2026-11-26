@@ -9,6 +9,7 @@ import {
   validateConfig,
   type Settings,
 } from "@/config";
+import { hostedPlans } from "@/config/plans";
 
 const PROD_SECRETS = {
   NODE_ENV: "production",
@@ -109,6 +110,59 @@ describe("demo datasets", () => {
       "demoData.retail: key is used twice",
       "demoData.retail: postgres needs a host, database and user",
       "demoData.Retail Sales: key must be lowercase letters, digits or _ (at most 40)",
+    ]);
+  });
+});
+
+describe("plans", () => {
+  const ids = { monthly: "price_m", annual: "price_y", portal: { month: "bpc_m", year: "bpc_y", seats: "bpc_s" } };
+
+  it("accept the hosted catalog with its Stripe ids, and then need Stripe's secrets", () => {
+    const withPlans = editedProd((s) => (s.plans = hostedPlans({ standard: ids, team: ids })));
+    expect(settingsProblems("prod", withPlans)).toEqual([]);
+    expect(secretProblems("prod", withPlans, PROD_SECRETS)).toEqual([
+      "STRIPE_SECRET_KEY is not set; prod has paid plans",
+      "STRIPE_WEBHOOK_SECRET is not set; prod has paid plans",
+    ]);
+  });
+
+  it("refuse a paid plan without its Stripe ids", () => {
+    const missing = editedProd((s) => (s.plans = hostedPlans({ standard: { ...ids, annual: "" }, team: ids })));
+    expect(settingsProblems("prod", missing)).toEqual(["plans.catalog.standard: a paid plan needs its Stripe prices and portal configurations"]);
+  });
+
+  it("load hosted plans from Stripe env vars when set and catch partial configs", () => {
+    const planEnv = {
+      STRIPE_PRICE_STANDARD_MONTHLY: "price_sm",
+      STRIPE_PRICE_STANDARD_ANNUAL: "price_sa",
+      STRIPE_PORTAL_STANDARD_MONTHLY: "bpc_sm",
+      STRIPE_PORTAL_STANDARD_ANNUAL: "bpc_sa",
+      STRIPE_PRICE_TEAM_MONTHLY: "price_tm",
+      STRIPE_PRICE_TEAM_ANNUAL: "price_ta",
+      STRIPE_PORTAL_TEAM_MONTHLY: "bpc_tm",
+      STRIPE_PORTAL_TEAM_ANNUAL: "bpc_ta",
+      STRIPE_PORTAL_TEAM_SEATS: "bpc_ts",
+    };
+    const loaded = settingsFor("prod", planEnv);
+    expect(loaded.plans?.catalog.standard.stripe?.monthly).toBe("price_sm");
+    expect(loaded.plans?.catalog.team.stripe?.portal.seats).toBe("bpc_ts");
+    expect(settingsProblems("prod", loaded)).toEqual([]);
+    expect(secretProblems("prod", loaded, { ...PROD_SECRETS, ...planEnv })).toEqual([
+      "STRIPE_SECRET_KEY is not set; prod has paid plans",
+      "STRIPE_WEBHOOK_SECRET is not set; prod has paid plans",
+    ]);
+    expect(
+      secretProblems("prod", loaded, {
+        ...PROD_SECRETS,
+        ...planEnv,
+        STRIPE_SECRET_KEY: "sk_live",
+        STRIPE_WEBHOOK_SECRET: "whsec_live",
+      }),
+    ).toEqual([]);
+
+    const { STRIPE_PORTAL_TEAM_SEATS: _, ...partial } = planEnv;
+    expect(settingsProblems("prod", settingsFor("prod", partial))).toEqual([
+      "plans.catalog.team: a per-seat plan needs its seats portal configuration",
     ]);
   });
 });

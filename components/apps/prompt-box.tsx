@@ -4,6 +4,7 @@ import { ArrowUpIcon, Loader2Icon } from "lucide-react";
 import { useState, useTransition } from "react";
 
 import { createAppAction } from "@/app/(app)/apps/actions";
+import { LimitPrompt, useAtLimit, useViewOnly } from "@/components/billing/workspace-plan";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -38,9 +39,13 @@ export function PromptBox({
   );
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
+  // Over the plan, or at its app limit: the banner or the prompt below says why.
+  const viewOnly = useViewOnly();
+  const atLimit = useAtLimit("apps");
+  const paused = viewOnly || atLimit;
 
   const selected = new Set(connections.filter((c) => !unticked.has(c.id)).map((c) => c.id));
-  const canSend = prompt.trim().length > 0 && selected.size > 0 && !pending;
+  const canSend = prompt.trim().length > 0 && selected.size > 0 && !pending && !paused;
 
   function toggle(id: string, checked: boolean) {
     setUnticked((current) => {
@@ -98,7 +103,7 @@ export function PromptBox({
             }
           }}
           placeholder="Ask OpenDashboards to build a dashboard of weekly signups by plan…"
-          disabled={pending}
+          disabled={pending || paused}
           autoFocus={autoFocus}
           maxLength={4000}
           rows={3}
@@ -109,7 +114,7 @@ export function PromptBox({
             connections={connections}
             selected={selected}
             onToggle={toggle}
-            disabled={pending}
+            disabled={pending || paused}
           />
           <Button
             type="submit"
@@ -123,6 +128,8 @@ export function PromptBox({
           </Button>
         </div>
       </form>
+
+      <LimitPrompt name="apps" className="mt-3" />
 
       {(error || (hint && prompt.trim())) && (
         <p
