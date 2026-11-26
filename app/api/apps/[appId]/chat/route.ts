@@ -8,6 +8,7 @@ import { secrets } from "@/config";
 import { track } from "@/lib/analytics";
 import { agentTools, getGateway, maxRounds, model, SYSTEM_PROMPT, type TurnContext } from "@/lib/agent";
 import { createAgUiTranslator, sse } from "@/lib/agent/ag-ui";
+import { DASHBOARD_STARTED } from "@/lib/agent/events";
 import { answerStoppedCalls, chatBodySchema, VIEWING_DASHBOARD, type ChatBody } from "@/lib/agent/messages";
 import { getAppService, getThreadService } from "@/lib/apps";
 import { getDb } from "@/lib/db";
@@ -22,6 +23,9 @@ import { count } from "@/lib/metrics";
 type Ctx = { params: Promise<{ appId: string }> };
 
 const MAX_BODY_BYTES = 2 * 1024 * 1024;
+
+// Dashboards build inside the turn (the model checks the data first), so a turn needs time to finish.
+export const maxDuration = 300;
 
 /**
  * One turn of the Build chat. Runs the agent's tool loop over OpenUI Gateway
@@ -100,6 +104,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
     async start(controller) {
       const emit = (event: BaseEvent) => controller.enqueue(encoder.encode(sse(event)));
       const translate = createAgUiTranslator(emit);
+      turn.onDashboardStarted = (started) => emit({ type: EventType.CUSTOM, name: DASHBOARD_STARTED, value: started } as BaseEvent);
       emit({ type: EventType.RUN_STARTED, threadId, runId } as BaseEvent);
 
       const runner = getGateway().chat.completions.runTools(

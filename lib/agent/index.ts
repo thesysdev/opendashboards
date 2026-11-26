@@ -2,6 +2,7 @@ import "server-only";
 
 import OpenAI from "openai";
 import type { RunnableToolFunctionWithContext } from "openai/lib/RunnableFunction";
+import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 import { z } from "zod";
 
 import { config, secrets } from "@/config";
@@ -17,6 +18,8 @@ import { track } from "@/lib/analytics";
 import { logError } from "@/lib/log";
 import spec from "@/lib/dashboards/generated/dashboard.spec.json";
 import { ToolError, toolsFor, type ToolContext } from "@/lib/tools";
+
+import type { DashboardStarted } from "./events";
 
 /**
  * The Build agent: a plain tool loop over OpenUI Gateway. It explores the
@@ -34,8 +37,8 @@ export const model = () => config().openui.model;
 
 export const SYSTEM_PROMPT = `You are OpenDashboards' dashboard builder. The user is building an app: a set of live dashboards over their own data.
 
-- Explore before you build: find the user's connections with list_connections, look at what data exists, and run queries to check that the numbers you plan to show are real and sensible.
-- Build with create_dashboard. To explain or change an existing dashboard, read it first with read_dashboard (find it with list_dashboards), then use edit_dashboard; delete one with delete_dashboard only when the user asks. Describe in the prompt what to show and exactly which tool calls and queries load each part, with the connection id. Dashboards load their data live every time they open.
+- Explore before you build: find the user's connections with list_connections, and look at what data exists, so you know what a dashboard can show.
+- Build with create_dashboard. To explain or change an existing dashboard, read it first with read_dashboard (find it with list_dashboards), then use edit_dashboard; delete one with delete_dashboard only when the user asks. Dashboards load their data live every time they open.
 - If create_dashboard or edit_dashboard fails, say it didn't work and why. Never describe a change that didn't happen.
 - If the user's data can't answer what they ask, say so, name the kind of source that could (for example a security log tool), and say they can add it under Data Connections.
 - You can't share or publish, but the user can: the Share button at the top of the app adds workspace members, or people outside the workspace by email to view it, and sets whether everyone in the workspace can open it. Point them there when they ask.
@@ -54,6 +57,12 @@ export type TurnContext = ToolContext & {
   signal: AbortSignal;
   /** Every dashboard this turn created or changed. */
   dashboards: string[];
+  /**
+   * Tells the chat a create or edit has its dashboard id and is building, with
+   * Cloud's first response for the renderer. The call keeps running until its
+   * result: the last response.
+   */
+  onDashboardStarted?: (started: DashboardStarted) => void;
 };
 
 type AgentTool = RunnableToolFunctionWithContext<TurnContext>;
@@ -71,11 +80,14 @@ export function agentTools(): AgentTool[] {
   return [...dataTools, listDashboards, readDashboardTool, createDashboard, editDashboard, deleteDashboardTool];
 }
 
+/** One call of a tool: its name, the arguments as the model wrote them, and the loop running it. */
+type Call = { name: string; input: string; runner: unknown };
+
 function define(
   name: string,
   description: string,
   parameters: Record<string, unknown>,
-  run: (args: unknown, turn: TurnContext) => Promise<unknown>,
+  run: (args: unknown, turn: TurnContext, call: Call) => Promise<unknown>,
 ): AgentTool {
   return {
     type: "function",
@@ -83,10 +95,11 @@ function define(
       name,
       description,
       parameters,
-      parse: (input: string) => JSON.parse(input || "{}") as unknown,
-      async function(args: unknown, _runner: unknown, turn: TurnContext) {
+      // The arguments as written travel along, so a tool can find its own call in the loop.
+      parse: (input: string) => ({ input, args: JSON.parse(input || "{}") as unknown }),
+      async function(parsed: { input: string; args: unknown }, runner: unknown, turn: TurnContext) {
         try {
-          return await run(args, turn);
+          return await run(parsed.args, turn, { name, input: parsed.input, runner });
         } catch (error) {
           if (turn.signal.aborted) throw error;
           if (error instanceof ToolError) return { error: { code: error.code, message: error.message } };
@@ -96,6 +109,27 @@ function define(
       },
     },
   };
+}
+
+/**
+ * The id of the tool call running now: in the model's latest message, the
+ * call to this tool with these exact arguments. Two identical calls in one
+ * round take one id each.
+ */
+function toolCallIdOf(call: Call, claimed: Set<string>): string | null {
+  const messages = (call.runner as { messages?: ChatCompletionMessageParam[] }).messages ?? [];
+  const latest = messages.findLast((message) => message.role === "assistant");
+  if (latest?.role !== "assistant") return null;
+  const match = latest.tool_calls?.find(
+    (toolCall) =>
+      toolCall.type === "function" &&
+      toolCall.function.name === call.name &&
+      toolCall.function.arguments === call.input &&
+      !claimed.has(toolCall.id),
+  );
+  if (!match) return null;
+  claimed.add(match.id);
+  return match.id;
 }
 
 const listDashboards = define(
@@ -168,21 +202,25 @@ const createArgs = z.object({
     .min(1)
     .max(20_000)
     .describe(
-      "What the dashboard shows, and which tool calls (with the connection id) load each part. " +
+      "What the user wants to see and who it's for, and the connection id and data to use. Leave the queries, date ranges and filters to the dashboard builder. " +
+        "The builder sees only this prompt and the connection's data, not other dashboards: to change an existing dashboard, use edit_dashboard instead; to reuse parts of one, describe them here. " +
         "Leave out its title and description: OpenDashboards draws those above it.",
     ),
 });
 
 const createDashboard = define(
   "create_dashboard",
-  "Creates a live dashboard in this app, with its title and description. It opens for the user when the turn ends.",
+  "Creates a live dashboard in this app, with its title and description, and opens it for the user. " +
+    "The dashboard builder calls the connection's tools itself to explore the data, writes and checks the queries, and chooses the layout and filters. " +
+    "Returns once the dashboard is saved, or says why it couldn't be built.",
   z.toJSONSchema(createArgs),
-  async (input, turn) => {
+  async (input, turn, call) => {
     const args = parseArgs(createArgs, input);
-    const response = await getDashboards().create({ title: args.title, prompt: args.prompt }, turn, {
+    const build = getDashboards().create({ title: args.title, prompt: args.prompt }, turn, {
+      stream: true,
       signal: turn.signal,
     });
-    return remember(response, { title: args.title, description: args.description }, turn);
+    return follow(build, { title: args.title, description: args.description }, turn, call);
   },
 );
 
@@ -193,18 +231,21 @@ const editArgs = z.object({
 
 const editDashboard = define(
   "edit_dashboard",
-  "Changes what a dashboard in this app shows, in place. Its title and description stay as they are: the user renames dashboards.",
+  "Changes what a dashboard in this app shows, in place. Its title and description stay as they are: the user renames dashboards. " +
+    "The dashboard builder calls the connection's tools itself and writes the queries. " +
+    "Returns once the change is saved, or says why it couldn't be made.",
   z.toJSONSchema(editArgs),
-  async (input, turn) => {
+  async (input, turn, call) => {
     const args = parseArgs(editArgs, input);
     const dashboard = await getDashboardService().findByArtifact(turn.userId, args.dashboard);
     if (!dashboard || dashboard.appId !== turn.appId) {
       throw new ToolError("dashboard_not_found", `No dashboard ${args.dashboard} in this app.`);
     }
-    const response = await getDashboards().edit({ id: args.dashboard, prompt: args.prompt }, turn, {
+    const build = getDashboards().edit({ id: args.dashboard, prompt: args.prompt }, turn, {
+      stream: true,
       signal: turn.signal,
     });
-    return remember(response, null, turn);
+    return follow(build, null, turn, call);
   },
 );
 
@@ -227,6 +268,48 @@ const deleteDashboardTool = define(
     return { deleted: args.dashboard };
   },
 );
+
+/** Tool calls of this turn's dashboards that already sent their first result, per turn. */
+const claimedCalls = new WeakMap<TurnContext, Set<string>>();
+
+/**
+ * Follows a streamed create or edit. OpenUI Cloud sends two messages: the
+ * first as soon as the dashboard has an id, the last once it's saved or
+ * failed. The first is recorded and goes to the chat at once (not as the
+ * tool's result, so the call still shows as running), so the dashboard opens
+ * and shows its build steps; the last is the tool result the model reads.
+ */
+async function follow(
+  build: AsyncIterable<string>,
+  created: { title: string; description: string } | null,
+  turn: TurnContext,
+  call: Call,
+): Promise<string> {
+  let first: string | undefined;
+  let last: string | undefined;
+  for await (const message of build) {
+    if (first === undefined) {
+      first = message;
+      if (artifactOf(message)) {
+        await remember(message, created, turn);
+        let claimed = claimedCalls.get(turn);
+        if (!claimed) claimedCalls.set(turn, (claimed = new Set()));
+        const toolCallId = toolCallIdOf(call, claimed);
+        if (toolCallId) {
+          turn.onDashboardStarted?.({ toolCallId, tool: call.name as DashboardStarted["tool"], response: message });
+        }
+      }
+    }
+    last = message;
+  }
+  if (first === undefined || last === undefined) {
+    logError("agent.dashboard", new Error("OpenUI Cloud's stream had no message"));
+    throw new ToolError("no_artifact", "OpenUI Cloud didn't return a dashboard.");
+  }
+  // Failed before it had an id: Cloud's own sentence says why, for the model to act on.
+  if (!artifactOf(first)) throw new ToolError("build_failed", last);
+  return last;
+}
 
 /**
  * Records a new dashboard against the app with its title and description,

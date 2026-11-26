@@ -1,14 +1,11 @@
 "use client";
 
-import { LiveArtifactRenderer, useArtifactRenderer } from "@openuidev/react-ui/cloud";
+import { LiveArtifactRenderer } from "@openuidev/react-ui/cloud";
 import { library } from "@openuidev/dashboard-library";
-import { LoaderCircleIcon } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useCallback, useRef, useState } from "react";
-import { createPortal } from "react-dom";
+import { useCallback, useRef } from "react";
 
 import { SIGN_IN_LOST_HEADER } from "@/lib/dashboards/sign-in-lost";
-import { cn } from "@/lib/utils";
 
 import { useDashboardResponse } from "./app-workspace";
 import { DashboardTitle } from "./dashboard-title";
@@ -49,28 +46,38 @@ export function LiveDashboard({
 }
 
 /**
- * The dashboard the Build chat is creating, before the app has a page for it. Without
- * a response the renderer is pending and shows its loader; with one it builds the
- * dashboard, until the app opens the dashboard's own page.
+ * The dashboard the Build chat is creating, from the moment its call starts until you leave its
+ * page, in one renderer: pending, building, then done, with no remount. Until the app lists it,
+ * the pending loader draws where its title and description go.
  */
-export function NewDashboard({ response }: { response?: string }) {
-  return <DashboardView response={response} fill />;
+export function NewDashboard({
+  appId,
+  dashboard,
+  response,
+}: {
+  appId: string;
+  dashboard?: { id: string; title: string; description: string | null };
+  response?: string;
+}) {
+  return (
+    <DashboardView response={response} heading={!dashboard}>
+      {dashboard && <DashboardTitle appId={appId} dashboard={dashboard} />}
+    </DashboardView>
+  );
 }
 
-/** `fill`: the renderer takes the whole area, so the pending loader fills it, not just its minimum. */
 function DashboardView({
   id,
   response,
-  fill = false,
+  heading = false,
   children,
 }: {
   id?: string;
   response?: string;
-  fill?: boolean;
+  /** No title above it yet: the pending loader draws one. */
+  heading?: boolean;
   children?: React.ReactNode;
 }) {
-  // Where the loading capsule draws: over the bottom of the dashboard, outside the part that scrolls.
-  const [overlay, setOverlay] = useState<HTMLDivElement | null>(null);
   const router = useRouter();
   // Once per dashboard: a failed query may have just found a sign-in expired, which
   // marks its connection on the server. Refreshing the page's data shows the banner.
@@ -97,58 +104,31 @@ function DashboardView({
     [refreshOnce],
   );
   return (
-    <div className="relative flex min-h-0 flex-1 flex-col">
-      <div className="min-h-0 flex-1 overflow-y-auto bg-white">
-        {children}
-        <LiveArtifactRenderer
-          id={id}
-          response={response}
-          preview={false}
-          className={cn(fill && "h-full")}
-          library={library}
-          interpreter={interpreter}
-          onError={(errors) => {
-            if (!errors.length) return;
-            console.error("[dashboard]", JSON.stringify(errors));
-            if (errors.some((error) => error.source === "query")) refreshOnce();
-          }}
-        >
-          <LiveArtifactRenderer.Chrome>
-            <LiveArtifactRenderer.Content className={cn(fill && "h-full")}>
-              <LiveArtifactRenderer.Pending />
-              {/* In place of the renderer's top-right pill, which sat on the filter bar. */}
-              <LoadingCapsule container={overlay} />
-              <LiveArtifactRenderer.Error />
-            </LiveArtifactRenderer.Content>
-          </LiveArtifactRenderer.Chrome>
-        </LiveArtifactRenderer>
-      </div>
-      <div ref={setOverlay} className="pointer-events-none absolute inset-x-0 bottom-4 flex justify-center" />
+    // The renderer takes the height under the title, so the pending loader fills it; a taller dashboard scrolls.
+    <div className="flex min-h-0 flex-1 flex-col overflow-y-auto bg-white">
+      {children}
+      <LiveArtifactRenderer
+        id={id}
+        response={response}
+        preview={false}
+        className="flex-1"
+        library={library}
+        interpreter={interpreter}
+        onError={(errors) => {
+          if (!errors.length) return;
+          console.error("[dashboard]", JSON.stringify(errors));
+          if (errors.some((error) => error.source === "query")) refreshOnce();
+        }}
+      >
+        <LiveArtifactRenderer.Chrome>
+          <LiveArtifactRenderer.Content className="h-full">
+            <LiveArtifactRenderer.Pending heading={heading} />
+            {/* "Loading data…" at the bottom of what's visible; a build's feed takes its place. */}
+            <LiveArtifactRenderer.Loading />
+            <LiveArtifactRenderer.Error />
+          </LiveArtifactRenderer.Content>
+        </LiveArtifactRenderer.Chrome>
+      </LiveArtifactRenderer>
     </div>
-  );
-}
-
-/**
- * A small capsule at the bottom centre while the dashboard generates or its data loads. It
- * waits a moment before showing, so a quick reload doesn't flash it, and fades out when done.
- * While pending, the renderer's loader says what's happening instead.
- */
-function LoadingCapsule({ container }: { container: HTMLElement | null }) {
-  const { isLoading, isPending, isStreaming, error } = useArtifactRenderer();
-  if (!container) return null;
-  const shown = isLoading && !isPending && !error;
-  return createPortal(
-    <div
-      role="status"
-      aria-hidden={!shown}
-      className={cn(
-        "flex items-center gap-1.5 rounded-full border bg-background/95 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur transition-[opacity,translate] duration-200",
-        shown ? "translate-y-0 opacity-100 delay-300" : "translate-y-2 opacity-0",
-      )}
-    >
-      <LoaderCircleIcon className="size-3.5 animate-spin" aria-hidden />
-      {isStreaming ? "Building your dashboard…" : "Loading data…"}
-    </div>,
-    container,
   );
 }

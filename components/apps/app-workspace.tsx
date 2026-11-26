@@ -17,16 +17,40 @@ import { cn } from "@/lib/utils";
 
 import { NewDashboard } from "./live-dashboard";
 
-type Dashboard = { id: string; title: string };
+type Dashboard = { id: string; title: string; description: string | null; artifactId: string };
 
 const BuildPanelContext = createContext<{ open: boolean; setOpen: (open: boolean) => void } | null>(null);
 
+/** Whether a Build turn is running, and the Build chat's way to say so. */
+const BuildRunningContext = createContext<{ running: boolean; setRunning: (running: boolean) => void } | null>(null);
+
 /**
- * A dashboard the Build chat is creating, shown in place of the page it started
- * on (`at`) until the app opens it: pending while the call runs, then streaming
- * from Cloud's `response`.
+ * Whether a Build turn is running: a dashboard it creates may still be building.
+ * False outside an app's workspace.
  */
-export type Creating = { at: string; response?: string };
+export function useBuildRunning(): boolean {
+  return use(BuildRunningContext)?.running ?? false;
+}
+
+/** For the Build chat: says when a turn starts and ends. */
+export function useSetBuildRunning() {
+  const context = use(BuildRunningContext);
+  if (!context) throw new Error("useSetBuildRunning must be used inside AppWorkspace");
+  return context.setRunning;
+}
+
+/**
+ * A dashboard the Build chat is creating, shown from the moment its call starts: on the page the
+ * call started on (`at`), then on its own page once the app opens it. `artifactId` is Cloud's,
+ * once the build has started.
+ */
+export type Creating = {
+  callId: string;
+  at: string;
+  artifactId?: string;
+  /** The turn has ended: the view goes once you leave its page. */
+  done?: boolean;
+};
 
 type DashboardResponses = {
   responses: Readonly<Record<string, string>>;
@@ -56,7 +80,7 @@ export function usePublishDashboardResponse() {
   return useDashboardResponses().publish;
 }
 
-/** For the Build chat: shows the dashboard it's creating, before the app has a page for it. */
+/** For the Build chat: shows the dashboard it's creating. */
 export function useSetCreatingDashboard() {
   return useDashboardResponses().setCreating;
 }
@@ -182,6 +206,8 @@ export function AppWorkspace({
     else openButtonRef.current?.focus();
   }, [open]);
   const buildPanel = useMemo(() => ({ open, setOpen }), [open, setOpen]);
+  const [buildRunning, setBuildRunning] = useState(false);
+  const buildRunningValue = useMemo(() => ({ running: buildRunning, setRunning: setBuildRunning }), [buildRunning]);
   const [responses, setResponses] = useState<Record<string, string>>({});
   const publish = useCallback(
     (artifactId: string, response: string) =>
@@ -192,12 +218,16 @@ export function AppWorkspace({
   const dashboardResponses = useMemo(() => ({ responses, publish, setCreating }), [responses, publish]);
   const [renaming, setRenaming] = useState(false);
   const startRename = useCallback(() => setRenaming(true), []);
-  // Moving to another page, or to the new dashboard once it opens, hands back to the page.
+  // The dashboard being created, once the app lists it: its title and its page.
+  const created = creating?.artifactId ? dashboards.find((d) => d.artifactId === creating.artifactId) : undefined;
   const pathname = usePathname();
-  // Leaving the page once the response is in means the app opened the new dashboard
-  // (or you moved on): it's done, so going back shows that page again.
-  if (creating?.response && creating.at !== pathname) setCreating(null);
-  const showCreating = creating !== null && creating.at === pathname;
+  const onItsPage = created !== undefined && parseAppPath(pathname).dashboardId === created.id;
+  // The view stays up while the app moves to the dashboard's page, so its renderer isn't
+  // remounted, and from then on belongs to that page.
+  if (creating && onItsPage && creating.at !== pathname) setCreating({ ...creating, at: pathname });
+  const showCreating = creating !== null && (pathname === creating.at || onItsPage);
+  // Once the turn has ended, leaving the page hands over to the pages.
+  if (creating?.done && !showCreating) setCreating(null);
 
   return (
     // One Cloud connection for the workspace: the chat and the dashboard
@@ -205,6 +235,7 @@ export function AppWorkspace({
     <OpenUICloudProvider token={frontendTokenPath(appId)}>
     <DashboardResponsesContext value={dashboardResponses}>
     <BuildPanelContext value={buildPanel}>
+    <BuildRunningContext value={buildRunningValue}>
     <RenameAppContext value={startRename}>
       {/* The Build panel runs the full height beside the dashboard column, header included. */}
       <div className="relative flex h-full min-h-0">
@@ -239,7 +270,17 @@ export function AppWorkspace({
 
           <MobileDashboardTabs appId={appId} dashboards={dashboards} />
           {notice}
-          {showCreating ? <NewDashboard response={creating.response} /> : children}
+          {/* A new dashboard shows from the moment its call starts, pending until it's built. */}
+          {creating && showCreating ? (
+            <NewDashboard
+              key={creating.callId}
+              appId={appId}
+              dashboard={created}
+              response={creating.artifactId ? responses[creating.artifactId] : undefined}
+            />
+          ) : (
+            children
+          )}
         </div>
 
         <aside
@@ -276,6 +317,7 @@ export function AppWorkspace({
         </aside>
       </div>
     </RenameAppContext>
+    </BuildRunningContext>
     </BuildPanelContext>
     </DashboardResponsesContext>
     </OpenUICloudProvider>

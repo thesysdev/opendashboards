@@ -54,8 +54,11 @@ export type CommonSettings = {
     apiUrl: string;
     /** OpenUI Gateway, for the Build agent's model calls. */
     gatewayUrl: string;
-    /** The model that runs the Build agent and builds dashboards. */
+    /** The model that runs the Build agent. */
     model: string;
+    /** The model that builds dashboards, and how hard it thinks on each of its calls. */
+    dashboardModel: string;
+    dashboardReasoningEffort: "minimal" | "low" | "medium" | "high";
     /** Model rounds per Build turn, tool calls included. */
     maxAgentRounds: number;
   };
