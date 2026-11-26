@@ -207,7 +207,12 @@ export async function getAccount(
 export async function deleteAccount(connectedAccountId: string, deps: ComposioDeps = {}): Promise<void> {
   const path = `/connected_accounts/${encodeURIComponent(connectedAccountId)}`;
   await request(`${path}/revoke`, { method: "POST", body: {} }, deps).catch(() => {});
-  await request(path, { method: "DELETE" }, deps);
+  try {
+    await request(path, { method: "DELETE" }, deps);
+  } catch (error) {
+    // Already gone (Composio drops a sign-in link nobody finished): nothing left to let go of.
+    if (!(error instanceof ComposioError && error.code === "reauth_required")) throw error;
+  }
 }
 
 /**

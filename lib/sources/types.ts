@@ -103,10 +103,9 @@ export interface SourceTool<Config, Args = Record<string, unknown>> {
 export interface SourceSignIn<Config> {
   /**
    * Starts one: the page to send the browser to, which comes back to
-   * `callbackUrl` (it carries `state`). `pending` is what finishing needs,
-   * kept sealed until then.
+   * `callbackUrl`. `pending` is what finishing needs, kept sealed until then.
    */
-  start(input: { config: Config; state: string; callbackUrl: string }): Promise<{ url: string; pending: string }>;
+  start(input: { config: Config; callbackUrl: string }): Promise<{ url: string; pending: string }>;
   /**
    * Finishes one when the browser comes back, with the callback's query
    * parameters: the credential to save, which the source's `test` then

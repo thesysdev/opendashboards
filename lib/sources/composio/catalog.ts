@@ -4,8 +4,6 @@ import { z } from "zod";
 export const COMPOSIO_TOOLKITS = ["googleads", "metaads"] as const;
 export type ComposioToolkit = (typeof COMPOSIO_TOOLKITS)[number];
 
-export const isComposioToolkit = (type: string): type is ComposioToolkit => (COMPOSIO_TOOLKITS as readonly string[]).includes(type);
-
 /**
  * The settings of a source that signs in through Composio (Google Ads, Meta
  * Ads). Client-safe. There's nothing to choose: which ad accounts a query
@@ -18,5 +16,3 @@ export const composioSignInConfigSchema = z
   .strict();
 
 export type ComposioSignInConfig = z.infer<typeof composioSignInConfigSchema>;
-
-export const COMPOSIO_SIGN_IN: ComposioSignInConfig = { oauth: { provider: "composio" } };

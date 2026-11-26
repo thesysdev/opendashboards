@@ -64,9 +64,9 @@ describe("the shared sign-in flow", () => {
   it("starts a new connection on the source's own sign-in page, coming back to the shared callback", async () => {
     const started = await startNewSignIn(scope, { type: "googleads", name: "Ads", sharing: "personal" }, deps);
     expect(started).toEqual({ ok: true, data: { authorizationUrl: "https://source.example/sign-in" } });
-    const [{ config, state, callbackUrl }] = source.calls.started as { config: unknown; state: string; callbackUrl: string }[];
+    const [{ config, callbackUrl }] = source.calls.started as { config: unknown; callbackUrl: string }[];
     expect(config).toEqual({ oauth: { provider: "composio" } });
-    expect(callbackUrl).toMatch(new RegExp(`/api/sign-in/callback/${state}$`));
+    expect(callbackUrl).toMatch(/\/api\/sign-in\/callback\/[A-Za-z0-9_-]{43}$/);
     expect(service.startSignIn).toHaveBeenCalledWith(scope, expect.objectContaining({
       connectionId: null,
       name: "Ads",

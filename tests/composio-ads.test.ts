@@ -8,7 +8,7 @@ import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
 import { apps, connectionSignIns, dataConnections, pendingSignIns } from "@/lib/db/schema";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
-import { ComposioError, createSignInLink, runTool, type ComposioDeps } from "@/lib/sources/composio/client";
+import { ComposioError, createSignInLink, deleteAccount, runTool, type ComposioDeps } from "@/lib/sources/composio/client";
 import { composioToError, flattenRows, readComposioCredential, runAs, writeComposioCredential } from "@/lib/sources/composio/shared";
 import { gaqlSchema, googleAdsDeps, googleAdsSource, withLimit } from "@/lib/sources/googleads/source";
 import { googleAdsCatalog } from "@/lib/sources/googleads/catalog";
@@ -87,6 +87,13 @@ describe("the Composio client", () => {
   it("refuses a sign-in link that isn't https", async () => {
     const { deps } = fakeComposio(() => ({ status: 201, body: { redirect_url: "javascript:alert(1)", connected_account_id: "ca_9" } }));
     await expect(createSignInLink("googleads", { composioUserId: "od-1", callbackUrl: "https://x/cb" }, deps)).rejects.toMatchObject({ code: "unexpected" });
+  });
+
+  it("counts an account Composio already dropped as let go of, and still fails on anything else", async () => {
+    const gone = fakeComposio(() => ({ status: 404, body: { message: "Connected account not found" } }));
+    await expect(deleteAccount("ca_9", gone.deps)).resolves.toBeUndefined();
+    const down = fakeComposio(() => ({ status: 503, body: {} }));
+    await expect(deleteAccount("ca_9", down.deps)).rejects.toMatchObject({ code: "unavailable" });
   });
 
   it("says when Composio isn't set up", async () => {
@@ -485,7 +492,7 @@ describe("signing in through Composio", () => {
     await db.update(pendingSignIns).set({ expiresAt: new Date(Date.now() - 1_000) });
     expect(deleted).toEqual([]);
     await start();
-    expect(deleted).toEqual(["ca_new"]);
+    await vi.waitFor(() => expect(deleted).toEqual(["ca_new"]));
 
     // Its member leaving the workspace: handed over with their finished ones.
     deleted = [];

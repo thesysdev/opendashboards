@@ -29,7 +29,11 @@ import type { ConnectionService } from "./service";
  * the two places marked below send them there until they move here.
  */
 
-/** Where every sign-in comes back to. The state is a path segment, so nothing a sign-in page appends to the URL can disturb it. */
+/**
+ * Where every sign-in comes back to. The state is a path segment, so nothing
+ * a sign-in page appends to the URL can disturb it. (An MCP server's comes
+ * back to the URL registered with it instead, with the state in the query.)
+ */
 export const signInCallbackUrl = (state: string) => `${appConfig().appOrigin}/api/sign-in/callback/${state}`;
 
 /** How a new connection is used, fixed once added: each member signs in themselves unless it's shared. */
@@ -86,7 +90,7 @@ async function begin(
   try {
     const state = newState();
     const { type: _type, ...settings } = sign.config;
-    const started = await signIn.start({ config: settings, state, callbackUrl: signInCallbackUrl(state) });
+    const started = await signIn.start({ config: settings, callbackUrl: signInCallbackUrl(state) });
     const saved = await service.startSignIn(scope, { ...sign, stateHash: hashState(state), pending: started.pending });
     if (!saved.ok) {
       discard(signIn, started.pending);

@@ -7,7 +7,6 @@ import { apps, dataConnections, pendingSignIns } from "@/lib/db/schema";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 import { availableSources } from "@/lib/sources/available";
 import { CONNECTION_TYPES } from "@/lib/sources/catalog";
-import { COMPOSIO_SIGN_IN } from "@/lib/sources/composio/catalog";
 import { mcpSource } from "@/lib/sources/mcp/source";
 import type { ConnectionSource } from "@/lib/sources/types";
 
@@ -47,7 +46,7 @@ describe("sources that aren't available", () => {
     stateHash: crypto.randomUUID(),
     connectionId,
     name: "Ads",
-    config: { type: "googleads" as const, ...COMPOSIO_SIGN_IN },
+    config: { type: "googleads" as const, oauth: { provider: "composio" as const } },
     pending: "{}",
     sharing: "personal" as const,
   });
@@ -81,7 +80,7 @@ describe("sources that aren't available", () => {
         orgId: alice.orgId,
         name: "Ads",
         type: "googleads",
-        config: { type: "googleads", ...COMPOSIO_SIGN_IN },
+        config: { type: "googleads", oauth: { provider: "composio" } },
         secret: null,
         credentialHint: "",
         status: "ok",

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { and, asc, eq, gt, inArray, isNull, lt, sql } from "drizzle-orm";
+import { waitUntil } from "@vercel/functions";
 import { z } from "zod";
 
 import type { DemoDataset } from "@/config";
@@ -1098,8 +1099,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
         }
         const tooLarge = refuseIfTooLarge(sign.config.type, sign.pending, "create");
         if (tooLarge) return tooLarge;
-        // Old, abandoned sign-ins go first, with whatever their sources made for them.
-        await discardPending(await db.delete(pendingSignIns).where(lt(pendingSignIns.expiresAt, now())).returning());
+        // Old, abandoned sign-ins go first. Whatever their sources made for them is let go of after the
+        // response: they're anyone's, so this sign-in doesn't wait on another service for them.
+        waitUntil(discardPending(await db.delete(pendingSignIns).where(lt(pendingSignIns.expiresAt, now())).returning()));
         const sealed = JSON.stringify({ pending: sign.pending, returnTo: sign.returnTo ?? null } satisfies z.infer<typeof pendingSecretSchema>);
         const secret = await deps.secrets().seal(sealed, signInContext(userId, sign.stateHash));
         await db.insert(pendingSignIns).values({
