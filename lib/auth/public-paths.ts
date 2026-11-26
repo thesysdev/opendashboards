@@ -1,7 +1,8 @@
 /**
- * The only paths served without signing in: the landing and pricing pages, the landing page's images in
- * public/, and what crawlers and link previews fetch, and Stripe's webhook. Nothing else under the app or the API is here. Anything added must
- * work without a user and read nothing that belongs to one.
+ * Paths served without signing in include the landing and pricing pages,
+ * landing page images, crawler and link preview assets, the MCP client
+ * metadata document, and Stripe's webhook. Anything added must work
+ * without a signed-in user.
  */
 const PUBLIC_PATHS: ReadonlySet<string> = new Set([
   "/",
@@ -11,6 +12,7 @@ const PUBLIC_PATHS: ReadonlySet<string> = new Set([
   "/robots.txt",
   "/sitemap.xml",
   "/opengraph-image",
+  "/oauth/client-metadata.json",
   // Stripe calls it without a session; it checks Stripe's signature itself.
   "/api/stripe/webhook",
 ]);

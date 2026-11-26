@@ -202,12 +202,22 @@ async function challengeOf(serverUrl: string, testHooks?: OAuthTestHooks): Promi
   }
 }
 
-/** Registers OpenDashboards with the authorization server (dynamic client registration). */
-export async function registerOAuthClient(
+/**
+ * The client OpenDashboards signs in as, in the order the MCP spec gives: the
+ * URL of its client metadata document where the authorization server fetches
+ * those (CIMD), otherwise a client registered with it now (dynamic client
+ * registration). `clientMetadataUrl` is null where the document isn't served.
+ */
+export async function oauthClientFor(
   discovery: OAuthDiscovery,
   redirectUri: string,
+  clientMetadataUrl: string | null,
   testHooks?: OAuthTestHooks,
 ): Promise<OAuthClientInformationMixed> {
+  if (clientMetadataUrl && discovery.metadata.client_id_metadata_document_supported === true) {
+    // Nothing to register or store: the server reads who we are, and where sign-ins may return, from the document.
+    return { client_id: clientMetadataUrl, token_endpoint_auth_method: "none" };
+  }
   if (!discovery.metadata.registration_endpoint) {
     throw new McpError("oauth_unsupported", "This server needs an app registered with it by hand, which OpenDashboards doesn't support yet.");
   }
@@ -215,14 +225,7 @@ export async function registerOAuthClient(
   const register = (method: "none" | "client_secret_post") =>
     registerClient(discovery.settings.issuer, {
       metadata: discovery.metadata,
-      clientMetadata: {
-        client_name: "OpenDashboards",
-        redirect_uris: [redirectUri],
-        grant_types: ["authorization_code", "refresh_token"],
-        response_types: ["code"],
-        token_endpoint_auth_method: method,
-        scope: discovery.settings.scope,
-      },
+      clientMetadata: { ...CLIENT_METADATA, redirect_uris: [redirectUri], token_endpoint_auth_method: method, scope: discovery.settings.scope },
       fetchFn,
     });
   try {
@@ -233,6 +236,28 @@ export async function registerOAuthClient(
   } finally {
     await fetchFn.close();
   }
+}
+
+/** Who OpenDashboards is to an authorization server, however it learns it. */
+const CLIENT_METADATA = {
+  client_name: "OpenDashboards",
+  grant_types: ["authorization_code", "refresh_token"],
+  response_types: ["code"],
+};
+
+/**
+ * The client metadata document served at `clientId` (CIMD). Its `client_id`
+ * must be exactly the URL it's fetched from, and every sign-in must return to
+ * one of its `redirect_uris`. A public client: PKCE, no secret.
+ */
+export function clientMetadataDocument(clientId: string, redirectUri: string) {
+  return {
+    client_id: clientId,
+    ...CLIENT_METADATA,
+    client_uri: new URL(clientId).origin,
+    redirect_uris: [redirectUri],
+    token_endpoint_auth_method: "none",
+  };
 }
 
 /** The values a started sign-in keeps on the server until the callback. */
