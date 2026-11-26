@@ -39,6 +39,21 @@ const WRITE_ACCESS_SQL = `
   WHERE r.rolname = current_user`;
 
 /**
+ * Can the role read the tables it can see? Only schemas it may use count, so a
+ * hosted service's own schemas (Supabase's auth, storage…) don't.
+ */
+export const READ_ACCESS_SQL = `
+  SELECT count(*) AS tables,
+         count(*) FILTER (WHERE has_table_privilege(c.oid, 'SELECT')) AS readable
+  FROM pg_class c
+  JOIN pg_namespace n ON n.oid = c.relnamespace
+  WHERE c.relkind IN ('r', 'p', 'v', 'm', 'f')
+    AND n.nspname NOT IN ('pg_catalog', 'information_schema')
+    AND n.nspname NOT LIKE 'pg_toast%'
+    AND n.nspname NOT LIKE 'pg_temp%'
+    AND has_schema_privilege(n.oid, 'USAGE')`;
+
+/**
  * Driver settings for a user's server, without the socket. Exported for tests.
  *
  * The password is a function on purpose. Given a string, pg treats an empty
@@ -95,10 +110,14 @@ async function withReadOnly<T>(target: PostgresTarget, fn: (client: pg.Client) =
   }
 }
 
-/** Connects, runs a read-only check, and disconnects. */
+/** Connects, runs a read-only check, and disconnects. Fails when the role can't read any of the tables it can see. */
 export function testPostgresConnection(target: PostgresTarget): Promise<PostgresCheck> {
   return withReadOnly(target, async (client) => {
     const version = await client.query<{ server_version: string }>("SHOW server_version");
+    const read = await client.query<{ tables: string; readable: string }>(READ_ACCESS_SQL);
+    const { tables, readable } = read.rows[0] ?? { tables: "0", readable: "0" };
+    // An empty database passes: there's nothing it should be able to read yet.
+    if (Number(tables) > 0 && Number(readable) === 0) throw new PostgresError("no_read_access");
     const access = await client.query<{ can_write: boolean | null }>(WRITE_ACCESS_SQL);
     return {
       serverVersion: version.rows[0]?.server_version.split(" ")[0] ?? "unknown",
