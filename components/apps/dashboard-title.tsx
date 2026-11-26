@@ -4,6 +4,7 @@ import { useState, type ReactNode } from "react";
 
 import { updateDashboardAction } from "@/app/(app)/apps/actions";
 import { InlineRename } from "@/components/inline-rename";
+import { useViewOnly } from "@/components/billing/workspace-plan";
 
 type Field = "title" | "description";
 
@@ -26,6 +27,8 @@ export function DashboardTitle({
   actions?: ReactNode;
 }) {
   const [editing, setEditing] = useState<Field | null>(null);
+  // A workspace over its plan keeps its dashboards as they are.
+  const viewOnly = useViewOnly();
   // Saved values show until the server's copy catches up.
   const [saved, setSaved] = useState<Partial<Record<Field, { from: string; to: string }>>>({});
   const current = { title: dashboard.title, description: dashboard.description ?? "" };
@@ -50,7 +53,7 @@ export function DashboardTitle({
   }
 
   function display(field: Field, text: string, placeholder?: string) {
-    if (readOnly) return text;
+    if (readOnly || viewOnly) return text;
     return (
       <button
         type="button"
