@@ -1,6 +1,7 @@
 import { and, eq, sql } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { createAppService } from "@/lib/apps/service";
 import { finishComposioSignIn, startComposioSignIn } from "@/lib/connections/composio-sign-in";
 import { deleteSignIns } from "@/lib/connections/deleted-sign-ins";
 import { createConnectionService } from "@/lib/connections/service";
@@ -16,7 +17,7 @@ import { metaAdsDeps, metaAdsSource } from "@/lib/sources/metaads/source";
 import type { ConnectionSource } from "@/lib/sources/types";
 
 import { TEST_DATABASE_URL } from "./global-setup";
-import { seedWorkspaces, workspaceOf } from "./orgs";
+import { seedTeam, seedWorkspaces, workspaceOf } from "./orgs";
 
 /** A fake Composio: records requests, answers from `respond`. */
 function fakeComposio(respond: (path: string, init: RequestInit) => { status?: number; body: unknown }) {
@@ -395,5 +396,145 @@ describe("signing in through Composio", () => {
     }
     expect(await db.select().from(dataConnections)).toEqual([]);
     await vi.waitFor(() => expect(deleted).toContain("ca_new"));
+  });
+});
+
+describe("whose Google Ads or Meta Ads sign-in a query runs as", () => {
+  const { db, pool } = createDatabase(TEST_DATABASE_URL);
+  const service = createConnectionService({
+    db,
+    secrets: () => plaintextSecretBox,
+    sources: (type) => (type === "metaads" ? metaAdsSource : googleAdsSource) as unknown as ConnectionSource,
+  });
+  const appsService = createAppService({ db });
+
+  // A Composio account per sign-in, each its own Composio user's, so whose account a query runs with can be told apart.
+  let toolkit: "googleads" | "metaads" = "googleads";
+  let accounts = new Map<string, { user_id: string; toolkit: string }>();
+  let deleted: string[] = [];
+  const composio = fakeComposio((path, init) => {
+    const id = path.split("/").at(-1) ?? "";
+    if (path.endsWith("/connected_accounts/link")) {
+      const accountId = `ca_${accounts.size + 1}`;
+      accounts.set(accountId, { user_id: (JSON.parse(String(init.body)) as { user_id: string }).user_id, toolkit });
+      return { status: 201, body: { redirect_url: "https://connect.composio.dev/link/abc", connected_account_id: accountId, link_token: "t", expires_at: "x" } };
+    }
+    if (init.method === "DELETE") {
+      deleted.push(id);
+      return { body: {} };
+    }
+    if (path.endsWith("/revoke")) return { body: {} };
+    const account = accounts.get(id);
+    return account ? { body: { id, status: "ACTIVE", user_id: account.user_id, toolkit: { slug: account.toolkit } } } : { status: 404, body: {} };
+  });
+  const deps = { service, composio: composio.deps, pollMs: 1 };
+
+  // Releasing goes through the sources' own deps: this suite's fake while it runs, the suite above's otherwise.
+  const before = { googleads: googleAdsDeps.composio, metaads: metaAdsDeps.composio };
+  beforeAll(() => {
+    googleAdsDeps.composio = composio.deps;
+    metaAdsDeps.composio = composio.deps;
+  });
+  afterAll(async () => {
+    googleAdsDeps.composio = before.googleads;
+    metaAdsDeps.composio = before.metaads;
+    await pool.end();
+  });
+
+  /** Ads Co: Ada is its admin, Eddie an editor, Val a viewer. Gus is in no workspace with them. */
+  let team: string;
+  const inTeam = (userId: string) => ({ userId, orgId: team });
+
+  beforeEach(async () => {
+    accounts = new Map();
+    deleted = [];
+    await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${mcpOAuthSignIns} CASCADE`);
+    await seedWorkspaces(db, ["ads-ada", "ads-eddie", "ads-val", "ads-gus"]);
+    team = await seedTeam(db, "Ads Co", { "ads-ada": "admin", "ads-eddie": "editor", "ads-val": "viewer" });
+  });
+
+  /** Signs `userId` in through the real flow: a new connection, or again to `connectionId`. Returns it and the Composio account it got. */
+  async function signIn(userId: string, input: { connectionId: string } | { sharing: "personal" | "org" }) {
+    const started = await startComposioSignIn(
+      inTeam(userId),
+      "connectionId" in input ? input : { name: toolkit === "googleads" ? "Google Ads" : "Meta Ads", source: toolkit, sharing: input.sharing },
+      deps,
+    );
+    if (!started.ok) throw new Error(started.error.code);
+    const link = composio.calls.findLast((call) => call.path.endsWith("/connected_accounts/link"))?.body as { callback_url: string };
+    const accountId = `ca_${accounts.size}`;
+    const finished = await finishComposioSignIn(userId, new URL(link.callback_url).pathname.split("/").at(-1) ?? null, deps);
+    if (!finished.ok) throw new Error(finished.error.code);
+    return { id: finished.data.id, accountId };
+  }
+
+  /** The Composio account `userId`'s queries on the connection run with, or null when it doesn't open for them. */
+  async function runsAs(userId: string, id: string, options: { appId?: string } = {}) {
+    const opened = await service.open(userId, id, toolkit, { orgId: team, ...options });
+    return opened ? readComposioCredential(opened.credential).connectedAccountId : null;
+  }
+
+  describe.each(["googleads", "metaads"] as const)("%s", (source) => {
+    beforeEach(() => {
+      toolkit = source;
+    });
+
+    it("a personal connection runs as each member's own sign-in, never another's", async () => {
+      const { id, accountId: adas } = await signIn("ads-ada", { sharing: "personal" });
+      expect(await runsAs("ads-ada", id)).toBe(adas);
+
+      // Eddie can see it, but can't query with Ada's sign-in: he's asked to sign in himself.
+      expect(await runsAs("ads-eddie", id)).toBeNull();
+      expect(await service.whyClosed("ads-eddie", id)).toMatchObject({ code: "sign_in_required" });
+      // Someone outside the workspace isn't even told why.
+      expect(await runsAs("ads-gus", id)).toBeNull();
+      expect(await service.whyClosed("ads-gus", id)).toBeNull();
+
+      // Once he does, his queries run as his account, and Ada's still as hers.
+      const eddies = await signIn("ads-eddie", { sharing: "personal" });
+      expect(eddies.id).toBe(id);
+      expect(eddies.accountId).not.toBe(adas);
+      expect(await runsAs("ads-eddie", id)).toBe(eddies.accountId);
+      expect(await runsAs("ads-ada", id)).toBe(adas);
+      expect(await service.whyClosed("ads-eddie", id)).toBeNull();
+    });
+
+    it("a shared connection runs as its holder, for every member and for a guest of an app using it", async () => {
+      const { id, accountId: holders } = await signIn("ads-eddie", { sharing: "org" });
+      for (const member of ["ads-eddie", "ads-ada", "ads-val"]) expect(await runsAs(member, id)).toBe(holders);
+
+      const app = await appsService.create(inTeam("ads-eddie"), { prompt: "Spend by campaign", connectionIds: [id] });
+      if (!app.ok) throw new Error(app.error.code);
+      expect(await appsService.addGuest("ads-eddie", { id: app.data.id, email: "ads-gus@example.com" })).toEqual({ ok: true, data: undefined });
+      expect(await runsAs("ads-gus", id, { appId: app.data.id })).toBe(holders);
+      // Only through the app: a guest isn't in the workspace.
+      expect(await runsAs("ads-gus", id)).toBeNull();
+    });
+
+    it("a viewer can't start a new connection, and the Composio account it made is let go", async () => {
+      for (const sharing of ["personal", "org"] as const) {
+        const result = await startComposioSignIn(inTeam("ads-val"), { name: "Ads", source, sharing }, deps);
+        expect(result).toMatchObject({ ok: false, error: { code: "forbidden" } });
+        await vi.waitFor(() => expect(deleted).toContain(`ca_${accounts.size}`));
+      }
+      expect(deleted).toEqual(["ca_1", "ca_2"]);
+      expect(await db.select().from(mcpOAuthSignIns)).toEqual([]);
+      expect(await db.select().from(dataConnections)).toEqual([]);
+    });
+
+    it("an admin signing in again to a shared connection replaces the holder's sign-in and lets go of their Composio account", async () => {
+      const { id, accountId: eddies } = await signIn("ads-eddie", { sharing: "org" });
+      // A viewer can't take it over.
+      expect(await startComposioSignIn(inTeam("ads-val"), { connectionId: id }, deps)).toMatchObject({ ok: false, error: { code: "forbidden" } });
+
+      const adas = await signIn("ads-ada", { connectionId: id });
+      expect(adas.id).toBe(id);
+      expect(await db.select({ userId: connectionSignIns.userId }).from(connectionSignIns).where(eq(connectionSignIns.connectionId, id))).toEqual([
+        { userId: "ads-ada" },
+      ]);
+      // Eddie's account is deleted from Composio; everyone, Eddie included, now runs as Ada.
+      expect(deleted).toEqual([eddies]);
+      for (const member of ["ads-eddie", "ads-ada", "ads-val"]) expect(await runsAs(member, id)).toBe(adas.accountId);
+    });
   });
 });
