@@ -6,6 +6,7 @@ import { useState } from "react";
 import { BillingSwitch } from "@/components/landing/pricing/plan-cards";
 import { PLANS } from "@/components/landing/pricing/plans";
 import { Button } from "@/components/ui/button";
+import { intervalLabel, trackUpgradeClicked, type UpgradeSource } from "@/lib/analytics-client";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 
@@ -24,6 +25,9 @@ export function PlanPickerDialog({
   planIds,
   pending,
   onChoose,
+  source,
+  fromPlan,
+  orgId,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -34,6 +38,10 @@ export function PlanPickerDialog({
   /** The plan being bought, while Checkout opens. */
   pending: string | null;
   onChoose: (planId: string, interval: Interval) => void;
+  /** Where it was opened from, the plan the workspace is on, and the workspace (null: a new one), for analytics. */
+  source: UpgradeSource;
+  fromPlan: string | null;
+  orgId: string | null;
 }) {
   const [interval, setInterval] = useState<Interval>("year");
   const plans = PLANS.filter((plan) => planIds.includes(plan.id));
@@ -77,7 +85,10 @@ export function PlanPickerDialog({
                   className="mt-4 w-full"
                   variant={plan.featured ? "default" : "outline"}
                   disabled={pending !== null}
-                  onClick={() => onChoose(plan.id, interval)}
+                  onClick={() => {
+                    trackUpgradeClicked({ fromPlan, toPlan: plan.id, interval: intervalLabel(interval), source, orgId });
+                    onChoose(plan.id, interval);
+                  }}
                 >
                   {pending === plan.id && <Loader2Icon className="animate-spin" />}
                   {plan.cta.label}

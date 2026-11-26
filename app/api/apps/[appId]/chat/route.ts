@@ -44,7 +44,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
   const building = decide("app", "build", app.facts);
   if (!building.allowed) throw new HttpError(403, building.reason);
   // A view-only workspace (over its plan's limits) can't build until it fits again.
-  const refused = await getGate()(getDb(), app.orgId, "chat");
+  const refused = await getGate()(getDb(), app.orgId, "chat", user.id);
   if (refused) throw new HttpError(402, refused.message);
 
   const threads = getThreadService();

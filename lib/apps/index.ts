@@ -9,6 +9,7 @@ import { getGate } from "@/lib/plans";
 import { createAppService, type AppService } from "./service";
 import { createThreadService, type ThreadService } from "./threads";
 import { requireKnownUser } from "@/lib/orgs";
+import { viewerRole } from "@/lib/orgs/policy";
 
 export type { AppDetail, AppGuest, AppSummary, AppTeammate, AppTreeNode, WorkspaceGuest } from "./service";
 export type { AppThread } from "./threads";
@@ -48,7 +49,15 @@ export async function trackDashboardView(app: ViewedApp, dashboard: { artifactId
   track(
     user.id,
     "dashboard_viewed",
-    { app_id: app.id, dashboard_id: dashboard.artifactId, access: guest ? "guest" : access, role, own_app: access === "owner" },
+    {
+      app_id: app.id,
+      dashboard_id: dashboard.artifactId,
+      access: guest ? "guest" : access,
+      role,
+      own_app: access === "owner",
+      viewer_role: viewerRole(app.facts),
+    },
     app.orgId,
   );
 }
+

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { upgradeAction } from "@/app/(app)/settings/billing-actions";
 import { paidPlansAction } from "@/app/(app)/settings/actions";
 import { Button } from "@/components/ui/button";
+import type { UpgradeSource } from "@/lib/analytics-client";
 
 import { PlanPickerDialog } from "./plan-picker";
 
@@ -22,11 +23,16 @@ export function UpgradeDialog({
   open,
   onOpenChange,
   reason,
+  source,
+  fromPlan,
 }: {
   orgId: string;
   open: boolean;
   onOpenChange: (open: boolean) => void;
   reason?: string;
+  /** Where it was opened from, and the plan the workspace is on, for analytics. */
+  source: UpgradeSource;
+  fromPlan: string;
 }) {
   const [planIds, setPlanIds] = useState<string[] | null>(null);
   const [choosing, setChoosing] = useState<string | null>(null);
@@ -58,6 +64,9 @@ export function UpgradeDialog({
       planIds={planIds ?? []}
       pending={choosing}
       onChoose={choose}
+      source={source}
+      fromPlan={fromPlan}
+      orgId={orgId}
     />
   );
 }
@@ -68,9 +77,13 @@ export function UpgradeButton({
   reason,
   size = "sm",
   label = "Upgrade",
+  source,
+  fromPlan,
 }: {
   orgId: string;
   reason?: string;
+  source: UpgradeSource;
+  fromPlan: string;
   size?: "sm" | "default";
   label?: string;
 }) {
@@ -80,7 +93,7 @@ export function UpgradeButton({
       <Button size={size} onClick={() => setOpen(true)}>
         {label}
       </Button>
-      <UpgradeDialog orgId={orgId} open={open} onOpenChange={setOpen} reason={reason} />
+      <UpgradeDialog orgId={orgId} open={open} onOpenChange={setOpen} reason={reason} source={source} fromPlan={fromPlan} />
     </>
   );
 }

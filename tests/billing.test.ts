@@ -28,9 +28,18 @@ const updateCustomer = vi.fn();
 const createCheckout = vi.fn();
 const retrieveCheckout = vi.fn();
 const createWorkspace = vi.fn<Parameters<typeof createBilling>[0]["createWorkspace"]>();
+const onChange = vi.fn<NonNullable<Parameters<typeof createBilling>[0]["onChange"]>>();
+/** Called as each subscription read's answer travels back: a test can hold one up, still carrying what Stripe said then. */
+const inFlight = vi.fn<() => Promise<void>>();
 const stripe = {
   webhooks: real.webhooks,
-  subscriptions: { retrieve: async (id: string) => subscriptions.get(id) },
+  subscriptions: {
+    retrieve: async (id: string) => {
+      const answer = structuredClone(subscriptions.get(id));
+      await inFlight();
+      return answer;
+    },
+  },
   customers: { create: createCustomer, update: updateCustomer },
   checkout: { sessions: { create: createCheckout, retrieve: retrieveCheckout } },
 } as unknown as Stripe;
@@ -43,15 +52,16 @@ const billing = createBilling({
   webhookSecret: SECRET,
   origin: "http://localhost:3100",
   createWorkspace,
+  onChange,
 });
 
-function subscription(id: string, { status = "active", price = "price_team_m", quantity = 3, customer = "cus_1" } = {}) {
+function subscription(id: string, { status = "active", price = "price_team_m", quantity = 3, customer = "cus_1", cancelAtPeriodEnd = false } = {}) {
   subscriptions.set(id, {
     id,
     status,
     customer,
-    metadata: { org_id: ORG },
-    cancel_at_period_end: false,
+    metadata: { org_id: ORG, user_id: "bob" },
+    cancel_at_period_end: cancelAtPeriodEnd,
     items: { data: [{ id: `si_${id}`, price: { id: price }, quantity, current_period_end: 1_800_000_000 }] },
   });
 }
@@ -165,6 +175,87 @@ const completedCheckout = {
   customer: "cus_new",
   subscription: "sub_new",
 };
+
+describe("subscription changes", () => {
+  const kinds = () => onChange.mock.calls.map(([change]) => change.kind);
+
+  it("tells each real change once, whichever events and retries bring it", async () => {
+    subscription("sub_1", { quantity: 3 });
+    await deliver("evt_1", "customer.subscription.created", { id: "sub_1" });
+    await deliver("evt_1", "customer.subscription.created", { id: "sub_1" }); // Stripe retrying
+    await deliver("evt_2", "invoice.paid", { id: "in_1", parent: { subscription_details: { subscription: "sub_1" } } }); // Same state
+    expect(onChange).toHaveBeenCalledTimes(1);
+    expect(onChange).toHaveBeenCalledWith({
+      kind: "started",
+      orgId: ORG,
+      userId: "bob",
+      plan: "team",
+      previousPlan: "free",
+      interval: "month",
+      seats: 3,
+      previousSeats: 1,
+      status: "active",
+      cancelAtPeriodEnd: false,
+    });
+
+    subscription("sub_1", { quantity: 5 });
+    await deliver("evt_3", "customer.subscription.updated", { id: "sub_1" });
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "changed", seats: 5, previousSeats: 3 }));
+
+    subscription("sub_1", { quantity: 5, cancelAtPeriodEnd: true });
+    await deliver("evt_4", "customer.subscription.updated", { id: "sub_1" });
+    subscription("sub_1", { status: "canceled", quantity: 5 });
+    await deliver("evt_5", "customer.subscription.deleted", { id: "sub_1" });
+    expect(kinds()).toEqual(["started", "changed", "changed", "cancelled"]);
+    expect(onChange).toHaveBeenLastCalledWith(expect.objectContaining({ kind: "cancelled", plan: "free", previousPlan: "team", status: "canceled" }));
+  });
+
+  it("doesn't call a live subscription on a price it doesn't know cancelled", async () => {
+    subscription("sub_1");
+    await deliver("evt_1", "customer.subscription.created", { id: "sub_1" });
+    subscription("sub_1", { price: "price_unknown" });
+    await deliver("evt_2", "customer.subscription.updated", { id: "sub_1" });
+    expect(kinds()).toEqual(["started"]);
+  });
+
+  it("never saves an earlier read of Stripe over a later one", async () => {
+    subscription("sub_1", { quantity: 3 });
+    await deliver("evt_1", "customer.subscription.created", { id: "sub_1" });
+
+    // A sync reads 3 seats, and Stripe's answer is slow to arrive. Meanwhile seats go to 5 and another sync starts.
+    let release!: () => void;
+    let reached!: () => void;
+    const reading = new Promise<void>((resolve) => (reached = resolve));
+    inFlight.mockImplementationOnce(() => {
+      reached();
+      return new Promise<void>((resolve) => (release = resolve));
+    });
+    const first = deliver("evt_2", "invoice.paid", { id: "in_1", parent: { subscription_details: { subscription: "sub_1" } } });
+    await reading;
+    subscription("sub_1", { quantity: 5 });
+    const second = deliver("evt_3", "customer.subscription.updated", { id: "sub_1" });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    release();
+    await Promise.all([first, second]);
+
+    expect(await billing.seatsOf(ORG)).toBe(5);
+    expect(kinds()).toEqual(["started", "changed"]);
+  });
+
+  it("tells a start once when the browser's return and the webhook arrive together", async () => {
+    subscription("sub_1");
+    retrieveCheckout.mockResolvedValue({
+      id: "cs_1",
+      mode: "subscription",
+      status: "complete",
+      customer: "cus_1",
+      subscription: "sub_1",
+      metadata: { product: "opendashboards", org_id: ORG, user_id: "bob" },
+    });
+    await Promise.all([billing.completeCheckout("cs_1", "bob"), deliver("evt_1", "checkout.session.completed", { id: "cs_1" })]);
+    expect(kinds()).toEqual(["started"]);
+  });
+});
 
 describe("Checkout ownership", () => {
   it.each([ORG, null])("tags the customer, session, and subscription with orgId %s", async (orgId) => {

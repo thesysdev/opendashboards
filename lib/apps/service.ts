@@ -395,7 +395,7 @@ export function createAppService({ db, now = () => new Date(), gate = OPEN_GATE 
           .where(and(eq(apps.orgId, scope.orgId), eq(apps.userId, scope.userId)));
         return db.transaction(async (tx) => {
           // Checked in the same transaction as the insert, so two can't pass at the plan's limit.
-          const refused = await gate(tx, scope.orgId, "createApp");
+          const refused = await gate(tx, scope.orgId, "createApp", scope.userId);
           if (refused) return fail(refused);
           const [app] = await tx
             .insert(apps)
@@ -424,7 +424,7 @@ export function createAppService({ db, now = () => new Date(), gate = OPEN_GATE 
         const app = await appFacts(db, userId, parsed.data.id);
         const renaming = decide("app", "update", app?.facts ?? null);
         if (!renaming.allowed) return refusal(renaming);
-        const refused = await gate(db, app!.orgId, "renameApp");
+        const refused = await gate(db, app!.orgId, "renameApp", userId);
         if (refused) return fail(refused);
         const updated = await db
           .update(apps)
@@ -714,7 +714,7 @@ export function createAppService({ db, now = () => new Date(), gate = OPEN_GATE 
       if (!parsed.success) return notFound();
       const app = await appFacts(db, userId, parsed.data.appId);
       if (!app) return notFound();
-      const refused = await gate(db, app.orgId, "addAppConnection");
+      const refused = await gate(db, app.orgId, "addAppConnection", userId);
       if (refused) return fail(refused);
       return service.recordConnectionUse(userId, parsed.data.appId, parsed.data.connectionId);
     },

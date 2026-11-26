@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
 
 import { sql } from "drizzle-orm";
-import { afterAll, beforeEach, describe, expect, it } from "vitest";
+import Stripe from "stripe";
+import { afterAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { hostedPlans } from "@/config/plans";
 import { createAppService } from "@/lib/apps/service";
@@ -25,10 +26,11 @@ const billing = {
   planOf: async (orgId: string) => subscribed.get(orgId)?.plan ?? "free",
   seatsOf: async (orgId: string) => subscribed.get(orgId)?.seats ?? 1,
   changeSeats: async () => ({ url: "https://billing.stripe.test/confirm" }),
-  startCheckout: async () => ({ url: "https://checkout.stripe.test" }),
+  startCheckout: vi.fn(async () => ({ url: "https://checkout.stripe.test" })),
 } as unknown as Billing;
 
-const plans = createPlans({ db, settings, billing });
+const track = vi.fn();
+const plans = createPlans({ db, settings, billing, track });
 const orgService = createOrgService({ db, gate: plans.gate });
 const appService = createAppService({ db, gate: plans.gate });
 
@@ -64,6 +66,7 @@ async function addConnection(orgId: string, demoDataset: string | null = null) {
 
 beforeEach(async () => {
   subscribed.clear();
+  track.mockClear();
   await db.execute(sql`TRUNCATE ${apps}, ${dataConnections}, ${orgs}, ${users} CASCADE`);
   await orgService.ensureUser(alice);
 });
@@ -184,5 +187,62 @@ describe("billing off", () => {
     const orgId = await workspace();
     await addApps(orgId, 50);
     expect(await createEnforcement().enforce(db, orgId, "createApp")).toEqual({ ok: true });
+  });
+});
+
+describe("analytics", () => {
+  it("records a refusal once, against who asked, with ids and labels only", async () => {
+    const orgId = await workspace();
+    await addApps(orgId, 5);
+    const connectionId = await addConnection(orgId);
+    track.mockClear();
+
+    await appService.create({ userId: alice.id, orgId }, { prompt: "Revenue by month", connectionIds: [connectionId] });
+
+    expect(track).toHaveBeenCalledTimes(1);
+    expect(track).toHaveBeenCalledWith(alice.id, "plan_limit_hit", { plan_id: "free", limit: "apps", operation: "createApp", surface: "apps" }, orgId);
+    expect(JSON.stringify(track.mock.calls)).not.toMatch(/@|Acme|Revenue/);
+  });
+
+  it("names the switch or view-only that refused, and records nothing for a check nobody asked for", async () => {
+    const orgId = await workspace();
+    await orgService.invite(alice.id, { orgId, email: "vic@example.com", role: "viewer" });
+    expect(track).toHaveBeenLastCalledWith(alice.id, "plan_limit_hit", expect.objectContaining({ limit: "viewerRole", surface: "members" }), orgId);
+
+    await addApps(orgId, 6);
+    track.mockClear();
+    expect(await plans.gate(db, orgId, "editDashboard", null)).not.toBeNull();
+    expect(track).not.toHaveBeenCalled();
+    await plans.gate(db, orgId, "chat", alice.id);
+    expect(track).toHaveBeenCalledWith(alice.id, "plan_limit_hit", expect.objectContaining({ limit: "view_only", surface: "chat" }), orgId);
+  });
+
+  it("records a checkout started, or failed with Stripe's code", async () => {
+    const orgId = await workspace();
+    track.mockClear();
+    await plans.upgrade(orgId, { planId: "team", interval: "year", userId: alice.id });
+    expect(track).toHaveBeenCalledWith(
+      alice.id,
+      "checkout_started",
+      { from_plan: "free", to_plan: "team", interval: "annual", seats: 1, new_workspace: false },
+      orgId,
+    );
+
+    vi.mocked(billing.startCheckout).mockRejectedValueOnce(
+      new Stripe.errors.StripeInvalidRequestError({ type: "invalid_request_error", code: "resource_missing", message: "No such price: 'price_tm'" }),
+    );
+    await expect(plans.upgrade(orgId, { planId: "team", interval: "month", userId: alice.id })).rejects.toThrow();
+    expect(track).toHaveBeenLastCalledWith(
+      alice.id,
+      "checkout_failed",
+      { to_plan: "team", interval: "monthly", error_code: "resource_missing", new_workspace: false },
+      orgId,
+    );
+    expect(track).toHaveBeenCalledTimes(2);
+
+    // Not Stripe's: a database error's code isn't passed off as one.
+    vi.mocked(billing.startCheckout).mockRejectedValueOnce(Object.assign(new Error("duplicate key"), { code: "23505" }));
+    await expect(plans.upgrade(orgId, { planId: "team", interval: "month", userId: alice.id })).rejects.toThrow();
+    expect(track).toHaveBeenLastCalledWith(alice.id, "checkout_failed", expect.objectContaining({ error_code: "unknown" }), orgId);
   });
 });

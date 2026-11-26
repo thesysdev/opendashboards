@@ -54,3 +54,14 @@ export function identifyWorkspace(orgId: string, createdAt: Date = new Date()): 
   client.groupIdentify({ groupType: ORG_GROUP, groupKey: orgId, properties: { created: createdAt.toISOString() } });
   waitUntil(client.flush().catch(() => {}));
 }
+
+/**
+ * The workspace's plan, on its group, whenever its subscription changes: so
+ * PostHog can break funnels and usage down by plan.
+ */
+export function identifyWorkspacePlan(orgId: string, plan: { plan_id: string; seats: number; subscription_status: string }): void {
+  const client = posthog();
+  if (!client) return;
+  client.groupIdentify({ groupType: ORG_GROUP, groupKey: orgId, properties: plan });
+  waitUntil(client.flush().catch(() => {}));
+}

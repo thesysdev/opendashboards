@@ -59,7 +59,7 @@ export function BillingSection({ view }: { view: BillingView }) {
         <div className="flex gap-2">
           {view.canManage && view.hasAccount && <ManageBillingButton orgId={view.orgId} />}
           {view.canManage && subscription && plan.perSeat && <BuySeatsButton orgId={view.orgId} seats={subscription.seats} />}
-          {view.canManage && !subscription && view.paidPlans.length > 0 && <UpgradeButton orgId={view.orgId} />}
+          {view.canManage && !subscription && view.paidPlans.length > 0 && <UpgradeButton orgId={view.orgId} source="settings" fromPlan={plan.id} />}
         </div>
       </div>
 

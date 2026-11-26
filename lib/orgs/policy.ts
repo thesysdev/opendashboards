@@ -350,3 +350,9 @@ export function can<R extends ResourceName, A extends Action<R>>(resource: R, ac
 
 /** A refusal in the shape every service returns. */
 export const refusal = (denied: Denied) => ({ ok: false as const, error: { code: denied.code, message: denied.reason } });
+
+/** For analytics: how someone relates to an app they opened. Its owner, a member who can edit it, one who can only view it, or a guest. */
+export function viewerRole(facts: Pick<AppFacts, "access" | "guest">): "owner" | "editor" | "viewer" | "guest" {
+  if (facts.guest) return "guest";
+  return facts.access === "owner" ? "owner" : facts.access === "edit" ? "editor" : "viewer";
+}

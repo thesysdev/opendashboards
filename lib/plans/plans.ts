@@ -1,7 +1,9 @@
 import { and, eq } from "drizzle-orm";
+import Stripe from "stripe";
 
 import type { CatalogPlan, PlansSettings } from "@/config";
 import type { Billing, Interval } from "@/lib/billing";
+import { intervalLabel } from "@/lib/analytics-labels";
 import type { Database } from "@/lib/db";
 import { orgs } from "@/lib/db/schema";
 import {
@@ -13,6 +15,7 @@ import {
   type Gate,
   type LimitName,
   type Limits,
+  type Operation,
   type SwitchName,
 } from "@/lib/entitlements";
 
@@ -32,8 +35,32 @@ const SWITCHES: Record<SwitchName, string> = { viewerRole: "Viewers" };
 
 const noun = (name: LimitName, count: number) => NOUNS[name][count === 1 ? 0 : 1];
 
+/** Records a product event (lib/analytics' `track`): ids, counts and fixed labels only. */
+export type Track = (userId: string, event: string, properties: Record<string, unknown>, orgId: string | null) => void;
+
+/** Where in the product each gated operation is, for plan_limit_hit's `surface`. */
+const SURFACES: Record<Operation, string> = {
+  createApp: "apps",
+  renameApp: "apps",
+  addAppConnection: "apps",
+  createConnection: "connections",
+  renameConnection: "connections",
+  addEditor: "members",
+  addViewer: "members",
+  chat: "chat",
+  editDashboard: "dashboards",
+};
+
+/** Which limit refused: a limit's name, `viewerRole`, or `view_only` for a workspace already over its plan. */
+const limitOf = (denial: Denial): string => (denial.reason === "viewOnly" ? "view_only" : denial.name);
+
+/** Stripe's error code (e.g. resource_missing), or "unknown" for anything else. Never the message: it can carry ids and amounts. */
+const stripeCode = (error: unknown): string =>
+  error instanceof Stripe.errors.StripeError && typeof error.code === "string" ? error.code : "unknown";
+
 /** A workspace's plan as pages see it. */
 export type PlanState = {
+  planId: string;
   planName: string;
   perSeat: boolean;
   viewerRole: boolean;
@@ -52,8 +79,9 @@ export function entitlementsOf(plan: CatalogPlan, seats: number): Entitlements {
 const maxOf = (plan: CatalogPlan, name: LimitName): number | null =>
   plan.perSeat && name === "editors" ? Infinity : (plan.entitlements as Entitlements)[name].max;
 
-export function createPlans(deps: { db: Database; settings: PlansSettings; billing: Billing }) {
+export function createPlans(deps: { db: Database; settings: PlansSettings; billing: Billing; track?: Track }) {
   const { db, settings, billing } = deps;
+  const track: Track = deps.track ?? (() => {});
   const catalog = Object.entries(settings.catalog).map(([id, plan]) => ({ id, ...plan }));
   const planNamed = (id: string) => settings.catalog[id] ?? settings.catalog[settings.free]!;
 
@@ -71,8 +99,8 @@ export function createPlans(deps: { db: Database; settings: PlansSettings; billi
   }
 
   /** The approved sentence for a refusal. */
-  async function describeDenial(orgId: string, denial: Denial): Promise<string> {
-    const planId = await billing.planOf(orgId);
+  async function describeDenial(orgId: string, denial: Denial, knownPlanId?: string): Promise<string> {
+    const planId = knownPlanId ?? (await billing.planOf(orgId));
     const plan = planNamed(planId);
     const support = `Email ${settings.supportEmail} for more.`;
     switch (denial.reason) {
@@ -103,10 +131,27 @@ export function createPlans(deps: { db: Database; settings: PlansSettings; billi
   }
 
   /** What the services call before a gated operation. */
-  const gate: Gate = async (executor, orgId, operation) => {
+  const gate: Gate = async (executor, orgId, operation, userId) => {
     const verdict = await enforcement.enforce(executor, orgId, operation);
-    return verdict.ok ? null : { code: "plan_limit", message: await describeDenial(orgId, verdict.denial) };
+    if (verdict.ok) return null;
+    const planId = await billing.planOf(orgId);
+    if (userId) track(userId, "plan_limit_hit", { plan_id: planId, limit: limitOf(verdict.denial), operation, surface: SURFACES[operation] }, orgId);
+    return { code: "plan_limit", message: await describeDenial(orgId, verdict.denial, planId) };
   };
+
+  /** Stripe Checkout, recorded as started or failed. */
+  async function checkout(input: Parameters<Billing["startCheckout"]>[0], fromPlan: string | null, orgId: string | null) {
+    const seats = settings.catalog[input.planId]?.perSeat ? Math.max(input.seats, input.minSeats, 1) : 1;
+    const props = { to_plan: input.planId, interval: intervalLabel(input.interval) };
+    try {
+      const started = await billing.startCheckout(input);
+      track(input.userId, "checkout_started", { ...props, from_plan: fromPlan, seats, new_workspace: orgId === null }, orgId);
+      return started;
+    } catch (error) {
+      track(input.userId, "checkout_failed", { ...props, error_code: stripeCode(error), new_workspace: orgId === null }, orgId);
+      throw error;
+    }
+  }
 
   return {
     billing,
@@ -125,6 +170,7 @@ export function createPlans(deps: { db: Database; settings: PlansSettings; billi
       const plan = planNamed(planId);
       const limits = await enforcement.getLimits(db, orgId);
       return {
+        planId,
         planName: plan.name,
         perSeat: plan.perSeat,
         viewerRole: (await entitlementsFor(orgId)).viewerRole.on,
@@ -178,7 +224,7 @@ export function createPlans(deps: { db: Database; settings: PlansSettings; billi
           message: `${plan.name} allows ${max} ${noun(over, max)}. You have ${used}, so the workspace would stay view-only. Choose a plan that fits, or remove ${remove} ${noun(over, remove)} first.`,
         };
       }
-      const { url } = await billing.startCheckout({
+      const { url } = await checkout({
         orgId,
         planId: input.planId,
         interval: input.interval,
@@ -186,7 +232,7 @@ export function createPlans(deps: { db: Database; settings: PlansSettings; billi
         minSeats: inUse,
         userId: input.userId,
         cancelPath: `/w/${orgId}/settings#billing`,
-      });
+      }, settings.free, orgId);
       return { ok: true as const, url };
     },
 
@@ -219,7 +265,7 @@ export function createPlans(deps: { db: Database; settings: PlansSettings; billi
     async checkoutNewWorkspace(input: { userId: string; name: string; planId: string; interval: Interval; cancelPath: string }) {
       const plan = settings.catalog[input.planId];
       if (!plan?.stripe) return { ok: false as const, message: "That plan isn't available." };
-      const { url } = await billing.startCheckout({
+      const { url } = await checkout({
         orgId: null,
         planId: input.planId,
         interval: input.interval,
@@ -228,7 +274,7 @@ export function createPlans(deps: { db: Database; settings: PlansSettings; billi
         userId: input.userId,
         pending: { name: input.name },
         cancelPath: input.cancelPath,
-      });
+      }, null, null);
       return { ok: true as const, url };
     },
   };
