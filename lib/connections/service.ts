@@ -1062,6 +1062,23 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     },
 
     /**
+     * The workspace's personal connections of a source, each with whether the
+     * caller has signed in to it: what someone adding the source again may
+     * mean to sign in to instead. Oldest first; none for a non-member.
+     */
+    async personalSignInConnections(scope: Scope, type: ConnectionType): Promise<{ id: string; name: string; signedIn: boolean }[]> {
+      if (!(await roleIn(db, scope.userId, scope.orgId))) return [];
+      const rows = await db
+        .select({ id: dataConnections.id, name: dataConnections.name, signIn: connectionSignIns.id })
+        .from(dataConnections)
+        // The caller's own sign-in, if any: one per member.
+        .leftJoin(connectionSignIns, and(eq(connectionSignIns.connectionId, dataConnections.id), eq(connectionSignIns.userId, scope.userId)))
+        .where(and(inWorkspace(scope), eq(dataConnections.type, type), eq(dataConnections.sharing, "personal"), isNull(dataConnections.demoDataset)))
+        .orderBy(asc(dataConnections.createdAt));
+      return rows.map(({ id, name, signIn }) => ({ id, name, signedIn: signIn !== null }));
+    },
+
+    /**
      * Keeps a started OAuth sign-in until the browser comes back: the user it
      * belongs to, the connection it will become, and (sealed) the PKCE verifier
      * and client registration. Found later by the state's hash only.

@@ -4,7 +4,7 @@ import { refresh } from "next/cache";
 
 import { track } from "@/lib/analytics";
 import { getConnectionService } from "@/lib/connections";
-import { startNewSignIn, startSignInTo } from "@/lib/connections/sign-in";
+import { personalSignIns, startNewSignIn, startSignInTo } from "@/lib/connections/sign-in";
 import { withLogContext } from "@/lib/log";
 import { fail, type Result } from "@/lib/connections/errors";
 import { inWorkspace, type Member, memberOf, requireKnownUser } from "@/lib/orgs";
@@ -60,6 +60,11 @@ export async function addConnectionWithSignInAction(input: unknown) {
 export async function signInToConnectionAction(input: unknown) {
   // Nothing to refresh: nothing is saved until the sign-in comes back.
   return asMember(input, startSignInTo);
+}
+
+/** The workspace's personal connections of a source that signs in, for the add dialog to offer signing in to one of them. */
+export async function personalSignInsAction(input: unknown) {
+  return asMember(input, personalSignIns);
 }
 
 export async function createConnectionAction(input: unknown) {

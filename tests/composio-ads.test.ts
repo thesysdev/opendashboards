@@ -2,7 +2,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { createAppService } from "@/lib/apps/service";
-import { finishSignIn, startNewSignIn, startSignInTo } from "@/lib/connections/sign-in";
+import { finishSignIn, personalSignIns, startNewSignIn, startSignInTo } from "@/lib/connections/sign-in";
 import { deleteSignIns } from "@/lib/connections/deleted-sign-ins";
 import { createConnectionService } from "@/lib/connections/service";
 import { createDatabase } from "@/lib/db";
@@ -650,6 +650,26 @@ describe("whose Google Ads or Meta Ads sign-in a query runs as", () => {
       expect(await runsAs("ads-eddie", id)).toBe(eddies.accountId);
       expect(await runsAs("ads-ada", id)).toBe(adas);
       expect(await service.whyClosed("ads-eddie", id)).toBeNull();
+    });
+
+    it("lists the workspace's personal connections for someone adding it again, and refuses a name already taken", async () => {
+      const { id } = await signIn("ads-ada", { sharing: "personal" });
+      await signIn("ads-eddie", { sharing: "org" });
+      const name = source === "googleads" ? "Google Ads" : "Meta Ads";
+
+      // Only the personal one, with whether this person signed in to it; nothing for someone outside the workspace.
+      expect(await personalSignIns(inTeam("ads-ada"), { type: source }, deps)).toEqual({ ok: true, data: [{ id, name, signedIn: true }] });
+      expect(await personalSignIns(inTeam("ads-eddie"), { type: source }, deps)).toEqual({ ok: true, data: [{ id, name, signedIn: false }] });
+      expect(await personalSignIns({ userId: "ads-gus", orgId: team }, { type: source }, deps)).toEqual({ ok: true, data: [] });
+
+      // Another personal one needs a name of its own, whatever its case, before anything is asked of Composio.
+      const links = accounts.size;
+      expect(await startNewSignIn(inTeam("ads-eddie"), { type: source, name: name.toUpperCase(), sharing: "personal" }, deps)).toMatchObject({
+        ok: false,
+        error: { code: "name_taken", field: "name" },
+      });
+      expect(accounts.size).toBe(links);
+      expect(await startNewSignIn(inTeam("ads-eddie"), { type: source, name: `${name}, client B`, sharing: "personal" }, deps)).toMatchObject({ ok: true });
     });
 
     it("a shared connection runs as its holder, for every member and for a guest of an app using it", async () => {

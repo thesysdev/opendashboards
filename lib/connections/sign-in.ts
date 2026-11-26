@@ -61,6 +61,13 @@ export async function startNewSignIn(scope: Scope, input: unknown, deps: Deps = 
   if (!source.signIn) return fail({ code: "validation", message: `${source.label} connects with a key, not by signing in.` });
   const config = connectionConfigSchema.safeParse({ ...settings, type });
   if (!config.success) return fromValidation(config.error);
+  // Another personal one is added under a name of its own: two alike can't be told apart in dashboards or by the agent.
+  if (sharingOf === "personal") {
+    const existing = await (deps.service ?? getConnectionService()).personalSignInConnections(scope, type);
+    if (existing.some((connection) => sameName(connection.name, name))) {
+      return fail({ code: "name_taken", field: "name", message: `There's already a ${source.label} connection called ${name}. Sign in to it, or pick another name.` });
+    }
+  }
   return begin(scope, source.signIn, { connectionId: null, name, sharing: sharingOf, config: config.data }, deps);
 }
 
@@ -78,6 +85,22 @@ export async function startSignInTo(scope: Scope, input: unknown, deps: Deps = {
   }
   // In the workspace that connection is in, whichever one the caller has open.
   return begin({ userId: scope.userId, orgId }, signIn, { connectionId: id, name, sharing: "personal", config, returnTo: parsed.data.returnTo }, deps);
+}
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+const typeSchema = z.object({ type: z.enum(CONNECTION_TYPES) }).strict();
+
+/**
+ * The workspace's personal connections of a source, for someone adding it
+ * again to choose between signing in to one of them and adding another. Only
+ * for sources that sign in here: MCP servers still join theirs on their own.
+ */
+export async function personalSignIns(scope: Scope, input: unknown, deps: Deps = {}): Promise<Result<{ id: string; name: string; signedIn: boolean }[]>> {
+  const parsed = typeSchema.safeParse(input);
+  if (!parsed.success) return fromValidation(parsed.error);
+  if (!(deps.sources ?? sourceFor)(parsed.data.type).signIn) return ok([]);
+  return ok(await (deps.service ?? getConnectionService()).personalSignInConnections(scope, parsed.data.type));
 }
 
 async function begin(

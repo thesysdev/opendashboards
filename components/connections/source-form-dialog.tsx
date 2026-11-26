@@ -1,10 +1,16 @@
 "use client";
 
 import { ExternalLinkIcon, Loader2Icon, TriangleAlertIcon, UploadIcon } from "lucide-react";
-import { Fragment, useId, useRef, useState, useTransition } from "react";
+import { Fragment, useEffect, useId, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 
-import { addConnectionWithSignInAction, createConnectionAction, replaceCredentialAction } from "@/app/(app)/connections/actions";
+import {
+  addConnectionWithSignInAction,
+  createConnectionAction,
+  personalSignInsAction,
+  replaceCredentialAction,
+  signInToConnectionAction,
+} from "@/app/(app)/connections/actions";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Field, FieldDescription, FieldError, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -47,6 +53,11 @@ export function SourceFormDialog(props: Props) {
   // A sign-in's kind, fixed once added: everyone signs in themselves, or everyone runs as whoever signs in now.
   const [sharing, setSharing] = useState<"personal" | "org">("personal");
   const fields = signingIn ? allFields.filter((field) => !field.keyOnly && field !== spec.credential) : allFields;
+  // The workspace's personal connections of this source, to offer signing in to one of them instead.
+  // MCP servers join theirs on their own, until they sign in through the shared flow.
+  const offersExisting = open && !replacing && signingIn && type !== "mcp";
+  const [existing, setExisting] = useState<PersonalSignIn[]>([]);
+  const choosing = offersExisting && sharing === "personal" && existing.length > 0;
 
   const initial = (): Record<string, string> => Object.fromEntries(allFields.map((field) => [field.name, field.initial ?? ""]));
   const [values, setValues] = useState<Record<string, string>>(initial);
@@ -59,10 +70,26 @@ export function SourceFormDialog(props: Props) {
   const id = (name: string) => `${baseId}-${name}`;
   const storageMissing = secretMode === "unconfigured";
 
+  useEffect(() => {
+    if (!offersExisting) return;
+    let current = true;
+    void personalSignInsAction({ orgId, type }).then((result) => {
+      if (!current || !result.ok) return;
+      setExisting(result.data);
+      // Pre-filled with a name that's taken: suggest the next free one.
+      const taken = result.data.map((connection) => connection.name);
+      setValues((values) => ({ ...values, name: freeName(values.name ?? "", taken) }));
+    });
+    return () => {
+      current = false;
+    };
+  }, [offersExisting, orgId, type]);
+
   function reset() {
     setValues(initial());
     setAuth(authOptions[0]);
     setSharing("personal");
+    setExisting([]);
     setPasted("");
     setPasteNote(null);
     setFieldErrors({});
@@ -121,6 +148,15 @@ export function SourceFormDialog(props: Props) {
     });
   }
 
+  /** Signs in to one of the workspace's connections instead of adding another. */
+  function signInTo(connectionId: string) {
+    startTransition(async () => {
+      const result = await signInToConnectionAction({ orgId, connectionId });
+      if (!result.ok) return setFormError(result.error.message);
+      window.location.assign(result.data.authorizationUrl);
+    });
+  }
+
   /**
    * The server's own checks, run here first, so every problem shows at once
    * and a slip doesn't cost a round trip. The server still checks everything.
@@ -141,6 +177,9 @@ export function SourceFormDialog(props: Props) {
     if (replacing) return errors;
     const name = connectionNameSchema.safeParse(values.name ?? "");
     if (!name.success) errors.name ??= name.error.issues[0]?.message ?? "Enter a name.";
+    else if (choosing && existing.some((connection) => sameName(connection.name, name.data))) {
+      errors.name ??= `There's already one called ${name.data}. Sign in to it above, or pick another name.`;
+    }
     const { name: _name, [spec.credential.name]: _credential, ...settings } = values;
     // A known MCP server's endpoint comes from its preset, as it does on the server.
     const config = spec.schemas.config.safeParse(service ? { ...settings, service } : settings);
@@ -270,6 +309,7 @@ export function SourceFormDialog(props: Props) {
           </DialogHeader>
 
           <FieldGroup className="my-6 gap-5">
+            {choosing && <ExistingSignIns connections={existing} disabled={pending} onSignIn={signInTo} />}
             {!replacing && spec.paste && (
               <Field>
                 <FieldLabel htmlFor={id("paste")}>{spec.paste.label}</FieldLabel>
@@ -353,7 +393,7 @@ export function SourceFormDialog(props: Props) {
             </Button>
             <Button type="submit" disabled={pending || storageMissing}>
               {pending && <Loader2Icon className="animate-spin" aria-hidden />}
-              {signingIn ? (pending ? "Opening sign-in…" : "Sign in") : pending ? "Testing…" : replacing ? spec.replaceAction : "Test & save"}
+              {signingIn ? (pending ? "Opening sign-in…" : choosing ? "Add another" : "Sign in") : pending ? "Testing…" : replacing ? spec.replaceAction : "Test & save"}
             </Button>
           </DialogFooter>
         </form>
@@ -409,6 +449,42 @@ function TextareaWithFile({
           </Button>
         </>
       )}
+    </div>
+  );
+}
+
+type PersonalSignIn = { id: string; name: string; signedIn: boolean };
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+/** `name`, or if it's taken, the first of "name 2", "name 3"… that isn't. */
+function freeName(name: string, taken: string[]): string {
+  const base = name.trim();
+  if (!base || !taken.some((other) => sameName(other, base))) return name;
+  for (let n = 2; ; n++) if (!taken.some((other) => sameName(other, `${base} ${n}`))) return `${base} ${n}`;
+}
+
+/** The workspace's personal connections of this source: sign in to one of them, or add another below. */
+function ExistingSignIns({ connections, disabled, onSignIn }: { connections: PersonalSignIn[]; disabled: boolean; onSignIn: (id: string) => void }) {
+  return (
+    <div className="rounded-lg border p-3">
+      <p className="text-sm font-medium">Already in this workspace</p>
+      <p className="text-xs text-muted-foreground">Sign in to one of these, or add another under a name of its own.</p>
+      <ul className="mt-1 divide-y">
+        {connections.map((connection) => (
+          <li key={connection.id} className="flex items-center justify-between gap-3 py-2">
+            <span className="min-w-0">
+              <span className="block truncate text-sm">{connection.name}</span>
+              {connection.signedIn && (
+                <span className="block text-xs text-muted-foreground">You&apos;re signed in. Signing in again replaces your login.</span>
+              )}
+            </span>
+            <Button type="button" variant="outline" size="sm" disabled={disabled} onClick={() => onSignIn(connection.id)}>
+              {connection.signedIn ? "Sign in again" : "Sign in"}
+            </Button>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

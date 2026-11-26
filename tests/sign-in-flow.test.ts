@@ -11,7 +11,7 @@ vi.mock("@/lib/connections", () => ({ getConnectionService: () => ({}) }));
 // Run what's handed to waitUntil now, so the test can see it.
 vi.mock("@vercel/functions", () => ({ waitUntil: (promise: Promise<unknown>) => promise }));
 
-import { finishSignIn, startNewSignIn, startSignInTo } from "@/lib/connections/sign-in";
+import { finishSignIn, personalSignIns, startNewSignIn, startSignInTo } from "@/lib/connections/sign-in";
 import type { ConnectionService } from "@/lib/connections/service";
 import type { ConnectionType } from "@/lib/sources/catalog";
 import { SignInRefused } from "@/lib/sources/sign-in";
@@ -42,7 +42,7 @@ function signingInSource() {
 
 describe("the shared sign-in flow", () => {
   let source: ReturnType<typeof signingInSource>;
-  let service: { [K in "forSignIn" | "startSignIn" | "takeSignIn" | "saveSignedIn"]: ReturnType<typeof vi.fn> };
+  let service: { [K in "forSignIn" | "startSignIn" | "takeSignIn" | "saveSignedIn" | "personalSignInConnections"]: ReturnType<typeof vi.fn> };
   let deps: { service: ConnectionService; sources: (type: ConnectionType) => ConnectionSource };
 
   beforeEach(() => {
@@ -53,6 +53,7 @@ describe("the shared sign-in flow", () => {
       startSignIn: vi.fn(async () => ({ ok: true, data: undefined })),
       takeSignIn: vi.fn(),
       saveSignedIn: vi.fn(async () => ({ ok: true, data: { id: connectionId, warnings: [] } })),
+      personalSignInConnections: vi.fn(async () => []),
     };
     deps = {
       service: service as unknown as ConnectionService,
@@ -93,6 +94,13 @@ describe("the shared sign-in flow", () => {
     service.forSignIn.mockResolvedValueOnce({ ok: true, data: { id: connectionId, orgId: "org-2", name: "Ads", config: { type: "googleads", oauth: { provider: "composio" } } } });
     expect(await startSignInTo(scope, { connectionId, returnTo: DASHBOARD }, deps)).toMatchObject({ ok: true });
     expect(service.startSignIn).toHaveBeenCalledWith({ userId: "user-1", orgId: "org-2" }, expect.objectContaining({ connectionId, name: "Ads", returnTo: DASHBOARD }));
+  });
+
+  it("lists connections to sign in to only for a source that signs in here", async () => {
+    service.personalSignInConnections.mockResolvedValue([{ id: connectionId, name: "Ads", signedIn: false }]);
+    expect(await personalSignIns(scope, { type: "googleads" }, deps)).toEqual({ ok: true, data: [{ id: connectionId, name: "Ads", signedIn: false }] });
+    expect(await personalSignIns(scope, { type: "postgres" }, deps)).toEqual({ ok: true, data: [] });
+    expect(await personalSignIns(scope, { type: "nonsense" }, deps)).toMatchObject({ ok: false, error: { code: "validation" } });
   });
 
   it("sends MCP servers to their own sign-in, for now", async () => {
