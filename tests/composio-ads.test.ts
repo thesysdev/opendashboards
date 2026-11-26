@@ -186,12 +186,15 @@ describe("a failed tool run asks the account whether the sign-in is lost", () =>
     await expect(runAs("metaads", open, "METAADS_GET_INSIGHTS", {}, signal, meta.deps)).rejects.toMatchObject({ code: "reauth_required", requestId: "req_7f3a9c" });
     expect(marked).toEqual(["invalid"]);
     expect(meta.calls).toHaveLength(2);
+    // A lookup refused with words that sound like a lost sign-in isn't a lost sign-in: only a 404 on the account is.
+    const refused = composioWith({ status: 400, body: { error: { message: "Unknown field: foo" } } }, { status: 401, body: { error: { message: "Invalid or expired token" } } });
+    await expect(runTool("metaads", "METAADS_GET_INSIGHTS", account, {}, signal, refused.deps)).rejects.toMatchObject({ code: "bad_request" });
     // …and anything else stays what it was.
     const bad = composioWith({ status: 400, body: { error: { message: "Unknown field: foo", request_id: "req_1" } } }, lookupFails);
     await expect(runTool("metaads", "METAADS_GET_INSIGHTS", account, {}, signal, bad.deps)).rejects.toMatchObject({ code: "bad_request", requestId: "req_1" });
   });
 
-  it("doesn't ask about a rate limit, an outage or a timeout: those aren't the sign-in", async () => {
+  it("doesn't ask about a rate limit or an outage: those aren't the sign-in", async () => {
     for (const run of [{ status: 429, body: {} }, { status: 503, body: {} }, { body: { successful: false, error: "User request limit reached", data: {} } }]) {
       const { deps, calls } = composioWith(run, { body: { id: "ca_123", status: "EXPIRED" } });
       await expect(runTool("metaads", "METAADS_GET_INSIGHTS", account, {}, signal, deps)).rejects.toMatchObject({ code: expect.not.stringMatching("reauth_required") });

@@ -183,14 +183,18 @@ export type ComposioAccount = {
   disabled: boolean;
 };
 
-/** A connected account as Composio has it now. */
+/**
+ * A connected account as Composio has it now. `wording`: false when only a
+ * 404 may say the account is gone, not a failure's text (see ACCOUNT_GONE).
+ */
 export async function getAccount(
   connectedAccountId: string,
   deps: ComposioDeps = {},
   signal?: AbortSignal,
   toolkit?: ComposioToolkit,
+  wording = true,
 ): Promise<ComposioAccount> {
-  const body = await request<Record<string, unknown>>(`/connected_accounts/${encodeURIComponent(connectedAccountId)}`, { method: "GET", signal }, deps, toolkit);
+  const body = await request<Record<string, unknown>>(`/connected_accounts/${encodeURIComponent(connectedAccountId)}`, { method: "GET", signal, wording }, deps, toolkit);
   const slug = isRecord(body?.toolkit) ? body.toolkit.slug : body?.toolkit_slug;
   return {
     id: typeof body?.id === "string" ? body.id : connectedAccountId,
@@ -291,7 +295,7 @@ async function lostSignIn(
   const signedOut = (why: string) => new ComposioError("reauth_required", `${why}: ${failure.detail ?? failure.code}`, toolkit, failure.requestId);
   let found: ComposioAccount;
   try {
-    found = await getAccount(account.connectedAccountId, deps, signal, toolkit);
+    found = await getAccount(account.connectedAccountId, deps, signal, toolkit, false);
   } catch (lookup) {
     // A 404 on the account: it's gone.
     if (lookup instanceof ComposioError && lookup.code === "reauth_required") return signedOut("The account is gone");
