@@ -6,6 +6,10 @@ export const common: CommonSettings = {
     apiUrl: "https://api.thesys.dev",
     gatewayUrl: "https://api.thesys.dev/v1/embed",
     model: "anthropic/claude-sonnet-5.5",
+    // Complete dashboards and the fastest edits in our comparison; a build makes several
+    // model calls, so a low effort keeps each one short.
+    dashboardModel: "google/gemini-4-neon",
+    dashboardReasoningEffort: "low",
     maxAgentRounds: 24,
   },
   posthog: { queryTimeoutMs: 50_000, checkTimeoutMs: 15_000, maxRows: { agent: 200, dashboard: 10_000 } },
