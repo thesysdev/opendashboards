@@ -8,7 +8,7 @@ import { createDatabase } from "@/lib/db";
 import { apps, connectionSignIns, dataConnections, mcpOAuthSignIns } from "@/lib/db/schema";
 import { plaintextSecretBox } from "@/lib/secrets/plaintext";
 import { ComposioError, createSignInLink, runTool, type ComposioDeps } from "@/lib/sources/composio/client";
-import { composioToError, flattenRows, readComposioCredential } from "@/lib/sources/composio/shared";
+import { composioToError, flattenRows, readComposioCredential, writeComposioCredential } from "@/lib/sources/composio/shared";
 import { gaqlSchema, googleAdsDeps, googleAdsSource, withLimit } from "@/lib/sources/googleads/source";
 import { googleAdsCatalog } from "@/lib/sources/googleads/catalog";
 import { metaAdsCatalog } from "@/lib/sources/metaads/catalog";
@@ -307,6 +307,44 @@ describe("signing in through Composio", () => {
       expect(deleted).toEqual(["ca_new"]);
       accountState = { status: "ACTIVE", user_id: "", toolkit: "googleads" };
     }
+  });
+
+  it("lets go of every account on a removed connection, one saved while it is being removed included", async () => {
+    const { state } = await start();
+    const finished = await finishComposioSignIn("alice", state, deps);
+    if (!finished.ok) throw new Error(finished.error.code);
+    const connectionId = finished.data.id;
+
+    // Someone else's sign-in, saved in a transaction still open when the removal starts.
+    const other = await pool.connect();
+    try {
+      await other.query("BEGIN");
+      const secret = await plaintextSecretBox.seal(writeComposioCredential({ composioUserId: "od-mallory", connectedAccountId: "ca_other" }), {
+        purpose: "",
+        userId: "",
+        connectionId: "",
+      });
+      await other.query(
+        "INSERT INTO connection_sign_ins (id, connection_id, user_id, secret, status, last_checked_at) VALUES (gen_random_uuid(), $1, 'mallory', $2, 'ok', now())",
+        [connectionId, JSON.stringify(secret)],
+      );
+      const removing = service.remove("alice", { id: connectionId });
+      // The removal waits on that transaction's lock before it commits.
+      await vi.waitFor(async () => {
+        const { rows } = await pool.query<{ n: number }>(
+          "SELECT count(*)::int AS n FROM pg_stat_activity WHERE datname = current_database() AND wait_event_type = 'Lock' AND query LIKE $1",
+          [`%"data_connections"%`],
+        );
+        expect(rows[0]?.n).toBeGreaterThan(0);
+      });
+      await other.query("COMMIT");
+      expect(await removing).toMatchObject({ ok: true });
+    } finally {
+      other.release();
+    }
+
+    expect(deleted.toSorted()).toEqual(["ca_new", "ca_other"]);
+    expect(await db.select().from(connectionSignIns)).toEqual([]);
   });
 
   it("lets go of the Composio account when a member leaving or a workspace deleted takes the sign-in", async () => {

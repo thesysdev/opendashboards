@@ -480,16 +480,28 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
     if (users.visible.length || users.hidden) return inUse(users);
 
     const type = row.type as ConnectionType;
-    const signIns = deps.sources(type).release ? await db.select().from(connectionSignIns).where(eq(connectionSignIns.connectionId, row.id)) : [];
+    let removed: ConnectionSignInRow[];
     try {
-      await db.delete(dataConnections).where(eq(dataConnections.id, row.id));
+      removed = await db.transaction(async (tx) => {
+        // Locked first, so every sign-in it has is deleted (and released) here: one saved
+        // from now on waits for this to commit, then finds the connection gone. Without
+        // the lock, one committed between the two deletes would go with the connection's
+        // cascade, never released.
+        await tx.select({ id: dataConnections.id }).from(dataConnections).where(eq(dataConnections.id, row.id)).for("update");
+        const signIns = await tx.delete(connectionSignIns).where(eq(connectionSignIns.connectionId, row.id)).returning();
+        await tx.delete(dataConnections).where(eq(dataConnections.id, row.id));
+        return signIns;
+      });
     } catch (error) {
-      // An app was added between the check and the delete: the foreign key caught it.
+      // An app was added between the check and the delete: the foreign key caught it,
+      // and the sign-ins' delete rolled back with it.
       if (isForeignKeyViolation(error)) return inUse(await appsUsing(userId, row.id));
       throw error;
     }
     keyCache.delete(row.id);
-    await releaseSignIns(type, signIns);
+    for (const { id } of removed) keyCache.delete(id);
+    // Committed: the sign-ins are gone for good.
+    await releaseSignIns(type, removed);
     return ok(undefined);
   }
 
@@ -1128,6 +1140,9 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
             const secret = await sealCredential(input.credential, context(config.type, userId, row.id));
             const warnings = await check(config, input.credential);
             await db.transaction(async (tx) => {
+              // The connection before its sign-ins, the order removing it locks them in:
+              // the two wait for each other instead of deadlocking.
+              await tx.update(dataConnections).set({ config, updatedAt: now() }).where(eq(dataConnections.id, row.id));
               // A shared sign-in has one: whoever signed in last is the one everyone runs as.
               const gone = await tx
                 .delete(connectionSignIns)
@@ -1141,7 +1156,6 @@ export function createConnectionService(deps: ConnectionServiceDeps) {
               await tx
                 .insert(connectionSignIns)
                 .values({ id: randomUUID(), connectionId: row.id, userId, secret, status: "ok", lastCheckedAt: now() });
-              await tx.update(dataConnections).set({ config, updatedAt: now() }).where(eq(dataConnections.id, row.id));
             });
             // Committed: the sign-ins it replaced are gone for good.
             await releaseSignIns(config.type, replaced);
