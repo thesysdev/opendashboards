@@ -11,9 +11,11 @@ import type { ConnectionSource, SourceTool } from "../types";
 import { metaAdsCatalog, type MetaAdsConfig } from "./catalog";
 
 /**
- * Meta Ads through Composio. Read-only, enforced here: Composio's Meta Ads
- * toolkit can also create and change ads, so only the read tools below are
- * ever called (each tagged readOnlyHint by Composio).
+ * Meta Ads through Composio. Read-only, twice over. Meta's own: the Meta
+ * auth config in Composio grants `ads_read` only, never `ads_management`, so
+ * Meta refuses any change. Ours: Composio's Meta Ads toolkit can also create
+ * and change ads, so only the read tools below are ever called (each tagged
+ * readOnlyHint by Composio).
  *
  * Facebook and Instagram are one source: Instagram ads run from the same ad
  * accounts, and the publisher_platform breakdown splits them.

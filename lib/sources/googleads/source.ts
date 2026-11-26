@@ -11,9 +11,10 @@ import type { ConnectionSource, OpenConnection, QueryResult, SourceTool } from "
 import { googleAdsCatalog, type GoogleAdsConfig } from "./catalog";
 
 /**
- * Google Ads through Composio. Read-only, enforced here: the Google Ads
- * OAuth scope can also change campaigns, and Composio's toolkit has tools
- * that do, so only the read tools below are ever called (each tagged
+ * Google Ads through Composio. Read-only, enforced here and only here:
+ * Google Ads has one OAuth scope (`adwords`), with no read-only version, so
+ * every sign-in can also change campaigns, and Composio's toolkit has tools
+ * that do. Only the read tools below are ever called (each tagged
  * readOnlyHint by Composio), and a query must be a GAQL SELECT, which can't
  * change anything.
  */
