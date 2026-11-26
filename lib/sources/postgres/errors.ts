@@ -9,6 +9,8 @@ export type PostgresErrorCode =
   | "database_not_found"
   /** The user may not connect to this database. */
   | "permission_denied"
+  /** The user connects, but can't read any of the tables it can see. */
+  | "no_read_access"
   /** The host resolves to a private, loopback or otherwise blocked address. */
   | "host_blocked"
   /** DNS has no such host. */

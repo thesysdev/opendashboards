@@ -225,6 +225,8 @@ export const mcpSource: ConnectionSource<McpConfig> = {
         return unavailable({ code: "too_large", message: "The server's reply was too large to read. Ask the tool for less, for example with a smaller limit or a filter." });
       case "timeout":
         return unavailable({ code: "timeout", message: "The MCP server took too long to answer. Try again, or ask the tool for less." });
+      case "rate_limited":
+        return unavailable({ code: "rate_limited", message: "The MCP server is limiting requests from OpenDashboards. Wait a minute, then try once." });
       case "unavailable":
         return unavailable({ code: "mcp_unavailable", message: `The MCP server isn't answering right now${error.detail ? ` (${error.detail})` : ""}. Try again.` });
       case "unexpected":
