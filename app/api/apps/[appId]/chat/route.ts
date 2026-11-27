@@ -9,7 +9,7 @@ import { track } from "@/lib/analytics";
 import { agentTools, getGateway, maxRounds, model, SYSTEM_PROMPT, type TurnContext } from "@/lib/agent";
 import { createAgUiTranslator, sse } from "@/lib/agent/ag-ui";
 import { DASHBOARD_STARTED } from "@/lib/agent/events";
-import { answerStoppedCalls, chatBodySchema, VIEWING_DASHBOARD, type ChatBody } from "@/lib/agent/messages";
+import { chatBodySchema, VIEWING_DASHBOARD, type ChatBody } from "@/lib/agent/messages";
 import { getAppService, getThreadService } from "@/lib/apps";
 import { getDb } from "@/lib/db";
 import { decide } from "@/lib/orgs/policy";
@@ -146,14 +146,15 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
           count("opendashboards.chat.turn", { outcome: "cancelled", cause: "none" });
           trackTurn("cancelled", "none", newMessages());
           // Stopped: saved as far as it got, including the message the model was still
-          // writing, so the chat still has it after a reload. The browser has gone, so
-          // waitUntil keeps the function alive for the save.
+          // writing, so the chat still has it after a reload. The SDK stores a tool call
+          // only with its result, so a call the stop cut off isn't saved. The browser has
+          // gone, so waitUntil keeps the function alive for the save.
           const writing = runner.currentChatCompletionSnapshot?.choices[0]?.message;
           const partial: ChatCompletionMessageParam[] =
             writing?.content || writing?.tool_calls?.length
               ? [{ role: "assistant", content: writing.content ?? null, tool_calls: writing.tool_calls }]
               : [];
-          waitUntil(save(answerStoppedCalls([...newMessages(), ...partial])));
+          waitUntil(save([...newMessages(), ...partial]));
           controller.close();
           return;
         }
