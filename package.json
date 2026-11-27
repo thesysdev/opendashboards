@@ -26,7 +26,7 @@
     "@openuidev/react-headless": "0.20.1",
     "@openuidev/react-lang": "^1.2.0",
     "@openuidev/react-ui": "0.20.1",
-    "@openuidev/server": "0.5.3",
+    "@openuidev/server": "0.6.0",
     "@vercel/functions": "^3.11.0",
     "@vercel/oidc-aws-credentials-provider": "^3.3.19",
     "class-variance-authority": "^0.7.1",

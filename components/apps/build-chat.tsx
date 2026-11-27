@@ -115,7 +115,9 @@ export function BuildChat({
 
   // fetchLLM's request, plus AG-UI `context` naming the dashboard on screen
   // (fetchLLM always sends an empty context). Same adapter and message format,
-  // with the route's dashboard events taken out of the stream on the way.
+  // with the route's dashboard events taken out of the stream on the way. Only
+  // the new message is sent: the route reads the earlier turns from the
+  // thread's conversation.
   const llm = useMemo<ChatLLM>(
     () => ({
       streamProtocol: withDashboardEvents(agUIAdapter(), startedListeners),
@@ -128,7 +130,7 @@ export function BuildChat({
             runId: crypto.randomUUID(),
             tools: [],
             context: viewing.current ? [{ description: VIEWING_DASHBOARD, value: viewing.current }] : [],
-            messages: openAIMessageFormat.toApi(messages),
+            messages: openAIMessageFormat.toApi(messages.slice(-1)),
           }),
           signal,
         }),

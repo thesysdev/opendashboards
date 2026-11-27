@@ -1,20 +1,18 @@
 import { EventType, type BaseEvent } from "@ag-ui/core";
-import { storeChatCompletionHistory } from "@openuidev/server/openai";
 import { waitUntil } from "@vercel/functions";
 import { APIError } from "openai";
 import type { ChatCompletionMessageParam } from "openai/resources/chat/completions";
 
-import { secrets } from "@/config";
 import { track } from "@/lib/analytics";
 import { agentTools, getGateway, maxRounds, model, SYSTEM_PROMPT, type TurnContext } from "@/lib/agent";
 import { createAgUiTranslator, sse } from "@/lib/agent/ag-ui";
 import { DASHBOARD_STARTED } from "@/lib/agent/events";
-import { chatBodySchema, VIEWING_DASHBOARD, type ChatBody } from "@/lib/agent/messages";
+import { chatBodySchema, VIEWING_DASHBOARD } from "@/lib/agent/messages";
 import { getAppService, getThreadService } from "@/lib/apps";
 import { getDb } from "@/lib/db";
 import { decide } from "@/lib/orgs/policy";
 import { getGate } from "@/lib/plans";
-import { getDashboardService } from "@/lib/dashboards";
+import { getDashboardService, getOpenUI } from "@/lib/dashboards";
 import { appGroups } from "@/lib/dashboards/cloud";
 import { HttpError, readJson, route } from "@/lib/http";
 import { addLogContext, logError } from "@/lib/log";
@@ -38,8 +36,8 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
   addLogContext({ app: appId });
   const parsed = chatBodySchema.safeParse(await readJson(request, { maxBytes: MAX_BODY_BYTES }));
   if (!parsed.success) throw new HttpError(400, parsed.error.issues[0]?.message ?? "Invalid chat request");
-  const { threadId, messages, context } = parsed.data as ChatBody;
-  const runId = typeof parsed.data.runId === "string" ? parsed.data.runId : crypto.randomUUID();
+  const { threadId, message, context } = parsed.data;
+  const runId = parsed.data.runId ?? crypto.randomUUID();
   addLogContext({ thread: threadId, run: runId });
 
   // Building is for members who can change the app: never a viewer, whatever the app grants the team.
@@ -53,6 +51,18 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
 
   const threads = getThreadService();
   if (!(await threads.belongsTo(user.id, appId, threadId))) throw new HttpError(404, "Thread not found");
+
+  // The thread's earlier turns, from its conversation in OpenUI Cloud rather than the browser. A
+  // tool call comes back only with its result, so a turn stopped mid call needs no repair.
+  const conversations = getOpenUI().chat.conversations;
+  let history: ChatCompletionMessageParam[];
+  try {
+    history = await conversations.items.list(threadId, { signal: request.signal });
+  } catch (error) {
+    if (request.signal.aborted) throw new HttpError(499, "Request cancelled");
+    logError("chat.history", error);
+    throw new HttpError(502, "Couldn't load this chat. Try again.");
+  }
 
   // What's on screen, if it's one of this app's dashboards: "this dashboard" means that one.
   const viewingId = context?.find((entry) => entry.description === VIEWING_DASHBOARD)?.value;
@@ -110,7 +120,7 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
       const runner = getGateway().chat.completions.runTools(
         {
           model: model(),
-          messages: [...system, ...messages],
+          messages: [...system, ...history, message],
           tools: agentTools(),
           toolContext: turn,
           stream: true,
@@ -121,15 +131,11 @@ export const POST = route<Ctx>(async (request, user, { params }) => {
       runner.on("message", (message) => translate.message(message));
 
       // The new turn: the user's message, then every message the loop added.
-      const newMessages = () => runner.messages.slice(system.length - 1 + messages.length) as ChatCompletionMessageParam[];
+      const newMessages = () => runner.messages.slice(system.length + history.length) as ChatCompletionMessageParam[];
 
       const save = async (turnMessages: ChatCompletionMessageParam[]) => {
         try {
-          await storeChatCompletionHistory({
-            apiKey: secrets.thesysApiKey() ?? "",
-            conversationId: threadId,
-            messages: turnMessages,
-          });
+          await conversations.items.create(threadId, turnMessages);
           await threads.touch(user.id, appId, threadId);
         } catch (error) {
           logError("chat.save", error);
